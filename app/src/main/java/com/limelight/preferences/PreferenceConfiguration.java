@@ -277,6 +277,9 @@ public class PreferenceConfiguration {
     public boolean enablePerfOverlayLiteDialog;
 
     public boolean enablePerfOverlayBottom;
+    // Apollo 2.0 SPEC.md §3 per-frame latency trace. Debug tool, off by default;
+    // also requires the host to advertise support before anything is sent.
+    public boolean enableLatencyTrace;
 
     public boolean enableLatencyToast;
     public boolean enableBackMenu;
@@ -924,6 +927,7 @@ private static int getFramePacingValue(Context context) {
         config.enablePerfLogging = prefs.getBoolean(ENABLE_PERF_LOGGING, DEFAULT_ENABLE_PERF_LOGGING);
         config.enablePerfOverlayLite = prefs.getBoolean("checkbox_enable_perf_overlay_lite",DEFAULT_ENABLE_PERF_OVERLAY);
         config.enablePerfOverlayBottom = prefs.getBoolean("checkbox_enable_perf_overlay_bottom",DEFAULT_PERF_OVERLAY_BOTTOM);
+        config.enableLatencyTrace = prefs.getBoolean("checkbox_enable_latency_trace", false);
         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);
         config.mouseNavButtons = prefs.getBoolean(MOUSE_NAV_BUTTONS_STRING, DEFAULT_MOUSE_NAV_BUTTONS);

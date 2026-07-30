@@ -25,6 +25,7 @@ import com.limelight.binding.input.virtual_controller.VirtualController;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardController;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardLayoutController;
 import com.limelight.binding.video.CrashListener;
+import com.limelight.binding.video.LatencyTraceRecorder;
 import com.limelight.binding.video.MediaCodecDecoderRenderer;
 import com.limelight.binding.video.MediaCodecHelper;
 import com.limelight.binding.video.PerfOverlayListener;
@@ -799,7 +800,35 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 .setColorSpace(decoderRenderer.getPreferredColorSpace())
                 .setColorRange(decoderRenderer.getPreferredColorRange())
                 .setPersistGamepadsAfterDisconnect(!prefConfig.multiController)
+                .setLatencyTraceEnabled(prefConfig.enableLatencyTrace)
                 .build();
+
+        // Apollo 2.0 SPEC.md §3. Allocated before the connection starts so the
+        // recorder exists before the first frame can arrive. The buffer is only
+        // allocated when the user asked for a trace; the host may still decline
+        // the capability, in which case the client-only columns are recorded and
+        // the host columns stay empty.
+        //
+        // The CSV is NOT flushed from onStop(): stopConnection() runs conn.stop()
+        // on a detached thread, so a flush there would race the producers and the
+        // native teardown. The recorder serialises itself from
+        // MediaCodecDecoderRenderer.stop(), which is the only point where the
+        // producers are joined and the control stream is still alive.
+        if (prefConfig.enableLatencyTrace) {
+            LatencyTraceRecorder trace = new LatencyTraceRecorder();
+            // Codec and decoder are filled in by the renderer at flush time;
+            // neither is negotiated yet at this point.
+            trace.setSessionInfo(
+                    "pending",
+                    displayWidth, displayHeight,
+                    prefConfig.fps,
+                    prefConfig.bitrate,
+                    PreferenceConfiguration.getSelectedFramePacingName(getBaseContext()),
+                    prefConfig.enableUltraLowLatency,
+                    decoderRenderer.getDecoderName(),
+                    describeNetworkPath());
+            decoderRenderer.setLatencyTraceRecorder(trace, getApplicationContext());
+        }
 
         // Initialize the connection
         conn = new NvConnection(getApplicationContext(),
@@ -1853,6 +1882,40 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         finish();
+    }
+
+    /**
+     * Best-effort description of the client's network transport for the SPEC.md
+     * §4.6 metadata block. Reports the transport only; link rate, band and AP are
+     * not recorded here and must be noted by the operator when they matter.
+     */
+    private String describeNetworkPath() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) {
+                return "unknown";
+            }
+            android.net.Network active = cm.getActiveNetwork();
+            if (active == null) {
+                return "none";
+            }
+            android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(active);
+            if (caps == null) {
+                return "unknown";
+            }
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                return "ethernet";
+            }
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) {
+                return "wifi";
+            }
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                return "cellular";
+            }
+            return "other";
+        } catch (Throwable t) {
+            return "unknown";
+        }
     }
 
     public static String formatCurrentTime(long currentTimeMillis) {

@@ -218,8 +218,22 @@ public class MoonBridge {
     //todo 不显示画面
     public static int bridgeDrSubmitDecodeUnit(byte[] decodeUnitData, int decodeUnitLength, int decodeUnitType,
                                                int frameNumber, int frameType, char frameHostProcessingLatency,
-                                               long receiveTimeMs, long enqueueTimeMs) {
+                                               long receiveTimeMs, long enqueueTimeMs,
+                                               int traceFlags, long traceLastPacketRxUs,
+                                               long traceHostCaptureRequestedUs, long traceHostCaptureCompleteUs,
+                                               long traceHostEncodeSubmitUs, long traceHostEncodeCompleteUs,
+                                               long traceHostTxPipelineEntryUs) {
         if (videoRenderer != null) {
+            // Native invokes this callback once per parameter set NALU and once
+            // for the picture data, so gate the trace on the picture data call to
+            // get exactly one row per frame. The trace arguments are all zero
+            // unless the latency trace was negotiated, so this stays a no-op for
+            // stock sessions.
+            if (decodeUnitType == BUFFER_TYPE_PICDATA) {
+                videoRenderer.submitTraceTimestamps(frameNumber, traceFlags, traceLastPacketRxUs,
+                        traceHostCaptureRequestedUs, traceHostCaptureCompleteUs,
+                        traceHostEncodeSubmitUs, traceHostEncodeCompleteUs, traceHostTxPipelineEntryUs);
+            }
             return videoRenderer.submitDecodeUnit(decodeUnitData, decodeUnitLength,
                     decodeUnitType, frameNumber, frameType, frameHostProcessingLatency, receiveTimeMs, enqueueTimeMs);
         }
@@ -348,7 +362,8 @@ public class MoonBridge {
                                               int clientRefreshRateX100,
                                               byte[] riAesKey, byte[] riAesIv,
                                               int videoCapabilities,
-                                              int colorSpace, int colorRange);
+                                              int colorSpace, int colorRange,
+                                              int latencyTraceEnabled);
 
     public static native void stopConnection();
 
@@ -413,6 +428,43 @@ public class MoonBridge {
 
     // The RTT is in the top 32 bits, and the RTT variance is in the bottom 32 bits
     public static native long getEstimatedRttInfo();
+
+    // Indexes into the array filled by getClockSyncInfo()
+    public static final int CLOCK_SYNC_OFFSET_US = 0;
+    public static final int CLOCK_SYNC_BEST_RTT_US = 1;
+    public static final int CLOCK_SYNC_SAMPLE_COUNT = 2;
+    public static final int CLOCK_SYNC_DIVERGENCE_EVENTS = 3;
+    public static final int CLOCK_SYNC_VALID = 4;
+    public static final int CLOCK_SYNC_UNMATCHED_RESPONSES = 5;
+    public static final int CLOCK_SYNC_ARRAY_LENGTH = 6;
+
+    // Fills out (which must be at least CLOCK_SYNC_ARRAY_LENGTH long) with the
+    // latency trace clock offset state. Returns false only if the array is too
+    // small. Pass a reused array; this allocates nothing.
+    public static native boolean getClockSyncInfo(long[] out);
+
+    // True only if the per-frame latency trace was negotiated with the host.
+    public static native boolean getLatencyTraceEnabled();
+
+    // Frame timestamp extension version observed on the wire this session, or 0
+    // if none was parsed — which is also what you get when the host declined the
+    // capability or is emitting a version this client does not understand.
+    public static native int getFrameTraceExtVersion();
+
+    // Bits in the traceFlags argument of bridgeDrSubmitDecodeUnit, and in
+    // LatencyTraceRecorder's per-row flags for the host stamps.
+    public static final int TRACE_FLAG_HOST_VALID = 0x01;
+    public static final int TRACE_FLAG_LAST_PACKET_RX_VALID = 0x02;
+    // Host per-stage validity mask, shifted up by 8. See SS_STAMP_VALID_* in Video.h.
+    public static final int TRACE_HOST_STAMP_MASK_SHIFT = 8;
+    public static final int TRACE_STAMP_CAPTURE_REQUESTED = 0x01;
+    public static final int TRACE_STAMP_CAPTURE_COMPLETE = 0x02;
+    public static final int TRACE_STAMP_ENCODE_SUBMIT = 0x04;
+    public static final int TRACE_STAMP_ENCODE_COMPLETE = 0x08;
+    public static final int TRACE_STAMP_TX_PIPELINE_ENTRY = 0x10;
+
+    // Monotonic microseconds on the same epoch as the native trace timestamps.
+    public static native long getMonotonicMicros();
 
     public static native String getLaunchUrlQueryParameters();
 

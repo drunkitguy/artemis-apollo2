@@ -63,23 +63,342 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     public void setPreferLowerDelaysTimeoutUs(int us) { this.preferLowerDelaysTimeoutUs = Math.max(0, us); }
 
 
+    // --- Apollo 2.0 latency trace (SPEC.md §3) -------------------------------
+    //
+    // Null unless the trace is enabled by preference AND negotiated with the
+    // host. Every hook below is a null check first, so a stock session pays one
+    // predictable branch per frame and nothing else.
+    private volatile LatencyTraceRecorder latencyTrace;
+    private TraceVsyncMonitor traceVsyncMonitor;
+
+    // Application context used only to resolve the CSV output directory at
+    // teardown. Set once alongside the recorder, before the stream starts.
+    private Context traceFlushContext;
+
+    // PTS of the frame most recently handed to the trace on the receive thread.
+    // Receive-thread only; used to pair beginFrame() with recordDecodeSubmit().
+    private boolean tracePendingFrame;
+
+    /**
+     * Installs the trace recorder. Must be called before {@link #start()}.
+     * The context is retained only to resolve the output directory when the
+     * recorder is serialised from {@link #stop()}; the application context is
+     * expected, not the Activity.
+     */
+    public void setLatencyTraceRecorder(LatencyTraceRecorder recorder, Context appContext) {
+        this.latencyTrace = recorder;
+        this.traceFlushContext = appContext;
+    }
+
+    public LatencyTraceRecorder getLatencyTraceRecorder() {
+        return latencyTrace;
+    }
+
+    /** Negotiated video format as a short label, for the trace metadata block. */
+    public String getVideoFormatName() {
+        int fmt = videoFormat;
+        String base;
+        if ((fmt & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
+            base = "H.264";
+        } else if ((fmt & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0) {
+            base = "HEVC";
+        } else if ((fmt & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0) {
+            base = "AV1";
+        } else {
+            base = "unknown(0x" + Integer.toHexString(fmt) + ")";
+        }
+        if ((fmt & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0) {
+            base += " 10-bit";
+        }
+        return base;
+    }
+
+    /** Name of the MediaCodec component in use, for the trace metadata block. */
+    public String getDecoderName() {
+        try {
+            MediaCodec codec = videoDecoder;
+            return codec != null ? codec.getName() : "none";
+        } catch (Throwable t) {
+            return "unknown";
+        }
+    }
+
+    @Override
+    public void submitTraceTimestamps(int frameNumber, int traceFlags, long traceLastPacketRxUs,
+                                      long traceHostCaptureRequestedUs, long traceHostCaptureCompleteUs,
+                                      long traceHostEncodeSubmitUs, long traceHostEncodeCompleteUs,
+                                      long traceHostTxPipelineEntryUs) {
+        LatencyTraceRecorder trace = latencyTrace;
+        if (trace == null) {
+            return;
+        }
+
+        trace.beginFrame(frameNumber, 0, traceFlags, traceLastPacketRxUs,
+                traceHostCaptureRequestedUs, traceHostCaptureCompleteUs,
+                traceHostEncodeSubmitUs, traceHostEncodeCompleteUs, traceHostTxPipelineEntryUs);
+        tracePendingFrame = true;
+    }
+
+    // --- Present-path instrumentation -----------------------------------------
+    //
+    // Every output buffer that is rendered or discarded must be accounted for.
+    // Hooking each releaseOutputBuffer() call site individually was tried and is
+    // not maintainable: there are twelve of them across three render paths, and
+    // missing one silently blanks whole columns for whatever configuration takes
+    // that path. Instead the PTS is captured once, at dequeue, into an array
+    // keyed by buffer index, and every release funnels through
+    // traceReleasingBuffer() which needs only the index the caller already has.
+    //
+    // Renderer thread only. MediaCodec buffer indices are small non-negative
+    // integers; anything outside the table is ignored rather than trusted.
+    private static final int TRACE_MAX_BUFFER_INDEX = 128;
+    private final long[] tracePtsByBufferIndex = new long[TRACE_MAX_BUFFER_INDEX];
+    private final boolean[] tracePtsByBufferIndexValid = new boolean[TRACE_MAX_BUFFER_INDEX];
+
+    /**
+     * Records t_decode_complete and remembers the PTS for this buffer index.
+     * Call immediately after every successful dequeueOutputBuffer().
+     * Renderer thread only.
+     */
+    private void traceDequeuedBuffer(int bufferIndex, long presentationTimeUs) {
+        LatencyTraceRecorder trace = latencyTrace;
+        if (trace == null) {
+            return;
+        }
+        // dequeueOutputBuffer() returns negative status codes (TRY_AGAIN_LATER,
+        // OUTPUT_FORMAT_CHANGED, ...) as well as buffer indices. Reject those
+        // here so callers can pass the raw return value without each having to
+        // remember the check; the BufferInfo is not populated in those cases and
+        // its presentationTimeUs would be garbage.
+        if (bufferIndex < 0) {
+            return;
+        }
+        if (bufferIndex < TRACE_MAX_BUFFER_INDEX) {
+            tracePtsByBufferIndex[bufferIndex] = presentationTimeUs;
+            tracePtsByBufferIndexValid[bufferIndex] = true;
+        }
+        trace.recordDecodeComplete(presentationTimeUs, MoonBridge.getMonotonicMicros());
+    }
+
+    /**
+     * Records t_present_called, or releases the PTS binding for a discarded
+     * buffer. Call immediately before every releaseOutputBuffer().
+     * Renderer thread only.
+     *
+     * @param rendered true if the buffer is being sent to the surface
+     */
+    private void traceReleasingBuffer(int bufferIndex, boolean rendered) {
+        LatencyTraceRecorder trace = latencyTrace;
+        if (trace == null) {
+            return;
+        }
+        if (bufferIndex < 0 || bufferIndex >= TRACE_MAX_BUFFER_INDEX
+                || !tracePtsByBufferIndexValid[bufferIndex]) {
+            return;
+        }
+        long pts = tracePtsByBufferIndex[bufferIndex];
+        tracePtsByBufferIndexValid[bufferIndex] = false;
+
+        if (rendered) {
+            trace.recordPresentCalled(pts, MoonBridge.getMonotonicMicros());
+        } else {
+            // Never presented, so it will never produce an onFrameRendered
+            // callback. Free the binding now or the table fills with dead keys.
+            trace.abandonFrame(pts);
+        }
+    }
+
+    /**
+     * Instrumented replacement for {@code videoDecoder.releaseOutputBuffer()}.
+     *
+     * <p>Every release in the renderer goes through one of these two overloads
+     * so no present path can be left unhooked. They are deliberately shaped as
+     * a drop-in expression substitution for the original call, so converting a
+     * call site cannot change statement structure.
+     *
+     * <p>Idempotent with respect to the trace: the buffer's PTS binding is
+     * consumed on the first call, so the retry inside
+     * {@link #releaseWithPolicy} does not double-record.
+     */
+    private void traceRelease(int bufferIndex, boolean render) {
+        traceReleasingBuffer(bufferIndex, render);
+        videoDecoder.releaseOutputBuffer(bufferIndex, render);
+    }
+
+    private void traceRelease(int bufferIndex, long renderTimestampNs) {
+        traceReleasingBuffer(bufferIndex, true);
+        videoDecoder.releaseOutputBuffer(bufferIndex, renderTimestampNs);
+    }
+
+    /**
+     * Records t_present_vsync from a genuine vsync signal.
+     *
+     * <p>SPEC.md §3 requires this to come from a Choreographer frame callback or
+     * EGL_ANDROID_get_frame_timestamps, explicitly NOT from the return of a
+     * present call. {@code releaseOutputBuffer()} returning tells us only that
+     * the buffer was handed to SurfaceFlinger, which is one to two refreshes
+     * before the pixels are actually latched.
+     *
+     * <p>So this combines two signals. {@code MediaCodec.OnFrameRenderedListener}
+     * says <em>which</em> frame (by PTS) reached the surface and roughly when.
+     * An independent Choreographer callback provides the real vsync instants.
+     * A frame rendered at time R is attributed to the first vsync at or after R.
+     *
+     * <p>The monitor owns its own HandlerThread, so it never perturbs the stock
+     * Choreographer path used for BALANCED frame pacing, which continues to run
+     * exactly as before.
+     */
+    private static final class TraceVsyncMonitor implements Choreographer.FrameCallback {
+        // Frames rendered but not yet attributed to a vsync. Bounded, because a
+        // stall must not grow it without limit. Guarded by its own monitor.
+        private static final int PENDING_CAPACITY = 64;
+        private final long[] pendingPtsUs = new long[PENDING_CAPACITY];
+        private final long[] pendingRenderNs = new long[PENDING_CAPACITY];
+        private int pendingCount;
+
+        // Scratch for doFrame()'s harvest, preallocated so the display thread
+        // never allocates. Monitor-thread only, but sized for the full pending
+        // array because a single vsync can harvest all of it.
+        private final long[] harvestPtsUs = new long[PENDING_CAPACITY];
+        private final long[] harvestRenderNs = new long[PENDING_CAPACITY];
+
+        private final LatencyTraceRecorder recorder;
+        private HandlerThread thread;
+        private Handler handler;
+        private volatile boolean stopping;
+
+        TraceVsyncMonitor(LatencyTraceRecorder recorder) {
+            this.recorder = recorder;
+        }
+
+        void start() {
+            thread = new HandlerThread("Video - Trace Vsync", Process.THREAD_PRIORITY_DISPLAY);
+            thread.start();
+            handler = new Handler(thread.getLooper());
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    Choreographer.getInstance().postFrameCallback(TraceVsyncMonitor.this);
+                }
+            });
+        }
+
+        void stop() {
+            stopping = true;
+            if (handler != null) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Choreographer.getInstance().removeFrameCallback(TraceVsyncMonitor.this);
+                    }
+                });
+            }
+            if (thread != null) {
+                thread.quitSafely();
+                try {
+                    thread.join();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                thread = null;
+                handler = null;
+            }
+        }
+
+        /**
+         * Called from MediaCodec's frame-rendered callback, on an arbitrary
+         * framework thread.
+         */
+        void onFrameRendered(long presentationTimeUs, long renderNanos) {
+            synchronized (this) {
+                if (pendingCount >= PENDING_CAPACITY) {
+                    // Oldest entry will never be matched; drop it so a stall
+                    // cannot wedge the queue permanently.
+                    System.arraycopy(pendingPtsUs, 1, pendingPtsUs, 0, PENDING_CAPACITY - 1);
+                    System.arraycopy(pendingRenderNs, 1, pendingRenderNs, 0, PENDING_CAPACITY - 1);
+                    pendingCount--;
+                }
+                pendingPtsUs[pendingCount] = presentationTimeUs;
+                pendingRenderNs[pendingCount] = renderNanos;
+                pendingCount++;
+            }
+        }
+
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (stopping) {
+                return;
+            }
+
+            // frameTimeNanos is System.nanoTime()-based, the same epoch as the
+            // render timestamps, so they are directly comparable.
+            //
+            // Single pass that partitions in place: entries whose render time is
+            // at or before this vsync are harvested, the rest are compacted back
+            // down. The previous version counted matches over the whole array but
+            // harvested the leading prefix, which only agreed when the array
+            // happened to be sorted by render time — nothing enforces that, and
+            // when it slipped a vsync was handed to the wrong PTS.
+            //
+            // Both scratch arrays are preallocated. Allocating per vsync would
+            // mean ~120 allocations/sec on the display thread, from the code
+            // whose entire purpose is not to disturb the thing it measures.
+            int harvested = 0;
+            synchronized (this) {
+                int keep = 0;
+                for (int i = 0; i < pendingCount; i++) {
+                    if (pendingRenderNs[i] <= frameTimeNanos) {
+                        harvestPtsUs[harvested] = pendingPtsUs[i];
+                        harvestRenderNs[harvested] = pendingRenderNs[i];
+                        harvested++;
+                    } else {
+                        pendingPtsUs[keep] = pendingPtsUs[i];
+                        pendingRenderNs[keep] = pendingRenderNs[i];
+                        keep++;
+                    }
+                }
+                pendingCount = keep;
+            }
+
+            if (harvested > 0) {
+                // Convert the vsync instant into the trace's monotonic
+                // microsecond epoch. System.nanoTime() and CLOCK_MONOTONIC share
+                // an epoch on Android, so this is a unit change only.
+                //
+                // The render timestamp is carried through alongside the vsync so
+                // the recorder can emit vsync_lag_us. Attribution to "the first
+                // vsync at or after the render" is still subject to when this
+                // callback is scheduled relative to MediaCodec's notification, so
+                // the lag column is what makes that residual uncertainty visible
+                // instead of silently folding it into the latency figure.
+                long vsyncUs = frameTimeNanos / 1000L;
+                for (int i = 0; i < harvested; i++) {
+                    recorder.recordPresentVsync(harvestPtsUs[i], harvestRenderNs[i] / 1000L, vsyncUs);
+                }
+            }
+
+            Choreographer.getInstance().postFrameCallback(this);
+        }
+    }
+
     // Helper: release with low-latency policy (immediate only when very near to now)
     private void releaseWithPolicy(int bufferIndex, long frameTimeNanos) {
         try {
             long now = System.nanoTime();
             boolean immediate = preferLowerDelays && (frameTimeNanos <= now + 300_000L);
             if (immediate) {
-                videoDecoder.releaseOutputBuffer(bufferIndex, true);
+                traceRelease(bufferIndex, true);
             } else {
-                videoDecoder.releaseOutputBuffer(bufferIndex, frameTimeNanos);
+                traceRelease(bufferIndex, frameTimeNanos);
             }
         } catch (Throwable t) {
             try {
                 // Fallback to immediate if timestamped release fails for any reason
-                videoDecoder.releaseOutputBuffer(bufferIndex, true);
+                traceRelease(bufferIndex, true);
             } catch (Throwable ignored) {}
         }
     }
+
     private int getOutputDequeueTimeoutUs(){ return preferLowerDelays ? Math.max(250, preferLowerDelaysTimeoutUs) : preferLowerDelaysTimeoutUs; }
 
     // Update stats using real decode time: enqueue->dequeue, instead of uptime - PTS
@@ -777,7 +1096,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         }
 
-        if (USE_FRAME_RENDER_TIME && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        // The listener is installed if either the legacy render-time stat is
+        // enabled or the latency trace needs to know which frame reached the
+        // surface. The trace uses it only to identify the frame; the vsync
+        // instant itself comes from the Choreographer (see TraceVsyncMonitor).
+        if ((USE_FRAME_RENDER_TIME || latencyTrace != null)
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             videoDecoder.setOnFrameRenderedListener(new MediaCodec.OnFrameRenderedListener() {
                 @Override
                 public void onFrameRendered(MediaCodec mediaCodec, long presentationTimeUs, long renderTimeNanos) {
@@ -786,6 +1110,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                         if (USE_FRAME_RENDER_TIME) {
                             activeWindowVideoStats.totalTimeMs += delta;
                         }
+                    }
+
+                    TraceVsyncMonitor monitor = traceVsyncMonitor;
+                    if (monitor != null) {
+                        monitor.onFrameRendered(presentationTimeUs, renderTimeNanos);
                     }
                 }
             }, null);
@@ -1094,7 +1423,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             // ULL: present at next VSYNC (no scheduling)
                             releaseWithPolicy(nextOutputBuffer, System.nanoTime());} else {
                             // Smooth/Balanced: keep timestamp scheduling
-                            videoDecoder.releaseOutputBuffer(nextOutputBuffer, frameTimeNanos);
+                            traceRelease(nextOutputBuffer, frameTimeNanos);
                         }
 
                     }
@@ -1114,7 +1443,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 } catch (IllegalStateException ignored) {
                     try {
                         // Try to avoid leaking the output buffer by releasing it without rendering
-                        videoDecoder.releaseOutputBuffer(nextOutputBuffer, false);
+                        traceRelease(nextOutputBuffer, false);
                     } catch (IllegalStateException e) {
                         // This will leak nextOutputBuffer, but there's really nothing else we can do
                         e.printStackTrace();
@@ -1217,18 +1546,33 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             int __last = -1;
                             long __lastPtsUs = -1L;
 
+                            // SPEC.md §3 t_decode_complete: the decoder has
+                            // produced this frame. Recorded for every drained
+                            // buffer, including the ones dropped below, so a
+                            // dropped frame still shows where it got to.
+                            traceDequeuedBuffer(__idx, __tmpInfo.presentationTimeUs);
+
                             // Drain non-blocking; keep only the newest buffer
                             while (__idx >= 0) {
                                 if (__last >= 0) {
-                                    try { videoDecoder.releaseOutputBuffer(__last, false); } catch (Throwable ignored) {}
+                                    // Superseded; traceRelease() frees its binding.
+                                    try { traceRelease(__last, false); } catch (Throwable ignored) {}
                                 }
                                 __last = __idx;
                                 __lastPtsUs = __tmpInfo.presentationTimeUs;
                                 __idx = videoDecoder.dequeueOutputBuffer(__tmpInfo, 0);
+                                if (__idx >= 0) {
+                                    traceDequeuedBuffer(__idx, __tmpInfo.presentationTimeUs);
+                                }
                             }
 
                             if (__last >= 0) {
                                 long __nowNs = System.nanoTime();
+
+                                // t_present_called is taken inside traceRelease(),
+                                // reached via releaseWithPolicy() below.
+                                // t_present_vsync is NOT taken here; it comes from
+                                // TraceVsyncMonitor.
                                 if (android.os.Build.VERSION.SDK_INT >= 21) {
                                     releaseWithPolicy(__last, System.nanoTime());} else {
                                     releaseWithPolicy(__last, System.nanoTime());}
@@ -1268,6 +1612,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             long presentationTimeUs = info.presentationTimeUs;
                             int lastIndex = outIndex;
 
+                            // SPEC.md §3 t_decode_complete for the main pacing
+                            // path. This path is reached whenever the latest-only
+                            // drain above returns TRY_AGAIN_LATER, which at 120 Hz
+                            // is routine, so leaving it unhooked blanked the
+                            // decode/present columns for an unbounded fraction of
+                            // frames at default settings.
+                            traceDequeuedBuffer(outIndex, presentationTimeUs);
+
                             numFramesOut++;
 
                             // aggiorna inter-arrival
@@ -1284,7 +1636,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
                                 // Get the last output buffer in the queue
                                 while ((outIndex = videoDecoder.dequeueOutputBuffer(info, getOutputDequeueTimeoutUs())) >= 0) {
-                                    videoDecoder.releaseOutputBuffer(lastIndex, false);
+                                    traceDequeuedBuffer(outIndex, info.presentationTimeUs);
+                                    traceRelease(lastIndex, false);
                                     frameDropped = true; // we're discarding the oldest one
 
                                     numFramesOut++;
@@ -1311,7 +1664,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                                 // ULL: present at next VSYNC (no scheduling)
                                                 releaseWithPolicy(lastIndex, System.nanoTime());} else {
                                                 // Smooth/Balanced: keep timestamp scheduling
-                                                videoDecoder.releaseOutputBuffer(lastIndex, /* render */ false);
+                                                traceRelease(lastIndex, /* render */ false);
                                             }
 
                                             frameDropped = true;
@@ -1324,7 +1677,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                             // ULL: present at next VSYNC (no scheduling)
                                             releaseWithPolicy(lastIndex, System.nanoTime());} else {
                                             // Smooth/Balanced: keep timestamp scheduling
-                                            videoDecoder.releaseOutputBuffer(lastIndex, nowNs);
+                                            traceRelease(lastIndex, nowNs);
                                         }
 
                                         lastPresentNs = nowNs;
@@ -1341,7 +1694,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                             if (android.os.Build.VERSION.SDK_INT >= 21) {
                                                 long __ts = System.nanoTime();
                                                 releaseWithPolicy(lastIndex, System.nanoTime());} else {
-                                                videoDecoder.releaseOutputBuffer(lastIndex, false);
+                                                traceRelease(lastIndex, false);
                                             }
                                         }
 
@@ -1384,7 +1737,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                                 // ULL: present at next VSYNC (no scheduling)
                                                 releaseWithPolicy(lastIndex, System.nanoTime());} else {
                                                 // Smooth/Balanced: keep timestamp scheduling
-                                                videoDecoder.releaseOutputBuffer(lastIndex, /* render */ false);
+                                                traceRelease(lastIndex, /* render */ false);
                                             }
 
                                             frameDropped = true;
@@ -1397,7 +1750,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                             // ULL: present at next VSYNC (no scheduling)
                                             releaseWithPolicy(lastIndex, System.nanoTime());} else {
                                             // Smooth/Balanced: keep timestamp scheduling
-                                            videoDecoder.releaseOutputBuffer(lastIndex, nowNs);
+                                            traceRelease(lastIndex, nowNs);
                                         }
 
                                         lastPresentNs = nowNs;
@@ -1415,7 +1768,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                             if (android.os.Build.VERSION.SDK_INT >= 21) {
                                                 long __ts = System.nanoTime();
                                                 releaseWithPolicy(lastIndex, System.nanoTime());} else {
-                                                videoDecoder.releaseOutputBuffer(lastIndex, false);
+                                                traceRelease(lastIndex, false);
                                             }
                                         }
 
@@ -1438,7 +1791,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 // refresh rate).
                                 if (outputBufferQueue.size() == OUTPUT_BUFFER_QUEUE_LIMIT) {
                                     try {
-                                        videoDecoder.releaseOutputBuffer(outputBufferQueue.take(), false);
+                                        traceRelease(outputBufferQueue.take(), false);
                                         frameDropped = true;
                                     } catch (InterruptedException e) {
                                         return;
@@ -1574,6 +1927,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     @Override
     public void start() {
+        // Started before the render threads so no rendered frame can arrive
+        // before there is somewhere to attribute it.
+        LatencyTraceRecorder trace = latencyTrace;
+        if (trace != null) {
+            traceVsyncMonitor = new TraceVsyncMonitor(trace);
+            traceVsyncMonitor.start();
+        }
+
         startRendererThread();
         startChoreographerThread();
     }
@@ -1639,10 +2000,56 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             // status back to true.
             Thread.currentThread().interrupt();
         }
+
+        // Stop the trace vsync monitor last, so it is still running while the
+        // final frames drain. stop() joins its HandlerThread.
+        //
+        // The trace is NOT serialised here. Two of its three producers are done
+        // at this point, but the video receive thread is not: stopVideoStream()
+        // calls VideoCallbacks.stop() -- this method -- before it interrupts and
+        // joins that thread, and with CAPABILITY_DIRECT_SUBMIT set it is the
+        // thread that runs beginFrame() and recordDecodeSubmit(). Flushing here
+        // would read the row arrays while it is still appending to them.
+        // The flush lives in cleanup(); see the comment there.
+        if (traceVsyncMonitor != null) {
+            traceVsyncMonitor.stop();
+            traceVsyncMonitor = null;
+        }
     }
 
     @Override
     public void cleanup() {
+        // Serialise the latency trace here, and only here.
+        //
+        // This is the one point where every condition holds. stopVideoStream()
+        // (VideoStream.c) calls VideoCallbacks.cleanup() as its LAST statement,
+        // after PltInterruptThread/PltJoinThread on the video receive thread, so
+        // all three producers named in LatencyTraceRecorder's javadoc are done:
+        // the renderer thread and the vsync monitor were joined in stop(), and
+        // the receive thread is joined by the caller before we get here.
+        //
+        // It is also still before destroyControlStream(), which runs two stages
+        // later in LiStopConnection() and deletes the clock-sync mutex that the
+        // metadata block reads through.
+        //
+        // stop() is too early -- it runs before the receive thread is joined.
+        // Game.onStop() is far too early -- stopConnection() hands conn.stop()
+        // to a detached thread and returns immediately.
+        //
+        // Runs before videoDecoder.release() because the metadata block asks the
+        // decoder for its component name.
+        LatencyTraceRecorder trace = latencyTrace;
+        if (trace != null && traceFlushContext != null) {
+            try {
+                // The negotiated codec and the chosen component are only known
+                // here, not when Game installed the recorder.
+                trace.setDecoderInfo(getVideoFormatName(), getDecoderName());
+                trace.flushToCsv(traceFlushContext);
+            } catch (Throwable t) {
+                LimeLog.severe("Latency trace: flush failed: " + t.getMessage());
+            }
+        }
+
         videoDecoder.release();
     }
 
@@ -1686,6 +2093,15 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
             // Track enqueue time for this PTS
             try { enqueueNsByPtsUs.put(timestampUs, System.nanoTime()); } catch (Throwable ignored) {}
+
+            // SPEC.md §3 t_decode_submit. Recorded immediately after the buffer
+            // is accepted so a queueInputBuffer() that throws never produces a
+            // row claiming the frame was submitted.
+            LatencyTraceRecorder trace = latencyTrace;
+            if (trace != null && tracePendingFrame) {
+                tracePendingFrame = false;
+                trace.recordDecodeSubmit(timestampUs, MoonBridge.getMonotonicMicros());
+            }
 
             // We need a new buffer now
             nextInputBufferIndex = -1;

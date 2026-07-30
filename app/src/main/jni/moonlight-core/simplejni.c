@@ -223,6 +223,54 @@ Java_com_limelight_nvstream_jni_MoonBridge_getEstimatedRttInfo(JNIEnv *env, jcla
     return ((uint64_t)rtt << 32U) | variance;
 }
 
+// Fills a caller-supplied long[6] with the latency trace clock sync state:
+// [0] offset us (host clock minus client clock), [1] best sample RTT us,
+// [2] accepted sample count, [3] divergence event count, [4] 1 if the offset is
+// currently usable, [5] unmatched response count. Returns false and leaves the
+// array untouched if it is too small. The array is allocated once by the
+// caller, so this can be polled without generating garbage.
+JNIEXPORT jboolean JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_getClockSyncInfo(JNIEnv *env, jclass clazz, jlongArray out) {
+    int64_t offsetUs = 0;
+    uint32_t bestRttUs = 0, sampleCount = 0, divergenceEvents = 0, unmatched = 0;
+    bool valid;
+    jlong values[6];
+
+    if (out == NULL || (*env)->GetArrayLength(env, out) < 6) {
+        return JNI_FALSE;
+    }
+
+    valid = LiGetClockSyncInfo(&offsetUs, &bestRttUs, &sampleCount, &divergenceEvents, &unmatched);
+
+    values[0] = (jlong)offsetUs;
+    values[1] = (jlong)bestRttUs;
+    values[2] = (jlong)sampleCount;
+    values[3] = (jlong)divergenceEvents;
+    values[4] = valid ? 1 : 0;
+    values[5] = (jlong)unmatched;
+
+    (*env)->SetLongArrayRegion(env, out, 0, 6, values);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_getLatencyTraceEnabled(JNIEnv *env, jclass clazz) {
+    return LiGetLatencyTraceEnabled() ? JNI_TRUE : JNI_FALSE;
+}
+
+// Frame timestamp extension version seen on the wire, 0 if none was parsed.
+JNIEXPORT jint JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_getFrameTraceExtVersion(JNIEnv *env, jclass clazz) {
+    return (jint)LiGetFrameTraceExtVersion();
+}
+
+// Monotonic microsecond clock shared with the native trace timestamps, so Java
+// and C stages land on the same timeline without a conversion step.
+JNIEXPORT jlong JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_getMonotonicMicros(JNIEnv *env, jclass clazz) {
+    return (jlong)LiGetMicros();
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_limelight_nvstream_jni_MoonBridge_getLaunchUrlQueryParameters(JNIEnv *env, jclass clazz) {
     return (*env)->NewStringUTF(env, LiGetLaunchUrlQueryParameters());

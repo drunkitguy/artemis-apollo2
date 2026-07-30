@@ -31,6 +31,7 @@ public class StreamConfiguration {
     private int colorSpace;
     private boolean persistGamepadsAfterDisconnect;
     private boolean enableUltraLowLatency;
+    private boolean latencyTraceEnabled;
 
     public static class Builder {
         private StreamConfiguration config = new StreamConfiguration();
@@ -133,6 +134,13 @@ public class StreamConfiguration {
 
         public StreamConfiguration.Builder setColorRange(int colorRange) {
             config.colorRange = colorRange;
+            return this;
+        }
+
+        // Requests the Apollo 2.0 per-frame latency trace. Off unless explicitly
+        // enabled; also requires the host to advertise support.
+        public StreamConfiguration.Builder setLatencyTraceEnabled(boolean enabled) {
+            config.latencyTraceEnabled = enabled;
             return this;
         }
 
@@ -249,6 +257,10 @@ public class StreamConfiguration {
 
     public int getColorRange() {
         return colorRange;
+    }
+
+    public boolean getLatencyTraceEnabled() {
+        return latencyTraceEnabled;
     }
 
     public int getColorSpace() {
