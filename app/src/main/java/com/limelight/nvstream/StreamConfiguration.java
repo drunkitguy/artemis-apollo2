@@ -31,6 +31,9 @@ public class StreamConfiguration {
     private int colorSpace;
     private boolean persistGamepadsAfterDisconnect;
     private boolean enableUltraLowLatency;
+    // 0 = library default (1 ms), negative = send strictly on arrival,
+    // positive = explicit interval in milliseconds.
+    private int inputBatchingIntervalMs;
 
     public static class Builder {
         private StreamConfiguration config = new StreamConfiguration();
@@ -146,6 +149,14 @@ public class StreamConfiguration {
             return this;
         }
 
+        // Minimum spacing between mouse motion, gamepad and pen packets.
+        // 0 keeps the library default of 1 ms; a negative value sends strictly
+        // on arrival. See STREAM_CONFIGURATION.inputBatchingIntervalMs.
+        public StreamConfiguration.Builder setInputBatchingIntervalMs(int intervalMs) {
+            config.inputBatchingIntervalMs = intervalMs;
+            return this;
+        }
+
         public StreamConfiguration build() {
             return config;
         }
@@ -237,6 +248,10 @@ public class StreamConfiguration {
 
     public int getAttachedGamepadMask() {
         return attachedGamepadMask;
+    }
+
+    public int getInputBatchingIntervalMs() {
+        return inputBatchingIntervalMs;
     }
 
     public boolean getPersistGamepadsAfterDisconnect() {

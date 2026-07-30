@@ -698,6 +698,14 @@
     <string name="summary_checkbox_remember_zoom_pan">Save changes to zoom and pan position between sessions</string>
     <string name="title_checkbox_enable_perf_overlay_bottom">Move overlay to bottom</string>
     <string name="summary_checkbox_enable_perf_overlay_bottom">Useful when Display in Top Center and Lite mode are enabled during non-native resolution streaming.</string>
+    <string name="input_batching_default">Default (1 ms)</string>
+    <string name="input_batching_2ms">2 ms</string>
+    <string name="input_batching_4ms">4 ms</string>
+    <string name="input_batching_8ms">8 ms</string>
+    <string name="input_batching_16ms">16 ms</string>
+    <string name="input_batching_immediate">Send on arrival</string>
+    <string name="title_list_input_batching_interval">Input packet spacing</string>
+    <string name="summary_list_input_batching_interval">Minimum gap between mouse, gamepad and pen packets. Events inside the gap are merged, not dropped. The default never delays a 1000 Hz mouse, but does delay faster ones by up to 1 ms. "Send on arrival" removes that delay and raises the packet rate.</string>
     <string name="title_edit_profile">Edit Profile</string>
     <string name="profile_manager_new_profile">New Profile</string>
     <string name="profile_manager_profile_not_found">Profile not found</string>

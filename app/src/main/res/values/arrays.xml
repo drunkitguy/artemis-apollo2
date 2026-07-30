@@ -32,6 +32,28 @@
         <item>120</item>
     </string-array>
 
+    <!--
+      Values are the raw millisecond interval passed to moonlight-common-c:
+      0 means "use the library default of 1 ms" and -1 means "send on arrival".
+      They are stored as strings because ListPreference requires it.
+    -->
+    <string-array name="input_batching_names">
+        <item>@string/input_batching_default</item>
+        <item>@string/input_batching_2ms</item>
+        <item>@string/input_batching_4ms</item>
+        <item>@string/input_batching_8ms</item>
+        <item>@string/input_batching_16ms</item>
+        <item>@string/input_batching_immediate</item>
+    </string-array>
+    <string-array name="input_batching_values" translatable="false">
+        <item>0</item>
+        <item>2</item>
+        <item>4</item>
+        <item>8</item>
+        <item>16</item>
+        <item>-1</item>
+    </string-array>
+
     <string-array name="video_scale_mode_names">
         <item>@string/video_scale_mode_fit</item>
         <item>@string/video_scale_mode_fill</item>
