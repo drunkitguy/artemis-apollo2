@@ -31,6 +31,8 @@ public class StreamConfiguration {
     private int colorSpace;
     private boolean persistGamepadsAfterDisconnect;
     private boolean enableUltraLowLatency;
+    // Ceiling in ms for the adaptive late-frame tolerance; 0 disables it.
+    private int adaptiveLateFrameToleranceMaxMs;
 
     public static class Builder {
         private StreamConfiguration config = new StreamConfiguration();
@@ -146,6 +148,12 @@ public class StreamConfiguration {
             return this;
         }
 
+        // Ceiling in ms for the adaptive late-frame tolerance. 0 disables it (default).
+        public StreamConfiguration.Builder setAdaptiveLateFrameToleranceMaxMs(int maxMs) {
+            config.adaptiveLateFrameToleranceMaxMs = maxMs;
+            return this;
+        }
+
         public StreamConfiguration build() {
             return config;
         }
@@ -233,6 +241,10 @@ public class StreamConfiguration {
     
     public int getSupportedVideoFormats() {
         return supportedVideoFormats;
+    }
+
+    public int getAdaptiveLateFrameToleranceMaxMs() {
+        return adaptiveLateFrameToleranceMaxMs;
     }
 
     public int getAttachedGamepadMask() {

@@ -63,6 +63,48 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     public void setPreferLowerDelaysTimeoutUs(int us) { this.preferLowerDelaysTimeoutUs = Math.max(0, us); }
 
 
+    // --- Adaptive late-frame tolerance (SPEC.md §4 Item C) --------------------
+    //
+    // Extra lateness the renderer should tolerate before discarding a frame as
+    // stale, in nanoseconds, sized from measured inter-arrival jitter by the
+    // estimator in moonlight-common-c.
+    //
+    // This is deliberately NOT a presentation delay. See the design note in
+    // artifacts/status-client.md: a constant delay does not reduce jitter (a
+    // delay line preserves variance exactly), and in a pipeline that also
+    // discards stale frames it is strictly harmful, because the delay pushes
+    // frames toward the very threshold that discards them.
+    //
+    // It is spent two different ways, because the two pacing paths differ:
+    //   LATENCY  - widens the staleness threshold, so frames late by less than
+    //              the measured jitter are presented instead of thrown away.
+    //              There is no playout clock here, so depth is not available.
+    //   BALANCED - becomes real queue depth, via adaptiveOutputQueueLimit().
+    //              That path drains on a Choreographer schedule, so depth
+    //              genuinely reduces presentation variance.
+    //
+    // NOT free when non-zero. frameAgeNs is pipeline residency, and the discard
+    // this widens is also the pipeline's only backlog-drain mechanism, so
+    // suppressing it lets the queue stabilise deeper and steady-state
+    // end-to-end latency rise by up to the tolerance. The trade is frame
+    // retention for latency, bounded by the configured ceiling. It costs
+    // nothing only while the measured tolerance is zero.
+    //
+    // Written on the video receive thread as each frame is submitted, read on
+    // the renderer thread at the drop decision. A plain volatile is the right
+    // primitive: the value moves slowly, so a one-frame-stale read is
+    // indistinguishable from a current one, and a lock on the present path would
+    // cost more than the staleness.
+    //
+    // Zero unless the feature is enabled, in which case every use below adds
+    // zero and behaviour is byte-identical to stock.
+    private volatile long jitterToleranceNs;
+
+    @Override
+    public void setLateFrameToleranceUs(int targetUs) {
+        jitterToleranceNs = targetUs * 1000L;
+    }
+
     // Helper: release with low-latency policy (immediate only when very near to now)
     private void releaseWithPolicy(int bufferIndex, long frameTimeNanos) {
         try {
@@ -184,6 +226,104 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private long lastNetDataNum;
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
     private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
+
+    /**
+     * Starting upper bound on the BALANCED output queue depth.
+     *
+     * <p>Every queued index is an output buffer held away from the decoder, and
+     * MediaCodec's pool is small and fixed. But <b>Android exposes no way to
+     * learn how large it is</b>: {@code getOutputBuffers()} returns nothing
+     * countable in Surface mode, {@code CodecCapabilities} has no buffer-count
+     * field, the count is negotiated privately between the component and the
+     * Surface's BufferQueue, and no CTS rule mandates a floor. Artemis passes no
+     * buffer-count key at {@code configure()} either, so it neither knows nor
+     * controls the pool.
+     *
+     * <p>So this is a <em>starting point</em>, not an assumption to be trusted.
+     * {@link #noteOutputBufferStarvation()} ratchets it down toward
+     * {@link #OUTPUT_BUFFER_QUEUE_LIMIT} whenever the decoder actually shows
+     * signs of running out, which turns a guess about a device-specific quantity
+     * into a bound measured on the device in front of us.
+     */
+    private static final int OUTPUT_BUFFER_QUEUE_MAX = 4;
+
+    /**
+     * Consecutive dequeue failures at full depth before the ceiling drops a
+     * slot. Large enough not to react to an isolated hiccup, small enough to
+     * correct within about a second at 120 Hz.
+     */
+    private static final int OUTPUT_STARVATION_THRESHOLD = 8;
+
+    /**
+     * Discovered ceiling for the BALANCED queue. Written on the renderer thread
+     * by {@link #noteOutputBufferStarvation()}, read there and (for the teardown
+     * log) on the connection teardown thread, hence volatile. Monotonically
+     * non-increasing within a session.
+     */
+    private volatile int outputQueueCeiling = OUTPUT_BUFFER_QUEUE_MAX;
+    private int outputStarvationStreak;
+    private boolean outputQueueCeilingLatched;
+
+    /**
+     * Called when {@code dequeueOutputBuffer()} fails to produce a buffer.
+     *
+     * <p>Only counts it as starvation if we were holding the queue at its
+     * current ceiling at the time — otherwise the decoder simply had nothing
+     * ready, which is normal and says nothing about the pool size. Renderer
+     * thread only.
+     */
+    private void noteOutputBufferStarvation() {
+        if (outputQueueCeilingLatched || outputQueueCeiling <= OUTPUT_BUFFER_QUEUE_LIMIT) {
+            return;
+        }
+
+        // Not our doing unless we are actually holding buffers back.
+        if (outputBufferQueue.size() < outputQueueCeiling) {
+            outputStarvationStreak = 0;
+            return;
+        }
+
+        if (++outputStarvationStreak < OUTPUT_STARVATION_THRESHOLD) {
+            return;
+        }
+
+        outputStarvationStreak = 0;
+        outputQueueCeiling--;
+        LimeLog.warning("Decoder starved while holding " + (outputQueueCeiling + 1)
+                + " output buffers; reducing BALANCED queue ceiling to " + outputQueueCeiling);
+
+        if (outputQueueCeiling <= OUTPUT_BUFFER_QUEUE_LIMIT) {
+            outputQueueCeilingLatched = true;
+            LimeLog.warning("BALANCED queue ceiling latched at the stock "
+                    + OUTPUT_BUFFER_QUEUE_LIMIT + "; this device will not hold extra output buffers");
+        }
+    }
+
+    /**
+     * BALANCED queue depth, sized from the measured late-frame tolerance.
+     *
+     * <p>Returns exactly {@link #OUTPUT_BUFFER_QUEUE_LIMIT} whenever the feature
+     * is off or the measurement has settled at zero, so the default path is
+     * unchanged. Each additional whole frame interval of measured tolerance buys
+     * one more slot, capped at {@link #OUTPUT_BUFFER_QUEUE_MAX}.
+     *
+     * <p>Renderer thread only; reads one volatile.
+     */
+    private int adaptiveOutputQueueLimit(long framePeriodNs) {
+        long tolerance = jitterToleranceNs;
+        if (tolerance <= 0 || framePeriodNs <= 0) {
+            return OUTPUT_BUFFER_QUEUE_LIMIT;
+        }
+
+        // Round up: a tolerance smaller than one frame interval still cannot be
+        // absorbed by anything less than one extra slot.
+        int extraSlots = (int) ((tolerance + framePeriodNs - 1) / framePeriodNs);
+        int limit = OUTPUT_BUFFER_QUEUE_LIMIT + extraSlots;
+
+        // Bound by what this device has actually shown it can sustain, not by a
+        // constant. See OUTPUT_BUFFER_QUEUE_MAX.
+        return Math.min(limit, outputQueueCeiling);
+    }
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
@@ -1256,11 +1396,22 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             tryAgainStreak++;
                             int backoffUs = (tryAgainStreak <= 2) ? 250 : 500;
                             outIndex = videoDecoder.dequeueOutputBuffer(info, backoffUs);
+
+                            if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                                // Both attempts came back empty. If we were holding the
+                                // BALANCED queue at its ceiling, that is evidence we are
+                                // withholding more output buffers than this decoder can
+                                // spare, so let the ceiling discover the real bound.
+                                noteOutputBufferStarvation();
+                            }
                         } else {
                             tryAgainStreak = 0;
                         }
 
                         if (outIndex >= 0) {
+                            // The decoder produced a buffer at the current depth, so any
+                            // partial starvation streak was transient.
+                            outputStarvationStreak = 0;
                             // --- flags per gestire le statistiche in modo robusto ---
                             boolean statsUpdated = false;
                             boolean frameDropped = false;
@@ -1299,12 +1450,24 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                         final long nowNs = System.nanoTime();
                                         final long frameAgeNs = nowNs - (presentationTimeUs * 1000L);
 
+                                        // One jitter notion, not two. When the adaptive estimator is
+                                        // on, its measured value also replaces ewmaJitterNs in the
+                                        // shaping term, so the pipeline does not carry a real
+                                        // estimate and a never-updated constant disagreeing about
+                                        // the same quantity. See the design note in status-client.md.
+                                        final double jitterNs = (jitterToleranceNs > 0)
+                                                ? (double) jitterToleranceNs : ewmaJitterNs;
+
                                         // Smoothness: tighter threshold 1.05..1.2×
-                                        double pressure = Math.min(1.0, (ewmaJitterNs / vsyncPeriodNs) + (recentDrops * 0.1));
+                                        double pressure = Math.min(1.0, (jitterNs / vsyncPeriodNs) + (recentDrops * 0.1));
                                         double factorSmooth = 1.2 - 0.15 * (1.0 - pressure);
                                         factorSmooth = Math.max(1.05, Math.min(1.2, factorSmooth));
 
-                                        long dropThresholdSmoothNs = (long)(periodNs * factorSmooth);
+                                        // The adaptive tolerance is added outside the factor because
+                                        // the factor is clamped to 1.2x the frame period (~10 ms at
+                                        // 120 Hz) and so cannot express the range the estimator
+                                        // needs. Zero when the feature is off.
+                                        long dropThresholdSmoothNs = (long)(periodNs * factorSmooth) + jitterToleranceNs;
 
                                         if (frameAgeNs >= dropThresholdSmoothNs) {
                                             if (preferLowerDelays) {
@@ -1361,12 +1524,23 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                         double mismatch = Math.abs((1_000_000_000.0 / streamHz) - (1_000_000_000.0 / Math.max(1.0, displayHz))) / vsyncPeriodNs;
                                         mismatch = Math.min(2.0, mismatch);
 
-                                        double factorLatency = 1.02 + 0.13 * (0.5 * (ewmaJitterNs / vsyncPeriodNs)
+                                        // See the note at the smoothness threshold above: when the
+                                        // adaptive estimator is on it owns the jitter term here too.
+                                        final double jitterNs = (jitterToleranceNs > 0)
+                                                ? (double) jitterToleranceNs : ewmaJitterNs;
+
+                                        double factorLatency = 1.02 + 0.13 * (0.5 * (jitterNs / vsyncPeriodNs)
                                                 + 0.3 * backPressure
                                                 + 0.2 * mismatch);
                                         factorLatency = Math.max(MIN_FACTOR, Math.min(1.15, factorLatency));
 
-                                        long dropThresholdNs = (long)(periodNs * factorLatency);
+                                        // This is the fix for the defect that made the feature a pure
+                                        // latency tax: LATENCY is the default pacing mode, and its
+                                        // threshold discarded exactly the late frames the estimator
+                                        // exists to rescue, before any tolerance was considered.
+                                        // Adding the tolerance here is what makes the branch do
+                                        // anything useful. Zero when the feature is off.
+                                        long dropThresholdNs = (long)(periodNs * factorLatency) + jitterToleranceNs;
 
                                         final long sinceLastPresent = (lastPresentNs == 0L) ? Long.MAX_VALUE : (nowNs - lastPresentNs);
                                         final boolean dropCooldownOk = (nowNs - lastDropNs) >= (periodNs / 2);
@@ -1436,7 +1610,23 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 // NB: We have to do this on the producer side because the consumer may not
                                 // run for a while (if there is a huge mismatch between stream FPS and display
                                 // refresh rate).
-                                if (outputBufferQueue.size() == OUTPUT_BUFFER_QUEUE_LIMIT) {
+                                //
+                                // SPEC.md §4 Item C's "frame queue depth logic and its
+                                // current floor" is this limit. Unlike the LATENCY path,
+                                // BALANCED has a real playout clock -- the Choreographer
+                                // thread presents at most one queued frame per vsync at
+                                // frameTimeNanos -- so here the measured tolerance can be
+                                // spent as actual queue depth, which is what a jitter
+                                // buffer is. Deepening a queue that is drained on a fixed
+                                // schedule does reduce presentation variance; adding a
+                                // constant delay, which is what the LATENCY path would
+                                // have to do, does not.
+                                //
+                                // This needs no new clock, so it is not SPEC.md §5.3
+                                // Item D: that item is host-to-client phase lock across
+                                // two machines. This is client-local depth on a path that
+                                // already owns its playout clock.
+                                if (outputBufferQueue.size() >= adaptiveOutputQueueLimit(streamPeriodNs)) {
                                     try {
                                         videoDecoder.releaseOutputBuffer(outputBufferQueue.take(), false);
                                         frameDropped = true;
@@ -1643,6 +1833,16 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     @Override
     public void cleanup() {
+        // Report the depth this device actually sustained. This is the "settled
+        // at" value: with the tolerance enabled on the BALANCED path it is a
+        // measured bound on how many output buffers the decoder would spare,
+        // which is not obtainable from any Android API. One line at teardown,
+        // never during the stream.
+        if (outputQueueCeiling < OUTPUT_BUFFER_QUEUE_MAX) {
+            LimeLog.warning("BALANCED output queue ceiling settled at " + outputQueueCeiling
+                    + " (started at " + OUTPUT_BUFFER_QUEUE_MAX + ")");
+        }
+
         videoDecoder.release();
     }
 

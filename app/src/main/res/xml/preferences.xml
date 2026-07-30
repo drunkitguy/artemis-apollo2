@@ -914,6 +914,14 @@
             android:summary="@string/summary_checkbox_enable_perf_overlay_bottom"
             android:title="@string/title_checkbox_enable_perf_overlay_bottom"
             app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="0"
+            android:entries="@array/late_frame_tolerance_names"
+            android:entryValues="@array/late_frame_tolerance_values"
+            android:key="list_late_frame_tolerance"
+            android:summary="@string/summary_list_late_frame_tolerance"
+            android:title="@string/title_list_late_frame_tolerance"
+            app:iconSpaceReserved="false" />
 
         <CheckBoxPreference
             android:defaultValue="false"

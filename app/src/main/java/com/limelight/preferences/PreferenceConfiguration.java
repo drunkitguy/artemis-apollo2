@@ -277,6 +277,9 @@ public class PreferenceConfiguration {
     public boolean enablePerfOverlayLiteDialog;
 
     public boolean enablePerfOverlayBottom;
+    // Ceiling in ms for the adaptive late-frame tolerance (SPEC.md §4 Item C).
+    // 0 disables it, which is the default and is stock behaviour.
+    public int adaptiveLateFrameToleranceMaxMs;
 
     public boolean enableLatencyToast;
     public boolean enableBackMenu;
@@ -924,6 +927,12 @@ private static int getFramePacingValue(Context context) {
         config.enablePerfLogging = prefs.getBoolean(ENABLE_PERF_LOGGING, DEFAULT_ENABLE_PERF_LOGGING);
         config.enablePerfOverlayLite = prefs.getBoolean("checkbox_enable_perf_overlay_lite",DEFAULT_ENABLE_PERF_OVERLAY);
         config.enablePerfOverlayBottom = prefs.getBoolean("checkbox_enable_perf_overlay_bottom",DEFAULT_PERF_OVERLAY_BOTTOM);
+        try {
+            config.adaptiveLateFrameToleranceMaxMs = Integer.parseInt(
+                    prefs.getString("list_late_frame_tolerance", "0"));
+        } catch (NumberFormatException e) {
+            config.adaptiveLateFrameToleranceMaxMs = 0;
+        }
         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);
         config.mouseNavButtons = prefs.getBoolean(MOUSE_NAV_BUTTONS_STRING, DEFAULT_MOUSE_NAV_BUTTONS);

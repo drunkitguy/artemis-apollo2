@@ -218,8 +218,12 @@ public class MoonBridge {
     //todo 不显示画面
     public static int bridgeDrSubmitDecodeUnit(byte[] decodeUnitData, int decodeUnitLength, int decodeUnitType,
                                                int frameNumber, int frameType, char frameHostProcessingLatency,
-                                               long receiveTimeMs, long enqueueTimeMs) {
+                                               long receiveTimeMs, long enqueueTimeMs,
+                                               int lateFrameToleranceUs) {
         if (videoRenderer != null) {
+            // Zero unless the adaptive late-frame tolerance is enabled, so a
+            // stock session just stores a zero the renderer never applies.
+            videoRenderer.setLateFrameToleranceUs(lateFrameToleranceUs);
             return videoRenderer.submitDecodeUnit(decodeUnitData, decodeUnitLength,
                     decodeUnitType, frameNumber, frameType, frameHostProcessingLatency, receiveTimeMs, enqueueTimeMs);
         }
@@ -348,7 +352,8 @@ public class MoonBridge {
                                               int clientRefreshRateX100,
                                               byte[] riAesKey, byte[] riAesIv,
                                               int videoCapabilities,
-                                              int colorSpace, int colorRange);
+                                              int colorSpace, int colorRange,
+                                              int adaptiveLateFrameToleranceMaxMs);
 
     public static native void stopConnection();
 
