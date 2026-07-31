@@ -698,6 +698,16 @@
     <string name="summary_checkbox_remember_zoom_pan">Save changes to zoom and pan position between sessions</string>
     <string name="title_checkbox_enable_perf_overlay_bottom">Move overlay to bottom</string>
     <string name="summary_checkbox_enable_perf_overlay_bottom">Useful when Display in Top Center and Lite mode are enabled during non-native resolution streaming.</string>
+    <string name="title_export_latency_trace">Export latency trace</string>
+    <string name="summary_export_latency_trace">Share a recorded trace CSV, or copy it into Downloads where a USB file transfer can see it. Traces are otherwise stored where no other app can reach them.</string>
+    <string name="action_trace_share">Share…</string>
+    <string name="action_trace_save_downloads">Save to Downloads</string>
+    <string name="toast_no_latency_traces">No latency traces recorded yet. Enable the per-frame latency trace, then stream.</string>
+    <string name="toast_trace_saved">Saved to %1$s</string>
+    <string name="toast_trace_export_failed">Could not export the trace</string>
+    <string name="toast_trace_no_share_target">No app available to receive the file</string>
+    <string name="toast_trace_downloads_unsupported">Saving to Downloads needs Android 10 or newer; use Share instead</string>
+    <string name="toast_trace_written">Latency trace saved. Export it from Settings → Export latency trace.</string>
     <string name="title_checkbox_enable_latency_trace">Per-frame latency trace</string>
     <string name="summary_checkbox_enable_latency_trace">Records a per-frame timing trace and writes a CSV when the stream ends. Requires a host that supports it. For debugging only; leave off for normal use.</string>
     <string name="title_edit_profile">Edit Profile</string>

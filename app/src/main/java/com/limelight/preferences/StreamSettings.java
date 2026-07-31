@@ -2,7 +2,9 @@ package com.limelight.preferences;
 
 import static com.limelight.utils.ServerHelper.getActiveDisplay;
 
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -54,11 +56,13 @@ import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardControlle
 import com.limelight.binding.video.MediaCodecHelper;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.FileUriUtils;
+import com.limelight.utils.LatencyTraceExporter;
 import com.limelight.utils.PerformanceDataTracker;
 import com.limelight.utils.UiHelper;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.List;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -299,6 +303,75 @@ public class StreamSettings extends AppCompatActivity {
             // Update the preference with the new list
             pref.setEntries(entries);
             pref.setEntryValues(entryValues);
+        }
+
+        /**
+         * Lists the latency traces on the device and offers each one to the
+         * share sheet or to the public Downloads folder.
+         *
+         * <p>Both routes exist because the trace directory is external
+         * app-specific storage, which Android 11+ hides from MTP and from every
+         * other app. Without this the file is unreachable on a device with no
+         * working adb, which is the situation this was built for.
+         */
+        private void showLatencyTraceExportDialog(final Context context) {
+            final List<File> traces = LatencyTraceExporter.listTraces(context);
+
+            if (traces.isEmpty()) {
+                Toast.makeText(context, R.string.toast_no_latency_traces, Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            final String[] labels = new String[traces.size()];
+            for (int i = 0; i < traces.size(); i++) {
+                labels[i] = LatencyTraceExporter.describe(context, traces.get(i));
+            }
+
+            new AlertDialog.Builder(context)
+                    .setTitle(R.string.title_export_latency_trace)
+                    .setItems(labels, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            showLatencyTraceActionDialog(context, traces.get(which));
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+        }
+
+        private void showLatencyTraceActionDialog(final Context context, final File trace) {
+            final boolean canSaveToDownloads = LatencyTraceExporter.isSaveToDownloadsSupported();
+
+            // Only offer what this API level can actually do. Below API 29 the
+            // Downloads copy would need WRITE_EXTERNAL_STORAGE, which this app
+            // does not declare, so the entry is omitted rather than failing.
+            final String[] actions = canSaveToDownloads
+                    ? new String[] {
+                            context.getString(R.string.action_trace_share),
+                            context.getString(R.string.action_trace_save_downloads) }
+                    : new String[] {
+                            context.getString(R.string.action_trace_share) };
+
+            new AlertDialog.Builder(context)
+                    .setTitle(trace.getName())
+                    .setItems(actions, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            if (which == 0) {
+                                LatencyTraceExporter.share(context, trace);
+                            }
+                            else {
+                                String path = LatencyTraceExporter.saveToDownloads(context, trace);
+                                if (path != null) {
+                                    Toast.makeText(context,
+                                            context.getString(R.string.toast_trace_saved, path),
+                                            Toast.LENGTH_LONG).show();
+                                }
+                            }
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
         }
 
         private void resetBitrateToDefault(SharedPreferences prefs, String res, String fps) {
@@ -764,6 +837,21 @@ public class StreamSettings extends AppCompatActivity {
                         intent.setType("application/json");
                         startActivityForResult(intent, READ_REQUEST_SPECIAL_CODE);
                         return false;
+                    }
+                });
+            }
+
+            // Deliberately NOT gated on checkbox_enable_latency_trace. Traces
+            // already on disk must stay retrievable after the user turns the
+            // recorder back off, and on a device without adb this preference is
+            // the only way to reach them at all.
+            _pref = findPreference("export_latency_trace");
+            if (_pref != null) {
+                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        showLatencyTraceExportDialog(preference.getContext());
+                        return true;
                     }
                 });
             }

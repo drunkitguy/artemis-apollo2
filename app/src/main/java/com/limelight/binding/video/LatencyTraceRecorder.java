@@ -84,6 +84,24 @@ public class LatencyTraceRecorder {
      */
     public static final int CAPACITY = 262144;
 
+    /** Filename shape, shared with the exporter so the two cannot drift apart. */
+    public static final String FILE_PREFIX = "apollo2-latency-trace-";
+    public static final String FILE_SUFFIX = ".csv";
+
+    /**
+     * Directory traces are written to.
+     *
+     * <p>External app-specific storage, which needs no permission on any API
+     * level. Note this is <em>not</em> reachable over MTP on Android 11+, nor
+     * from other apps — see {@code LatencyTraceExporter}, which exists precisely
+     * because a file written here is otherwise unreachable on a device without
+     * working adb.
+     */
+    public static File getTraceDirectory(Context context) {
+        File dir = context.getExternalFilesDir(null);
+        return dir != null ? dir : context.getFilesDir();
+    }
+
     /** Row flag bits, mirrored into the CSV so a consumer can filter. */
     public static final int FLAG_HOST_VALID = 0x01;
     public static final int FLAG_LAST_PACKET_RX_VALID = 0x02;
@@ -179,6 +197,7 @@ public class LatencyTraceRecorder {
     private boolean ultraLowLatency;
     private String decoderName = "?";
     private String networkPath = "?";
+    private String rendererDiagnostics = "";
 
     public LatencyTraceRecorder() {
         for (int i = 0; i < PTS_TABLE_SIZE; i++) {
@@ -216,6 +235,24 @@ public class LatencyTraceRecorder {
         synchronized (metaLock) {
             this.codec = codec;
             this.decoderName = decoderName;
+        }
+    }
+
+    /**
+     * Free-form renderer diagnostics to embed in the metadata block, as
+     * {@code key=value} pairs separated by spaces.
+     *
+     * <p>This exists because the CSV is the only diagnostic channel that reaches
+     * the user on a device without working adb: anything written to logcat is
+     * unreachable there. Anything a reader would need in order to interpret a
+     * run, or to tell whether a self-tuning mechanism actually engaged, belongs
+     * here rather than in a log line.
+     *
+     * <p>Called once at flush time, off the streaming path.
+     */
+    public void setRendererDiagnostics(String diagnostics) {
+        synchronized (metaLock) {
+            this.rendererDiagnostics = diagnostics == null ? "" : diagnostics;
         }
     }
 
@@ -418,11 +455,7 @@ public class LatencyTraceRecorder {
         String metadataBlock = buildMetadata(rows);
 
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
-        File dir = context.getExternalFilesDir(null);
-        if (dir == null) {
-            dir = context.getFilesDir();
-        }
-        File out = new File(dir, "apollo2-latency-trace-" + stamp + ".csv");
+        File out = new File(getTraceDirectory(context), FILE_PREFIX + stamp + FILE_SUFFIX);
 
         BufferedWriter writer = null;
         try {
@@ -572,6 +605,9 @@ public class LatencyTraceRecorder {
             sb.append("frame_pacing=").append(framePacing).append('\n');
             sb.append("ultra_low_latency=").append(ultraLowLatency).append('\n');
             sb.append("network_path=").append(networkPath).append('\n');
+            if (!rendererDiagnostics.isEmpty()) {
+                sb.append("renderer_diagnostics=").append(rendererDiagnostics).append('\n');
+            }
         }
         sb.append("trace_negotiated=").append(MoonBridge.getLatencyTraceEnabled()).append('\n');
         // The format version actually seen on the wire, not the one we can parse.

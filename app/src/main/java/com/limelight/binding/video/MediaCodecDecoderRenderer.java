@@ -1,6 +1,7 @@
 package com.limelight.binding.video;
 
 import java.io.IOException;
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -36,12 +37,14 @@ import android.media.MediaCodec.CodecException;
 import android.net.TrafficStats;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.HandlerThread;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.Range;
 import android.view.Choreographer;
 import android.view.Surface;
+import android.widget.Toast;
 
 public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements Choreographer.FrameCallback {
     // Latency profile: favor minimal end-to-end delay over absolute smoothness.
@@ -92,6 +95,26 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     public LatencyTraceRecorder getLatencyTraceRecorder() {
         return latencyTrace;
+    }
+
+    /**
+     * Renderer state worth recording in the trace metadata, as {@code key=value}
+     * pairs.
+     *
+     * <p>Everything here would otherwise only reach logcat, which is unreachable
+     * on a device without working adb — and that is the device this harness was
+     * built to measure. Anything needed to interpret a run, or to tell whether a
+     * self-tuning mechanism engaged, belongs in the CSV instead.
+     *
+     * <p>Branches that add adaptive renderer behaviour should extend this rather
+     * than adding another log line.
+     */
+    private String getRendererDiagnostics() {
+        StringBuilder sb = new StringBuilder(128);
+        sb.append("output_queue_limit=").append(OUTPUT_BUFFER_QUEUE_LIMIT);
+        sb.append(" prefer_lower_delays=").append(preferLowerDelays);
+        sb.append(" frame_pacing=").append(prefs != null ? prefs.framePacing : -1);
+        return sb.toString();
     }
 
     /** Negotiated video format as a short label, for the trace metadata block. */
@@ -2044,7 +2067,27 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 // The negotiated codec and the chosen component are only known
                 // here, not when Game installed the recorder.
                 trace.setDecoderInfo(getVideoFormatName(), getDecoderName());
-                trace.flushToCsv(traceFlushContext);
+                trace.setRendererDiagnostics(getRendererDiagnostics());
+                File written = trace.flushToCsv(traceFlushContext);
+
+                // Tell the user the trace exists and where to get it. Without
+                // this the file is written silently into app-specific external
+                // storage, which Android 11+ hides from MTP and from every other
+                // app, so on a device with no working adb there is nothing to
+                // indicate a trace was produced at all.
+                //
+                // cleanup() runs on the connection teardown thread, so the toast
+                // is posted to the main looper.
+                if (written != null) {
+                    final Context toastContext = traceFlushContext;
+                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(toastContext, R.string.toast_trace_written,
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }
             } catch (Throwable t) {
                 LimeLog.severe("Latency trace: flush failed: " + t.getMessage());
             }
