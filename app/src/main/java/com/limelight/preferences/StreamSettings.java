@@ -1,6 +1,6 @@
 package com.limelight.preferences;
 
-import static com.limelight.utils.ServerHelper.getActiveDisplay;
+import static com.limelight.utils.ServerHelper.getStreamDisplay;
 
 import android.content.Context;
 import android.content.Intent;
@@ -76,7 +76,7 @@ public class StreamSettings extends AppCompatActivity {
 
     void reloadSettings() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Display.Mode mode = getActiveDisplay(StreamSettings.this, previousPrefs).getMode();
+            Display.Mode mode = getStreamDisplay(StreamSettings.this, previousPrefs).getMode();
             previousDisplayPixelCount = mode.getPhysicalWidth() * mode.getPhysicalHeight();
         }
         prefsFragment = new SettingsFragment(PreferenceConfiguration.readPreferences(
@@ -125,7 +125,7 @@ public class StreamSettings extends AppCompatActivity {
         super.onConfigurationChanged(newConfig);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Display.Mode mode = getActiveDisplay(StreamSettings.this, previousPrefs).getMode();
+            Display.Mode mode = getStreamDisplay(StreamSettings.this, previousPrefs).getMode();
 
             // If the display's physical pixel count has changed, we consider that it's a new display
             // and we should reload our settings (which include display-dependent values).

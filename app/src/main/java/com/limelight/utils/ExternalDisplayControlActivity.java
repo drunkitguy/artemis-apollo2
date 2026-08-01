@@ -1,7 +1,7 @@
 package com.limelight.utils;
 
 import static com.limelight.StartExternalDisplayControlReceiver.requestFocusToGameActivity;
-import static com.limelight.utils.ServerHelper.getSecondaryDisplay;
+import static com.limelight.utils.ServerHelper.getStreamDisplay;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -31,6 +31,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.Toast;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -64,6 +65,34 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
     private PreferenceConfiguration prefConfig;
 
     private ExternalControllerView rootLayout;
+    private TextView perfOverlayView;
+
+    /**
+     * Mirrors the performance overlay text onto the control display.
+     *
+     * <p>Safe to call from any thread and at any point in this activity's
+     * lifecycle: the stream outlives this activity, so a null instance or a
+     * not-yet-built view simply means there is nowhere to draw right now, which
+     * is not an error and must never disturb the stream.
+     */
+    public static void setPerfOverlayText(final String text) {
+        final ExternalDisplayControlActivity self = instance;
+        if (self == null) {
+            return;
+        }
+        self.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (self.perfOverlayView == null) {
+                    return;
+                }
+                self.perfOverlayView.setVisibility(text == null ? View.GONE : View.VISIBLE);
+                if (text != null) {
+                    self.perfOverlayView.setText(text);
+                }
+            }
+        });
+    }
     private ImageButton zoomButton;
     private KeyBoardLayoutController keyBoardLayoutController;
 
@@ -117,21 +146,54 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         instance = this;
         prefConfig = PreferenceConfiguration.readPreferences(this);
 
+        // Say which display this control surface actually landed on.
+        //
+        // With no adb, "the second panel is blank" is otherwise indistinguishable
+        // from "the activity never started", "it started on the wrong display",
+        // and "there was no second display to use". This Toast separates them: if
+        // it appears on the same screen as the stream, placement is wrong; if it
+        // does not appear at all, the activity is not starting.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Display self = getDisplay();
+            int selfId = self != null ? self.getDisplayId() : -1;
+            Display control = ServerHelper.getControlSurfaceDisplay(this, prefConfig);
+            int wantedId = control != null ? control.getDisplayId() : -1;
+            Toast.makeText(this,
+                    "Controls on display " + selfId + " (wanted " + wantedId + ")",
+                    Toast.LENGTH_LONG).show();
+        }
+
         if (!isGameInstanceAvailable()) {
             Intent gameIntent = getIntent().getParcelableExtra(EXTRA_LAUNCH_INTENT);
             if (gameIntent == null) {
                 finish();
             } else {
-                Display secondaryDisplay = getSecondaryDisplay(this);
-                if (secondaryDisplay != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // This is the call that actually places the stream on a physical
+                // screen. setLaunchDisplayId() decides it; the display context
+                // built in createStartIntent() does not override it. It used to
+                // resolve the display itself and skipped DEFAULT_DISPLAY by
+                // construction, so "stream on the main screen" was unreachable
+                // here whatever the user had chosen.
+                Display streamDisplay = getStreamDisplay(this, prefConfig);
+                if (streamDisplay != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // Always set the id explicitly, including when it is
+                    // DEFAULT_DISPLAY. Omitting the options is NOT equivalent:
+                    // without a launch display the activity inherits the caller's
+                    // display, and this activity is itself running on the other
+                    // screen, so the stream would follow it there. The explicit
+                    // id is what moves the stream back to the main panel.
                     ActivityOptions options = ActivityOptions.makeBasic();
-                    options.setLaunchDisplayId(secondaryDisplay.getDisplayId());
-                    Toast.makeText(this,
-                            getString(R.string.external_display_info,
-                                    secondaryDisplay.getMode().getPhysicalWidth(),
-                                    secondaryDisplay.getMode().getPhysicalHeight(),
-                                    secondaryDisplay.getMode().getRefreshRate()),
-                            Toast.LENGTH_LONG).show();
+                    options.setLaunchDisplayId(streamDisplay.getDisplayId());
+
+                    Display.Mode mode = streamDisplay.getMode();
+                    if (mode != null) {
+                        Toast.makeText(this,
+                                getString(R.string.external_display_info,
+                                        mode.getPhysicalWidth(),
+                                        mode.getPhysicalHeight(),
+                                        mode.getRefreshRate()),
+                                Toast.LENGTH_LONG).show();
+                    }
 
                     startActivity(gameIntent, options.toBundle());
                 } else {
@@ -398,6 +460,29 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         rootLayout.setCommitTextEnabled(prefConfig.enableCommitText);
 
         setContentView(rootLayout);
+
+        // Performance overlay mirrored from Game.
+        //
+        // Proof that the cross-display bridge works before anything harder is
+        // moved: this is display-agnostic text with no input path, so if it shows
+        // up here the reference from Game to this activity is sound and the OSC
+        // can follow the same route.
+        //
+        // The bridge is a direct in-process reference, matching what this
+        // activity already does for input (rootLayout.setInputCallbacks(
+        // Game.instance) above). No binder, no service, no queue — a plain Java
+        // call on the same process, so it adds no measurable latency. That
+        // matters: input-immediate exists to remove batching from this path and
+        // an IPC hop here would give it straight back.
+        perfOverlayView = new TextView(this);
+        perfOverlayView.setTextColor(0xFFFFFFFF);
+        perfOverlayView.setBackgroundColor(0x80000000);
+        perfOverlayView.setTextSize(10);
+        perfOverlayView.setVisibility(View.GONE);
+        FrameLayout.LayoutParams perfParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        perfParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        rootLayout.addView(perfOverlayView, perfParams);
 
         // Top-left buttons
         LinearLayout topLeftButtons = createButtonContainer(Gravity.TOP | Gravity.START);

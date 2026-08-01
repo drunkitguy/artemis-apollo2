@@ -32,6 +32,21 @@
         <item>120</item>
     </string-array>
 
+    <!--
+      Which screen Full External Display Mode targets. Values must match the
+      DISPLAY_TARGET_* constants in PreferenceConfiguration.
+    -->
+    <string-array name="display_target_names">
+        <item>@string/display_target_auto</item>
+        <item>@string/display_target_main</item>
+        <item>@string/display_target_secondary</item>
+    </string-array>
+    <string-array name="display_target_values" translatable="false">
+        <item>auto</item>
+        <item>main</item>
+        <item>secondary</item>
+    </string-array>
+
     <string-array name="video_scale_mode_names">
         <item>@string/video_scale_mode_fit</item>
         <item>@string/video_scale_mode_fill</item>
