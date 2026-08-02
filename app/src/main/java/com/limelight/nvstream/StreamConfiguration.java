@@ -29,6 +29,7 @@ public class StreamConfiguration {
     private int encryptionFlags;
     private int colorRange;
     private int colorSpace;
+    private boolean textFocusEnabled;
     private boolean persistGamepadsAfterDisconnect;
     private boolean enableUltraLowLatency;
 
@@ -138,6 +139,11 @@ public class StreamConfiguration {
 
         public StreamConfiguration.Builder setColorSpace(int colorSpace) {
             config.colorSpace = colorSpace;
+            return this;
+        }
+
+        public StreamConfiguration.Builder setTextFocusEnabled(boolean textFocusEnabled) {
+            config.textFocusEnabled = textFocusEnabled;
             return this;
         }
 
@@ -253,6 +259,10 @@ public class StreamConfiguration {
 
     public int getColorSpace() {
         return colorSpace;
+    }
+
+    public boolean getTextFocusEnabled() {
+        return textFocusEnabled;
     }
 
     public boolean getEnableUltraLowLatency() {

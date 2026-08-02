@@ -503,6 +503,8 @@
     <string name="title_fullexdisplay_mode">Fully External Display Mode (Beta)</string>
     <string name="summary_exdisplay_mode">Stream display on the monitor, virtual buttons and performance information and other controls on the phone screen.</string>
     <string name="summary_fullexdisplay_mode">Allows full immersive secondary screen mode with automatically matched refresh rate and resolution. Manual settings won\'t apply in this mode.</string>
+    <string name="title_auto_keyboard_on_focus">Auto keyboard on text focus</string>
+    <string name="summary_auto_keyboard_on_focus">When you click into a text box on the host, raise the keyboard automatically on the control screen. Numeric fields get a number pad. Requires a host that supports focus hints; has no effect otherwise.</string>
     <string name="title_top_center_display">Display in Top Center</string>
     <string name="summary_top_center_display">Streaming picture will be aligned to the top of the screen instead of centered when resolution is not native.</string>
     <string name="title_touch_sensitivity">Touch Screen Sensitivity</string>

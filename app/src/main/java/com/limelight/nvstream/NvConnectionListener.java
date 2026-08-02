@@ -19,5 +19,9 @@ public interface NvConnectionListener {
 
     void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz);
 
+    // Invoked when the host reports that text input focus changed. focusType is one
+    // of MoonBridge.TEXT_FOCUS_*. Called on the native async callback thread.
+    void setTextFocus(byte focusType);
+
     void setControllerLED(short controllerNumber, byte r, byte g, byte b);
 }

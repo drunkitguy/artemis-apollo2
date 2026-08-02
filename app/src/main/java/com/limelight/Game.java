@@ -314,6 +314,31 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
 
+    // Text input focus hints from the host.
+    //
+    // Thread ownership: setTextFocus() is invoked on moonlight-common-c's async
+    // callback thread and does nothing but post to textFocusHandler. Every field
+    // below is read and written only on the main thread, inside runnables posted to
+    // that handler, so none of them need synchronisation. Do not touch them from
+    // the callback thread.
+    private static final long TEXT_FOCUS_DEBOUNCE_MS = 250;
+    private final Handler textFocusHandler = new Handler(Looper.getMainLooper());
+    private byte pendingTextFocusType = MoonBridge.TEXT_FOCUS_NONE;
+    private byte appliedTextFocusType = MoonBridge.TEXT_FOCUS_NONE;
+    private final Runnable applyTextFocusRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (pendingTextFocusType == appliedTextFocusType) {
+                // Focus bounced through other fields and came back to where it
+                // already was. Re-showing the keyboard here would make it flicker.
+                return;
+            }
+
+            appliedTextFocusType = pendingTextFocusType;
+            ExternalDisplayControlActivity.applyTextFocus(appliedTextFocusType);
+        }
+    };
+
     private final Runnable flushCommitTextQueue = new Runnable() {
         @Override
         public void run() {
@@ -799,6 +824,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 .setColorSpace(decoderRenderer.getPreferredColorSpace())
                 .setColorRange(decoderRenderer.getPreferredColorRange())
                 .setPersistGamepadsAfterDisconnect(!prefConfig.multiController)
+                .setTextFocusEnabled(isTextFocusHintUsable())
                 .build();
 
         // Initialize the connection
@@ -3443,6 +3469,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
             controllerHandler.stop();
 
+            // Take down any keyboard the host raised before the stream goes away
+            cancelTextFocus();
+
             // Update GameManager state to indicate we're no longer in game
             UiHelper.notifyStreamEnded(this);
 
@@ -3768,6 +3797,54 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {
         controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);
+    }
+
+    // The host is only asked for focus hints when we can actually act on one. The
+    // keyboard has to come up on the control display; without one it would land on
+    // top of the stream, which is worse than not having the feature. Returning false
+    // here clears the client feature flag, so the host never starts its focus watcher.
+    private boolean isTextFocusHintUsable() {
+        // Deliberately not asking which display the control surface landed on. That
+        // lives on the display selection branch and this one has to stand alone.
+        // ExternalDisplayControlActivity.applyTextFocus() drops the hint when the
+        // control surface is not actually up, which is the check that matters.
+        return prefConfig.autoKeyboardOnFocus && prefConfig.enableFullExDisplay;
+    }
+
+    // Main thread only. Read from IME callbacks, which share this looper.
+    private boolean isTextFocusActive() {
+        return appliedTextFocusType != MoonBridge.TEXT_FOCUS_NONE;
+    }
+
+    @Override
+    public void setTextFocus(final byte focusType) {
+        // Called on the native async callback thread. Hop to the main thread
+        // immediately so all the debounce state has a single owner.
+        textFocusHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                pendingTextFocusType = focusType;
+                textFocusHandler.removeCallbacks(applyTextFocusRunnable);
+                textFocusHandler.postDelayed(applyTextFocusRunnable, TEXT_FOCUS_DEBOUNCE_MS);
+            }
+        });
+    }
+
+    // Drop any keyboard we raised. The host is supposed to send a NONE hint when
+    // focus leaves, but a connection that dies mid-session never sends anything, and
+    // a keyboard left up on the control display would survive the stream.
+    private void cancelTextFocus() {
+        textFocusHandler.removeCallbacks(applyTextFocusRunnable);
+        textFocusHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                pendingTextFocusType = MoonBridge.TEXT_FOCUS_NONE;
+                if (appliedTextFocusType != MoonBridge.TEXT_FOCUS_NONE) {
+                    appliedTextFocusType = MoonBridge.TEXT_FOCUS_NONE;
+                    ExternalDisplayControlActivity.applyTextFocus(MoonBridge.TEXT_FOCUS_NONE);
+                }
+            }
+        });
     }
 
     @Override
@@ -4288,7 +4365,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleCommitText(CharSequence text) {
-        if (!prefConfig.enableCommitText || conn == null) {
+        // While a host focus hint is live we act as a text editor even if the user
+        // left the commit-text option off, so we have to accept the text here too.
+        // Refusing it would drop every character typed into the raised keyboard.
+        if ((!prefConfig.enableCommitText && !isTextFocusActive()) || conn == null) {
             return false;
         }
         enqueueCommitText(text.toString());
@@ -4297,7 +4377,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleDeleteSurroundingText(int beforeLength, int afterLength) {
-        if (!prefConfig.enableCommitText || conn == null) {
+        if ((!prefConfig.enableCommitText && !isTextFocusActive()) || conn == null) {
             return false;
         }
         // Send backspace events for deleted preceding characters

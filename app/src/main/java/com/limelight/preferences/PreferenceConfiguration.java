@@ -299,6 +299,9 @@ public class PreferenceConfiguration {
 
     public boolean enableFullExDisplay;
 
+    // Raise a soft keyboard on the control display when the host reports text focus.
+    public boolean autoKeyboardOnFocus;
+
     //串流画面顶部居中显示
     public boolean alignDisplayTopCenter;
 
@@ -964,6 +967,8 @@ private static int getFramePacingValue(Context context) {
         config.enableNewAnalogStick=prefs.getBoolean(CHECKBOX_CHECKBOX_ENABLE_ANALOG_STICK_NEW,false);
 
         config.enableFullExDisplay=prefs.getBoolean("checkbox_enable_fullexdisplay",false);
+
+        config.autoKeyboardOnFocus=prefs.getBoolean("checkbox_auto_keyboard_on_focus",false);
 
         config.alignDisplayTopCenter =prefs.getBoolean("checkbox_enable_view_top_center",false);
 
