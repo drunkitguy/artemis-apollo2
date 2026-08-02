@@ -789,6 +789,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 .setApp(app)
                 .setEnableUltraLowLatency(prefConfig.enableUltraLowLatency)
                 .setInputBatchingIntervalMs(prefConfig.inputBatchingIntervalMs)
+                .setAdaptiveLateFrameToleranceMaxMs(prefConfig.adaptiveLateFrameToleranceMaxMs)
                 .setBitrate(isMetered ? prefConfig.meteredBitrate: prefConfig.bitrate)
                 .setEnableSops(prefConfig.enableSops)
                 .enableLocalAudioPlayback(prefConfig.playHostAudio)

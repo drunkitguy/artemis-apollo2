@@ -222,8 +222,13 @@ public class MoonBridge {
                                                int traceFlags, long traceLastPacketRxUs,
                                                long traceHostCaptureRequestedUs, long traceHostCaptureCompleteUs,
                                                long traceHostEncodeSubmitUs, long traceHostEncodeCompleteUs,
-                                               long traceHostTxPipelineEntryUs) {
+                                               long traceHostTxPipelineEntryUs,
+                                               int lateFrameToleranceUs) {
         if (videoRenderer != null) {
+            // Zero unless the adaptive late-frame tolerance is enabled, so a
+            // stock session just stores a zero the renderer never applies.
+            videoRenderer.setLateFrameToleranceUs(lateFrameToleranceUs);
+
             // Native invokes this callback once per parameter set NALU and once
             // for the picture data, so gate the trace on the picture data call to
             // get exactly one row per frame. The trace arguments are all zero
@@ -364,7 +369,8 @@ public class MoonBridge {
                                               int videoCapabilities,
                                               int colorSpace, int colorRange,
                                               int latencyTraceEnabled,
-                                              int inputBatchingIntervalMs);
+                                              int inputBatchingIntervalMs,
+                                              int adaptiveLateFrameToleranceMaxMs);
 
     public static native void stopConnection();
 

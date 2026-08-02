@@ -708,6 +708,13 @@
     <string name="input_batching_immediate">Send on arrival</string>
     <string name="title_list_input_batching_interval">Input packet spacing</string>
     <string name="summary_list_input_batching_interval">Minimum gap between mouse, gamepad and pen packets. Events inside the gap are merged, not dropped. The default never delays a 1000 Hz mouse, but does delay faster ones by up to 1 ms. "Send on arrival" removes that delay and raises the packet rate.</string>
+    <string name="late_frame_tolerance_off">Off</string>
+    <string name="late_frame_tolerance_4ms">Up to 4 ms</string>
+    <string name="late_frame_tolerance_8ms">Up to 8 ms</string>
+    <string name="late_frame_tolerance_16ms">Up to 16 ms</string>
+    <string name="late_frame_tolerance_33ms">Up to 33 ms</string>
+    <string name="title_list_late_frame_tolerance">Late frame tolerance</string>
+    <string name="summary_list_late_frame_tolerance">Keeps frames that arrive slightly late instead of discarding them, sizing the allowance from measured Wi-Fi jitter rather than a fixed amount. This is an upper limit: on a clean link it settles at zero and costs nothing. When it does engage it trades a little extra latency for fewer dropped frames, so leave it Off unless you see stutter.</string>
     <string name="title_edit_profile">Edit Profile</string>
     <string name="profile_manager_new_profile">New Profile</string>
     <string name="profile_manager_profile_not_found">Profile not found</string>

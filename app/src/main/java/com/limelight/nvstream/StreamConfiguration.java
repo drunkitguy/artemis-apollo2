@@ -35,6 +35,8 @@ public class StreamConfiguration {
     // 0 = library default (1 ms), negative = send strictly on arrival,
     // positive = explicit interval in milliseconds.
     private int inputBatchingIntervalMs;
+    // Ceiling in ms for the adaptive late-frame tolerance; 0 disables it.
+    private int adaptiveLateFrameToleranceMaxMs;
 
     public static class Builder {
         private StreamConfiguration config = new StreamConfiguration();
@@ -165,6 +167,12 @@ public class StreamConfiguration {
             return this;
         }
 
+        // Ceiling in ms for the adaptive late-frame tolerance. 0 disables it (default).
+        public StreamConfiguration.Builder setAdaptiveLateFrameToleranceMaxMs(int maxMs) {
+            config.adaptiveLateFrameToleranceMaxMs = maxMs;
+            return this;
+        }
+
         public StreamConfiguration build() {
             return config;
         }
@@ -252,6 +260,10 @@ public class StreamConfiguration {
     
     public int getSupportedVideoFormats() {
         return supportedVideoFormats;
+    }
+
+    public int getAdaptiveLateFrameToleranceMaxMs() {
+        return adaptiveLateFrameToleranceMaxMs;
     }
 
     public int getAttachedGamepadMask() {

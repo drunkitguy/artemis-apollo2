@@ -283,6 +283,9 @@ public class PreferenceConfiguration {
     // Minimum spacing between mouse/gamepad/pen packets, in ms. 0 keeps the
     // moonlight-common-c default of 1 ms; -1 sends strictly on arrival.
     public int inputBatchingIntervalMs;
+    // Ceiling in ms for the adaptive late-frame tolerance (SPEC.md §4 Item C).
+    // 0 disables it, which is the default and is stock behaviour.
+    public int adaptiveLateFrameToleranceMaxMs;
 
     public boolean enableLatencyToast;
     public boolean enableBackMenu;
@@ -941,6 +944,12 @@ private static int getFramePacingValue(Context context) {
                     prefs.getString("list_input_batching_interval", "0"));
         } catch (NumberFormatException e) {
             config.inputBatchingIntervalMs = 0;
+        }
+        try {
+            config.adaptiveLateFrameToleranceMaxMs = Integer.parseInt(
+                    prefs.getString("list_late_frame_tolerance", "0"));
+        } catch (NumberFormatException e) {
+            config.adaptiveLateFrameToleranceMaxMs = 0;
         }
         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);

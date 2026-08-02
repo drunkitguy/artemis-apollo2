@@ -85,7 +85,7 @@ Java_com_limelight_nvstream_jni_MoonBridge_init(JNIEnv *env, jclass clazz) {
     BridgeDrStartMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrStart", "()V");
     BridgeDrStopMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrStop", "()V");
     BridgeDrCleanupMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrCleanup", "()V");
-    BridgeDrSubmitDecodeUnitMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrSubmitDecodeUnit", "([BIIIICJJIJJJJJJ)I");
+    BridgeDrSubmitDecodeUnitMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrSubmitDecodeUnit", "([BIIIICJJIJJJJJJI)I");
     BridgeArInitMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeArInit", "(III)I");
     BridgeArStartMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeArStart", "()V");
     BridgeArStopMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeArStop", "()V");
@@ -175,7 +175,8 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
                                               (jlong)decodeUnit->traceHostCaptureCompleteUs,
                                               (jlong)decodeUnit->traceHostEncodeSubmitUs,
                                               (jlong)decodeUnit->traceHostEncodeCompleteUs,
-                                              (jlong)decodeUnit->traceHostTxPipelineEntryUs);
+                                              (jlong)decodeUnit->traceHostTxPipelineEntryUs,
+                                              (jint)decodeUnit->lateFrameToleranceUs);
             if ((*env)->ExceptionCheck(env)) {
                 // We will crash here
                 (*JVM)->DetachCurrentThread(JVM);
@@ -203,7 +204,8 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
                                        (jlong)decodeUnit->traceHostCaptureCompleteUs,
                                        (jlong)decodeUnit->traceHostEncodeSubmitUs,
                                        (jlong)decodeUnit->traceHostEncodeCompleteUs,
-                                       (jlong)decodeUnit->traceHostTxPipelineEntryUs);
+                                       (jlong)decodeUnit->traceHostTxPipelineEntryUs,
+                                       (jint)decodeUnit->lateFrameToleranceUs);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
         (*JVM)->DetachCurrentThread(JVM);
@@ -477,7 +479,8 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
                                                            jint videoCapabilities,
                                                            jint colorSpace, jint colorRange,
                                                            jint latencyTraceEnabled,
-                                                           jint inputBatchingIntervalMs) {
+                                                           jint inputBatchingIntervalMs,
+                                                           jint adaptiveLateFrameToleranceMaxMs) {
     SERVER_INFORMATION serverInfo = {
             .address = (*env)->GetStringUTFChars(env, address, 0),
             .serverInfoAppVersion = (*env)->GetStringUTFChars(env, appVersion, 0),
@@ -499,7 +502,8 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
             .colorSpace = colorSpace,
             .colorRange = colorRange,
             .latencyTraceEnabled = latencyTraceEnabled,
-            .inputBatchingIntervalMs = inputBatchingIntervalMs
+            .inputBatchingIntervalMs = inputBatchingIntervalMs,
+            .adaptiveLateFrameToleranceMaxMs = adaptiveLateFrameToleranceMaxMs
     };
 
     jbyte* riAesKeyBuf = (*env)->GetByteArrayElements(env, riAesKey, NULL);

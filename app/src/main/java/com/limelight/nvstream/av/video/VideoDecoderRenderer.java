@@ -28,6 +28,13 @@ public abstract class VideoDecoderRenderer {
                                       long traceHostTxPipelineEntryUs) {
     }
 
+    // Extra lateness in microseconds that the renderer should tolerate before
+    // discarding a frame as stale (SPEC.md §4 Item C). NOT a presentation delay:
+    // nothing is delayed. Always zero unless the feature is enabled, so the
+    // default implementation ignoring it is exactly stock behaviour.
+    public void setLateFrameToleranceUs(int lateFrameToleranceUs) {
+    }
+
     public abstract void cleanup();
 
     public abstract int getCapabilities();

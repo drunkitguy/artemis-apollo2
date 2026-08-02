@@ -928,6 +928,14 @@
             android:summary="@string/summary_list_input_batching_interval"
             android:title="@string/title_list_input_batching_interval"
             app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="0"
+            android:entries="@array/late_frame_tolerance_names"
+            android:entryValues="@array/late_frame_tolerance_values"
+            android:key="list_late_frame_tolerance"
+            android:summary="@string/summary_list_late_frame_tolerance"
+            android:title="@string/title_list_late_frame_tolerance"
+            app:iconSpaceReserved="false" />
 
         <CheckBoxPreference
             android:defaultValue="false"
