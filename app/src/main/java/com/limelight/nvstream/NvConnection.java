@@ -469,7 +469,8 @@ public class NvConnection {
                             context.videoCapabilities,
                             context.streamConfig.getColorSpace(),
                             context.streamConfig.getColorRange(),
-                            context.streamConfig.getLatencyTraceEnabled() ? 1 : 0);
+                            context.streamConfig.getLatencyTraceEnabled() ? 1 : 0,
+                            context.streamConfig.getInputBatchingIntervalMs());
                     if (ret != 0) {
                         // LiStartConnection() failed, so the caller is not expected
                         // to stop the connection themselves. We need to release their

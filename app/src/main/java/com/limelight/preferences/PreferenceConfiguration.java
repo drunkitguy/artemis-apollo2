@@ -280,6 +280,9 @@ public class PreferenceConfiguration {
     // Apollo 2.0 SPEC.md §3 per-frame latency trace. Debug tool, off by default;
     // also requires the host to advertise support before anything is sent.
     public boolean enableLatencyTrace;
+    // Minimum spacing between mouse/gamepad/pen packets, in ms. 0 keeps the
+    // moonlight-common-c default of 1 ms; -1 sends strictly on arrival.
+    public int inputBatchingIntervalMs;
 
     public boolean enableLatencyToast;
     public boolean enableBackMenu;
@@ -928,6 +931,17 @@ private static int getFramePacingValue(Context context) {
         config.enablePerfOverlayLite = prefs.getBoolean("checkbox_enable_perf_overlay_lite",DEFAULT_ENABLE_PERF_OVERLAY);
         config.enablePerfOverlayBottom = prefs.getBoolean("checkbox_enable_perf_overlay_bottom",DEFAULT_PERF_OVERLAY_BOTTOM);
         config.enableLatencyTrace = prefs.getBoolean("checkbox_enable_latency_trace", false);
+        // Stored as the raw value moonlight-common-c expects: 0 = library
+        // default, positive = interval in ms, -1 = send on arrival. A list
+        // rather than a slider because the slider had to encode "no batching"
+        // as its maximum position, which read as "most delay" and made the
+        // control mean the opposite of what it looked like.
+        try {
+            config.inputBatchingIntervalMs = Integer.parseInt(
+                    prefs.getString("list_input_batching_interval", "0"));
+        } catch (NumberFormatException e) {
+            config.inputBatchingIntervalMs = 0;
+        }
         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);
         config.mouseNavButtons = prefs.getBoolean(MOUSE_NAV_BUTTONS_STRING, DEFAULT_MOUSE_NAV_BUTTONS);

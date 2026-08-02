@@ -920,6 +920,14 @@
             android:summary="@string/summary_checkbox_enable_latency_trace"
             android:title="@string/title_checkbox_enable_latency_trace"
             app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="0"
+            android:entries="@array/input_batching_names"
+            android:entryValues="@array/input_batching_values"
+            android:key="list_input_batching_interval"
+            android:summary="@string/summary_list_input_batching_interval"
+            android:title="@string/title_list_input_batching_interval"
+            app:iconSpaceReserved="false" />
 
         <CheckBoxPreference
             android:defaultValue="false"

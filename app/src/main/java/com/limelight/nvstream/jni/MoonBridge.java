@@ -363,7 +363,8 @@ public class MoonBridge {
                                               byte[] riAesKey, byte[] riAesIv,
                                               int videoCapabilities,
                                               int colorSpace, int colorRange,
-                                              int latencyTraceEnabled);
+                                              int latencyTraceEnabled,
+                                              int inputBatchingIntervalMs);
 
     public static native void stopConnection();
 
