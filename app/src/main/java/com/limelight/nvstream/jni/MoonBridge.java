@@ -341,6 +341,18 @@ public class MoonBridge {
         }
     }
 
+    // Text input focus hint types. These mirror LI_TEXT_FOCUS_* in Limelight.h.
+    public static final byte TEXT_FOCUS_NONE = 0;
+    public static final byte TEXT_FOCUS_TEXT = 1;
+    public static final byte TEXT_FOCUS_NUMERIC = 2;
+    public static final byte TEXT_FOCUS_PASSWORD = 3;
+
+    public static void bridgeClSetTextFocus(byte focusType) {
+        if (connectionListener != null) {
+            connectionListener.setTextFocus(focusType);
+        }
+    }
+
     public static void bridgeClSetControllerLED(short controllerNumber, byte r, byte g, byte b) {
         if (connectionListener != null) {
             connectionListener.setControllerLED(controllerNumber, r, g, b);
@@ -370,7 +382,8 @@ public class MoonBridge {
                                               int colorSpace, int colorRange,
                                               int latencyTraceEnabled,
                                               int inputBatchingIntervalMs,
-                                              int adaptiveLateFrameToleranceMaxMs);
+                                              int adaptiveLateFrameToleranceMaxMs,
+                                              int textFocusEnabled);
 
     public static native void stopConnection();
 

@@ -19,7 +19,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.view.Display;
+import android.view.WindowInsets;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -48,6 +50,7 @@ import com.limelight.LimeLog;
 import com.limelight.R;
 import com.limelight.StartExternalDisplayControlReceiver;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardLayoutController;
+import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.ui.ExternalControllerView;
 
@@ -276,6 +279,10 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        textFocusHandler.removeCallbacks(keyboardVisibilityCheck);
+        if (rootLayout != null) {
+            rootLayout.clearTextFocusInputType();
+        }
         instance = null;
     }
 
@@ -552,6 +559,127 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
             return;
         }
         keyBoardLayoutController.toggleVisibility();
+    }
+
+    // ---- Host text focus hints ----------------------------------------------
+    //
+    // The host tells us when a text field gains or loses focus and we raise or
+    // dismiss a soft keyboard here, on the control display. This deliberately goes
+    // through rootLayout, the same view that already receives keystrokes and
+    // commitText for the manual keyboard button, rather than adding a second input
+    // path. Game.java owns the debounce; by the time we are called the state has
+    // settled.
+    //
+    // Nothing here touches the Game activity or its window, so the stream keeps
+    // window focus on the other display.
+
+    private static final long KEYBOARD_VISIBILITY_CHECK_MS = 700;
+
+    private final Handler textFocusHandler = new Handler(Looper.getMainLooper());
+
+    private final Runnable keyboardVisibilityCheck = new Runnable() {
+        @Override
+        public void run() {
+            // We cannot see logcat on the target device, so a keyboard that the
+            // system silently declines to show would look like the feature simply
+            // not working. Say so instead.
+            if (rootLayout == null || !rootLayout.isTextFocusActive()) {
+                return;
+            }
+
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                return;
+            }
+
+            WindowInsets insets = rootLayout.getRootWindowInsets();
+            if (insets != null && !insets.isVisible(WindowInsets.Type.ime())) {
+                Toast.makeText(ExternalDisplayControlActivity.this,
+                        "Host asked for a keyboard, but Android did not show one on display "
+                                + getSelfDisplayId(),
+                        Toast.LENGTH_LONG).show();
+            }
+        }
+    };
+
+    private int getSelfDisplayId() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Display display = getDisplay();
+            if (display != null) {
+                return display.getDisplayId();
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Raises or dismisses the soft keyboard in response to a host focus hint.
+     * Safe to call when the control activity does not exist; the hint is dropped.
+     *
+     * @param focusType one of MoonBridge.TEXT_FOCUS_*
+     */
+    public static void applyTextFocus(final byte focusType) {
+        final ExternalDisplayControlActivity activity = instance;
+        if (activity == null) {
+            return;
+        }
+
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                activity.doApplyTextFocus(focusType);
+            }
+        });
+    }
+
+    private void doApplyTextFocus(byte focusType) {
+        if (rootLayout == null) {
+            return;
+        }
+
+        InputMethodManager inputManager =
+                (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (inputManager == null) {
+            return;
+        }
+
+        textFocusHandler.removeCallbacks(keyboardVisibilityCheck);
+
+        if (focusType == MoonBridge.TEXT_FOCUS_NONE) {
+            rootLayout.clearTextFocusInputType();
+            // Tell the IME we stopped being a text editor before hiding it, so a
+            // later raise does not come back with the stale input type.
+            inputManager.restartInput(rootLayout);
+            inputManager.hideSoftInputFromWindow(rootLayout.getWindowToken(), 0);
+            return;
+        }
+
+        int inputType;
+        switch (focusType) {
+            case MoonBridge.TEXT_FOCUS_NUMERIC:
+                inputType = InputType.TYPE_CLASS_NUMBER;
+                break;
+            case MoonBridge.TEXT_FOCUS_PASSWORD:
+                // A text keyboard, flagged as a password field. The flag is not about
+                // protecting anything on this side: we never store or inspect what is
+                // typed, we forward it to the host exactly as we do for a normal field.
+                // It suppresses the IME suggestion strip, which would otherwise spell
+                // the password out across the bottom panel of a handheld in plain view,
+                // and it disables autocorrect, which must never rewrite a password.
+                inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD;
+                break;
+            case MoonBridge.TEXT_FOCUS_TEXT:
+            default:
+                inputType = InputType.TYPE_CLASS_TEXT;
+                break;
+        }
+
+        rootLayout.setTextFocusInputType(inputType);
+        // The IME caches EditorInfo from when the connection was created, so moving
+        // from a text field to a numeric one leaves the old layout up without this.
+        inputManager.restartInput(rootLayout);
+        inputManager.showSoftInput(rootLayout, 0);
+
+        textFocusHandler.postDelayed(keyboardVisibilityCheck, KEYBOARD_VISIBILITY_CHECK_MS);
     }
 
     public void toggleZoomMode(boolean callGame) {

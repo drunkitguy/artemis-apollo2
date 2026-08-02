@@ -322,6 +322,9 @@ public class PreferenceConfiguration {
     // Which screen Full External Display Mode targets. See DISPLAY_TARGET_* above.
     public String displayTarget;
 
+    // Raise a soft keyboard on the control display when the host reports text focus.
+    public boolean autoKeyboardOnFocus;
+
     //串流画面顶部居中显示
     public boolean alignDisplayTopCenter;
 
@@ -1006,6 +1009,8 @@ private static int getFramePacingValue(Context context) {
 
         config.enableFullExDisplay=prefs.getBoolean("checkbox_enable_fullexdisplay",false);
         config.displayTarget = prefs.getString(DISPLAY_TARGET_PREF_STRING, DISPLAY_TARGET_AUTO);
+
+        config.autoKeyboardOnFocus=prefs.getBoolean("checkbox_auto_keyboard_on_focus",false);
 
         config.alignDisplayTopCenter =prefs.getBoolean("checkbox_enable_view_top_center",false);
 
