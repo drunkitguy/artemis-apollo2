@@ -500,6 +500,11 @@
     <string name="summary_free_analog_stick_opacity">By default, only when the stick moves, the background is displayed. If you don\'t like it, you can adjust the opacity effect.</string>
     <string name="title_free_analog_stick_opacity">Free Analog Stick Background Opacity</string>
     <string name="title_exdisplay_mode">External Display Mode (Beta)</string>
+    <string name="title_display_target">Screen to stream on</string>
+    <string name="summary_display_target">Which screen Fully External Display Mode uses. Automatic prefers a plugged-in external display, and otherwise picks the highest resolution and refresh rate — the right choice on a dual-screen handheld. Override it if your device reports its screens unusually.</string>
+    <string name="display_target_auto">Automatic</string>
+    <string name="display_target_main">Main screen</string>
+    <string name="display_target_secondary">Secondary screen</string>
     <string name="title_fullexdisplay_mode">Fully External Display Mode (Beta)</string>
     <string name="summary_exdisplay_mode">Stream display on the monitor, virtual buttons and performance information and other controls on the phone screen.</string>
     <string name="summary_fullexdisplay_mode">Allows full immersive secondary screen mode with automatically matched refresh rate and resolution. Manual settings won\'t apply in this mode.</string>

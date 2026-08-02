@@ -43,6 +43,18 @@ public class PreferenceConfiguration {
     static final String FPS_PREF_STRING = "list_fps";
     static final String BITRATE_PREF_STRING = "seekbar_bitrate_kbps";
     private static final String BITRATE_PREF_OLD_STRING = "seekbar_bitrate";
+    public static final String DISPLAY_TARGET_PREF_STRING = "list_display_target";
+
+    // Which screen Full External Display Mode streams to.
+    //
+    // AUTO ranks the displays; MAIN and SECONDARY are an explicit override for a
+    // device whose displays are reported in a way the ranking gets wrong. The
+    // override names a role, not a display ID, so it cannot go stale when the
+    // set of connected displays changes.
+    public static final String DISPLAY_TARGET_AUTO = "auto";
+    public static final String DISPLAY_TARGET_MAIN = "main";
+    public static final String DISPLAY_TARGET_SECONDARY = "secondary";
+
     private static final String METERED_BITRATE_PREF_STRING = "seekbar_metered_bitrate_kbps";
     private static final String ENABLE_ULTRA_LOW_LATENCY_PREF_STRING = "checkbox_ultra_low_latency";
     private static final String ENFORCE_DISPLAY_MODE_PREF_STRING = "checkbox_enforce_display_mode";
@@ -307,6 +319,8 @@ public class PreferenceConfiguration {
     public boolean enableNewAnalogStick;
 
     public boolean enableFullExDisplay;
+    // Which screen Full External Display Mode targets. See DISPLAY_TARGET_* above.
+    public String displayTarget;
 
     //串流画面顶部居中显示
     public boolean alignDisplayTopCenter;
@@ -991,6 +1005,7 @@ private static int getFramePacingValue(Context context) {
         config.enableNewAnalogStick=prefs.getBoolean(CHECKBOX_CHECKBOX_ENABLE_ANALOG_STICK_NEW,false);
 
         config.enableFullExDisplay=prefs.getBoolean("checkbox_enable_fullexdisplay",false);
+        config.displayTarget = prefs.getString(DISPLAY_TARGET_PREF_STRING, DISPLAY_TARGET_AUTO);
 
         config.alignDisplayTopCenter =prefs.getBoolean("checkbox_enable_view_top_center",false);
 

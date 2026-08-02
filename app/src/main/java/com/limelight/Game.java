@@ -5,8 +5,7 @@ import static com.limelight.StartExternalDisplayControlReceiver.requestFocusToEx
 import static com.limelight.binding.input.KeyboardTranslator.getModifier;
 import static com.limelight.utils.ExternalDisplayControlActivity.SECONDARY_SCREEN_NOTIFICATION_ID;
 import static com.limelight.utils.ExternalDisplayControlActivity.closeExternalDisplayControl;
-import static com.limelight.utils.ServerHelper.getActiveDisplay;
-import static com.limelight.utils.ServerHelper.getSecondaryDisplay;
+import static com.limelight.utils.ServerHelper.getStreamDisplay;
 
 import com.limelight.binding.PlatformBinding;
 import com.limelight.binding.audio.AndroidAudioRenderer;
@@ -40,6 +39,7 @@ import com.limelight.nvstream.input.MouseButtonPacket;
 import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.preferences.GlPreferences;
 import com.limelight.preferences.PreferenceConfiguration;
+import com.limelight.utils.ServerHelper;
 import com.limelight.profiles.ProfilesManager;
 import com.limelight.ui.ExternalControllerView;
 import com.limelight.ui.GameGestures;
@@ -49,7 +49,6 @@ import com.limelight.utils.ExternalDisplayControlActivity;
 import com.limelight.utils.MouseModeOption;
 import com.limelight.utils.PanZoomHandler;
 import com.limelight.utils.PerformanceDataTracker;
-import com.limelight.utils.ServerHelper;
 import com.limelight.utils.ShortcutHelper;
 import com.limelight.utils.SpinnerDialog;
 import com.limelight.utils.UiHelper;
@@ -298,6 +297,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     public boolean isInputOnly = true;
     public boolean allowChangeMouseMode = true;
     private boolean onExternelDisplay = false;
+    private int streamDisplayId = Display.DEFAULT_DISPLAY;
     private ImageButton floatingMenuButton;
     private ImageButton overlayToggleButton;
     private float floatingButtonDX, floatingButtonDY;
@@ -396,6 +396,25 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         onExternelDisplay = currentDisplay.getDisplayId() != Display.DEFAULT_DISPLAY;
+
+        // Remember which display we are actually on, so display-removal handling
+        // can key on this one rather than on "is any secondary display left".
+        streamDisplayId = currentDisplay.getDisplayId();
+
+        // Say out loud which screen the stream landed on, and how big it is.
+        //
+        // This device has no working adb, so LimeLog is unreachable and the
+        // trace CSV only exists after a session completes. Two attempts at this
+        // bug were spent not knowing which display had been chosen; a Toast is
+        // the one channel that reports it before anything else can go wrong.
+        if (prefConfig.enableFullExDisplay) {
+            Display.Mode m = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    ? currentDisplay.getMode() : null;
+            final String msg = "Stream on display " + streamDisplayId
+                    + (m != null ? " (" + m.getPhysicalWidth() + "x" + m.getPhysicalHeight()
+                            + "@" + Math.round(m.getRefreshRate()) + ")" : "");
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        }
 
         boolean shouldInvertDecoderResolution = false;
 
@@ -854,7 +873,16 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             allowChangeMouseMode = false;
             applyMouseMode(2);
         } else {
-            if (prefConfig.enableFullExDisplay && onExternelDisplay) {
+            // Gate on "there is another display to put controls on", not on
+            // "the stream is on a secondary display".
+            //
+            // onExternelDisplay is false whenever the stream runs on display 0,
+            // which is now the normal case on a dual-screen handheld. Using it
+            // here meant the control surface was never even requested, which is
+            // half of why the second panel was blank. The other half was that
+            // the launcher placed the control activity on the caller's display.
+            if (prefConfig.enableFullExDisplay
+                    && ServerHelper.getControlSurfaceDisplay(this, prefConfig) != null) {
                 requestFocusToExternalDisplayControl(this);
                 listenForExternalDisplayRemoval();
             }
@@ -1048,10 +1076,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
             @Override
             public void onDisplayRemoved(int displayId) {
-                if (getSecondaryDisplay(getBaseContext()) == null) {
-                    handleDisplayRemoved();
-                    finish();
+                // Only tear down if the display we are actually streaming on went
+                // away. The previous test was "is there any secondary display
+                // left", which quits the session when an unrelated second display
+                // is removed, and — now that the stream can legitimately target
+                // the main panel on a dual-screen handheld — would quit a
+                // perfectly healthy session running on display 0.
+                if (displayId != streamDisplayId) {
+                    return;
                 }
+
+                handleDisplayRemoved();
+                finish();
             }
 
             @Override
@@ -1173,7 +1209,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void setPreferredOrientationForActivity() {
-        Display display = getActiveDisplay(Game.this, prefConfig);
+        Display display = getStreamDisplay(Game.this, prefConfig);
 
         // For semi-square displays, we use more complex logic to determine which orientation to use (if any)
         if (PreferenceConfiguration.isSquarishScreen(display)) {
@@ -1460,7 +1496,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Display display = getActiveDisplay(Game.this, prefConfig);
+            Display display = getStreamDisplay(Game.this, prefConfig);
             for (Display.Mode candidate : display.getSupportedModes()) {
                 // Ignore insets if this is an exact match for the display resolution
                 if ((width == candidate.getPhysicalWidth() && height == candidate.getPhysicalHeight()) ||
@@ -3994,6 +4030,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void onPerfUpdate(final String text) {
+        // Mirror onto the control display when one is in use, so the overlay is
+        // readable without covering the stream. This is a plain in-process call
+        // and is a no-op when no control activity exists.
+        ExternalDisplayControlActivity.setPerfOverlayText(text);
+
         runOnUiThread(new Runnable() {
             @Override
             public void run() {

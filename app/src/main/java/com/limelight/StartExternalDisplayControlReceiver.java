@@ -14,6 +14,8 @@ import android.view.Display;
 import androidx.annotation.RequiresApi;
 
 import com.limelight.utils.ExternalDisplayControlActivity;
+import com.limelight.preferences.PreferenceConfiguration;
+import com.limelight.utils.ServerHelper;
 
 public class StartExternalDisplayControlReceiver extends BroadcastReceiver {
     private static final long TIMEOUT_MS = 300;
@@ -30,8 +32,20 @@ public class StartExternalDisplayControlReceiver extends BroadcastReceiver {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Intent intentTouchpad = new Intent(context, ExternalDisplayControlActivity.class);
             intentTouchpad.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            Bundle optionsDefault = ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle();
-            context.startActivity(intentTouchpad, optionsDefault);
+
+            // The control surface goes on whichever display the stream is not
+            // using. This used to be pinned to DEFAULT_DISPLAY, which was right
+            // only while the stream was always on a secondary display. Now that
+            // the stream can legitimately target the main panel, pinning it here
+            // would put the touchpad on top of the stream on the same screen.
+            PreferenceConfiguration prefConfig = PreferenceConfiguration.readPreferences(context);
+            Display controlDisplay = ServerHelper.getControlSurfaceDisplay(context, prefConfig);
+            int controlDisplayId = controlDisplay != null
+                    ? controlDisplay.getDisplayId() : Display.DEFAULT_DISPLAY;
+
+            Bundle options = ActivityOptions.makeBasic()
+                    .setLaunchDisplayId(controlDisplayId).toBundle();
+            context.startActivity(intentTouchpad, options);
         }
     }
 

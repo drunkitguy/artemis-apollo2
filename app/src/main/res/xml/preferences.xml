@@ -217,6 +217,15 @@
             android:summary="@string/summary_fullexdisplay_mode"
             android:title="@string/title_fullexdisplay_mode"
             app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="auto"
+            android:dependency="checkbox_enable_fullexdisplay"
+            android:entries="@array/display_target_names"
+            android:entryValues="@array/display_target_values"
+            android:key="list_display_target"
+            android:summary="@string/summary_display_target"
+            android:title="@string/title_display_target"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
     <PreferenceCategory

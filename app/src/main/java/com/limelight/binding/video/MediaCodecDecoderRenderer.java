@@ -20,6 +20,7 @@ import com.limelight.R;
 import com.limelight.nvstream.av.video.VideoDecoderRenderer;
 import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.preferences.PreferenceConfiguration;
+import com.limelight.utils.ServerHelper;
 import com.limelight.utils.Stereo3DRenderer;
 import com.limelight.utils.TrafficStatsHelper;
 
@@ -114,6 +115,21 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         sb.append("output_queue_limit=").append(OUTPUT_BUFFER_QUEUE_LIMIT);
         sb.append(" prefer_lower_delays=").append(preferLowerDelays);
         sb.append(" frame_pacing=").append(prefs != null ? prefs.framePacing : -1);
+
+        // --- INTEGRATION JOIN. Re-apply this block when my-build is rebuilt. ---
+        //
+        // Produced on jitter-floor and display-select; the CSV that carries them
+        // lives on trace-export. They can only be joined here, and on a device
+        // with no working adb the CSV is the only diagnostic channel that reaches
+        // the user. Losing this block silently removes the answers to "did the
+        // queue back-off engage" and "which display was chosen, and where did
+        // the controls go".
+        sb.append(" output_queue_ceiling_start=").append(OUTPUT_BUFFER_QUEUE_MAX);
+        sb.append(" output_queue_ceiling_settled=").append(outputQueueCeiling);
+        sb.append(" late_frame_tolerance_final_us=").append(jitterToleranceNs / 1000L);
+        sb.append(" display_selection=[").append(ServerHelper.getLastDisplaySelection()).append(']');
+        // --- end integration join ---
+
         return sb.toString();
     }
 
