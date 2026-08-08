@@ -4,12 +4,13 @@
     xmlns:seekbar="http://schemas.moonlight-stream.com/apk/res/seekbar"
     app:iconSpaceReserved="false">
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_video_settings"
+        app:startExpanded="true"
         android:title="@string/category_video_settings"
-        app:initialExpandedChildrenCount="3"
+        app:sectionIcon="@drawable/ic_section_video"
         app:iconSpaceReserved="false">
-        <ListPreference
+        <com.limelight.preferences.SegmentedListPreference
             android:defaultValue="1280x720"
             android:entries="@array/resolution_names"
             android:entryValues="@array/resolution_values"
@@ -17,7 +18,7 @@
             android:summary="@string/summary_resolution_list"
             android:title="@string/title_resolution_list"
             app:iconSpaceReserved="false" />
-        <ListPreference
+        <com.limelight.preferences.SegmentedListPreference
             android:defaultValue="60"
             android:entries="@array/fps_names"
             android:entryValues="@array/fps_values"
@@ -50,7 +51,7 @@
             seekbar:min="0"
             seekbar:step="500" />
 
-        <ListPreference
+        <com.limelight.preferences.SegmentedListPreference
             android:defaultValue="latency"
             android:entries="@array/video_frame_pacing_names"
             android:entryValues="@array/video_frame_pacing_values"
@@ -58,40 +59,40 @@
             android:summary="@string/summary_frame_pacing"
             android:title="@string/title_frame_pacing"
             app:iconSpaceReserved="false" />
-    <CheckBoxPreference
+    <SwitchPreferenceCompat
         android:defaultValue="false"
         android:key="pref_low_latency_frame_balance"
         android:title="@string/title_low_latency_frame_balance"
         android:summary="@string/summary_low_latency_frame_balance"
         app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_ultra_low_latency"
             android:summary="@string/summary_checkbox_ultra_low_latency"
             android:title="@string/title_checkbox_ultra_low_latency"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_forceTightThresholds"
             android:summary="@string/summary_checkbox_forceTightThresholds"
             android:title="@string/title_checkbox_forceTightThresholds"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_use_virtual_display"
             android:summary="@string/summary_checkbox_use_virtual_display"
             android:title="@string/title_checkbox_use_virtual_display"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_auto_orientation"
             android:summary="@string/summary_auto_orientation"
             android:title="@string/title_auto_orientation"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:dependency="checkbox_auto_orientation"
             android:key="checkbox_auto_invert_video_resolution"
@@ -99,7 +100,7 @@
             android:title="@string/title_checkbox_auto_invert_video_resolution"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_view_top_center"
             android:summary="@string/summary_top_center_display"
@@ -120,7 +121,7 @@
             seekbar:min="20"
             seekbar:step="1" />
 
-        <ListPreference
+        <com.limelight.preferences.SegmentedListPreference
             android:defaultValue="fit"
             android:entries="@array/video_scale_mode_names"
             android:entryValues="@array/video_scale_mode_values"
@@ -157,7 +158,7 @@
             android:title="@string/title_custom_refresh_rate"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enforce_display_mode"
             android:summary="@string/summary_checkbox_enforce_display_mode"
@@ -204,23 +205,25 @@
             seekbar:min="-0"
             seekbar:step="1"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_hdr"
             android:summary="@string/summary_enable_hdr"
             android:title="@string/title_enable_hdr"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_fullexdisplay"
             android:summary="@string/summary_fullexdisplay_mode"
             android:title="@string/title_fullexdisplay_mode"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
+        android:key="category_audio_settings"
         android:title="@string/category_audio_settings"
+        app:sectionIcon="@drawable/ic_section_audio"
         app:iconSpaceReserved="false">
         <ListPreference
             android:defaultValue="2"
@@ -230,18 +233,18 @@
             android:summary="@string/summary_audio_config_list"
             android:title="@string/title_audio_config_list"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_audiofx"
             android:summary="@string/summary_checkbox_enable_audiofx"
             android:title="@string/title_checkbox_enable_audiofx"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_gamepad_settings"
         android:title="@string/category_gamepad_settings"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_section_gamepad"
         app:iconSpaceReserved="false">
         <com.limelight.preferences.SeekBarPreference
             android:defaultValue="5"
@@ -252,26 +255,26 @@
             android:title="@string/title_seekbar_deadzone"
             app:iconSpaceReserved="false"
             seekbar:min="-20" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_multi_controller"
             android:summary="@string/summary_checkbox_multi_controller"
             android:title="@string/title_checkbox_multi_controller"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_usb_driver"
             android:summary="@string/summary_checkbox_xb1_driver"
             android:title="@string/title_checkbox_xb1_driver"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_usb_driver"
             android:key="checkbox_usb_bind_all"
             android:summary="@string/summary_checkbox_usb_bind_all"
             android:title="@string/title_checkbox_usb_bind_all"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_mouse_emulation"
             android:summary="@string/summary_checkbox_mouse_emulation"
@@ -286,63 +289,63 @@
             android:summary="@string/summary_analog_scrolling"
             android:title="@string/title_analog_scrolling"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_flip_face_buttons"
             android:summary="@string/summary_checkbox_flip_face_buttons"
             android:title="@string/title_checkbox_flip_face_buttons"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_gamepad_touchpad_as_mouse"
             android:summary="@string/summary_checkbox_gamepad_touchpad_as_mouse"
             android:title="@string/title_checkbox_gamepad_touchpad_as_mouse"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_gamepad_motion_sensors"
             android:summary="@string/summary_checkbox_gamepad_motion_sensors"
             android:title="@string/title_checkbox_gamepad_motion_sensors"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_gamepad_motion_fallback"
             android:summary="@string/summary_checkbox_gamepad_motion_fallback"
             android:title="@string/title_checkbox_gamepad_motion_fallback"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_force_device_motion"
             android:summary="@string/summary_checkbox_force_device_motion"
             android:title="@string/title_checkbox_force_device_motion"
             android:dependency="checkbox_gamepad_motion_fallback"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_joyconfix"
             android:summary="@string/summary_joyconfix"
             android:title="@string/title_joyconfix"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_gamepad_enable_battery_report"
             android:summary="@string/summary_checkbox_gamepad_enable_battery_report"
             android:title="@string/title_checkbox_gamepad_enable_battery_report"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_enable_rumble"
             android:summary="@string/summary_enable_rumble"
             android:title="@string/title_enable_rumble"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_enable_rumble"
             android:key="checkbox_vibrate_fallback"
             android:summary="@string/summary_checkbox_vibrate_fallback"
             android:title="@string/title_checkbox_vibrate_fallback"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_vibrate_fallback"
             android:key="checkbox_enable_device_rumble"
@@ -358,12 +361,12 @@
             android:text="@string/suffix_seekbar_vibrate_fallback_strength"
             android:title="@string/title_seekbar_vibrate_fallback_strength"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_input_settings"
         android:title="@string/category_input_settings"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_section_input"
         app:iconSpaceReserved="false">
         <ListPreference
             android:defaultValue="0"
@@ -374,7 +377,7 @@
             android:title="@string/title_touchscreen_mode"
             app:iconSpaceReserved="false" />
         
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_remember_mouse_mode"
             android:summary="@string/summary_checkbox_remember_mouse_mode"
@@ -382,27 +385,27 @@
             android:dependency="checkbox_mouse_emulation"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_mouse_local_cursor"
             android:summary="@string/summary_checkbox_mouse_local_cursor"
             android:title="@string/title_checkbox_mouse_local_cursor"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_multi_touch_gestures"
             android:summary="@string/summary_checkbox_multi_touch_gestures"
             android:title="@string/title_checkbox_multi_touch_gestures"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_mouse_nav_buttons"
             android:summary="@string/summary_checkbox_mouse_nav_buttons"
             android:title="@string/title_checkbox_mouse_nav_buttons"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_absolute_mouse_mode"
             android:summary="@string/summary_checkbox_absolute_mouse_mode"
@@ -428,7 +431,7 @@
             app:iconSpaceReserved="false"
             seekbar:min="-200"
             seekbar:step="10" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_trackpad_drag_drop_vibration"
             android:summary="@string/summary_trackpad_drag_drop_vibration"
@@ -444,111 +447,114 @@
             android:summary="@string/summary_trackpad_drag_drop_threshold"
             android:title="@string/title_trackpad_drag_drop_threshold"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_trackpad_swap_axis"
             android:summary="@string/summary_trackpad_swap_axis"
             android:title="@string/title_trackpad_swap_axis"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_force_qwerty"
             android:summary="@string/summary_checkbox_force_qwerty"
             android:title="@string/title_checkbox_force_qwerty"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_back_as_meta"
             android:summary="@string/summary_back_as_meta"
             android:title="@string/title_checkbox_back_as_meta"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_back_as_guide"
             android:summary="@string/summary_back_as_guide"
             android:title="@string/title_back_as_guide"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_ignore_synth_events"
             android:summary="@string/summary_ignore_synth_events"
             android:title="@string/title_checkbox_ignore_synth_events"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_commit_text"
             android:summary="@string/summary_enable_commit_text"
             android:title="@string/title_enable_commit_text"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
+        android:key="category_host_settings"
         android:title="@string/category_host_settings"
+        app:sectionIcon="@drawable/ic_computer"
         app:iconSpaceReserved="false">
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_enable_sops"
             android:summary="@string/summary_checkbox_enable_sops"
             android:title="@string/title_checkbox_enable_sops"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_host_audio"
             android:summary="@string/summary_checkbox_host_audio"
             android:title="@string/title_checkbox_host_audio"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
+        android:key="category_general_settings"
         android:title="@string/category_general_settings"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_settings"
         app:iconSpaceReserved="false">
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_smart_clipboard_sync"
             android:summary="@string/summary_smart_clipboard_sync"
             android:title="@string/title_smart_clipboard_sync"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_smart_clipboard_sync_toast"
             android:summary="@string/summary_smart_clipboard_sync_toast"
             android:title="@string/title_smart_clipboard_sync_toast"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_hide_clipboard_content"
             android:summary="@string/summary_hide_clipboard_content"
             android:title="@string/title_hide_clipboard_content"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_ui_settings"
         android:title="@string/category_ui_settings"
-        app:initialExpandedChildrenCount="3"
+        app:sectionIcon="@drawable/ic_section_ui"
         app:iconSpaceReserved="false">
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_resume_without_confirm"
             android:summary="@string/summary_checkbox_resume_without_confirm"
             android:title="@string/title_checkbox_resume_without_confirm"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="checkbox_enable_quit_dialog"
             android:summary="@string/summary_quit_dialog"
             android:title="@string/title_quit_dialog"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:dependency="checkbox_enable_quit_dialog"
             android:defaultValue="false"
             android:key="checkbox_enable_floating_button"
             android:summary="@string/summary_floating_button"
             android:title="@string/title_floating_button"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:key="checkbox_full_screen"
             android:title="@string/title_checkbox_full_screen"
             android:summary="@string/summary_checkbox_full_screen"
@@ -564,7 +570,7 @@
             app:iconSpaceReserved="false"
             seekbar:min="0"
             seekbar:step="1" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="onscreen_keyboard_autofit"
             android:summary="@string/summary_onscreen_keyboard_autofit"
@@ -600,33 +606,33 @@
             android:summary="@string/summary_onscreen_keyboard_align_mode"
             android:title="@string/title_onscreen_keyboard_align_mode"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:key="checkbox_enable_sticky_modifier_key_virtual_keyboard"
             android:title="@string/title_checkbox_enable_sticky_modifier_key_virtual_keyboard"
             android:summary="@string/summary_checkbox_enable_sticky_modifier_key_virtual_keyboard"
             android:defaultValue="true"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_disable_warnings"
             android:summary="@string/summary_checkbox_disable_warnings"
             android:title="@string/title_checkbox_disable_warnings"
             app:iconSpaceReserved="false" />
 			
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_show_overlay_zoom_toggle_button"
             android:summary="@string/summary_show_overlay_zoom_toggle_button"
             android:title="@string/title_show_overlay_zoom_toggle_button"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_remember_zoom_pan"
             android:summary="@string/summary_checkbox_remember_zoom_pan"
             android:title="@string/title_checkbox_remember_zoom_pan"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_post_stream_toast"
             android:summary="@string/summary_enable_post_stream_toast"
@@ -637,54 +643,54 @@
             android:summary="@string/summary_checkbox_small_icon_mode"
             android:title="@string/title_checkbox_small_icon_mode"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_pip"
             android:summary="@string/summary_checkbox_enable_pip"
             android:title="@string/title_checkbox_enable_pip"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_onscreen_controls"
         android:title="@string/category_on_screen_controls_settings"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_section_osc"
         app:iconSpaceReserved="false">
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_show_onscreen_controls"
             android:summary="@string/summary_checkbox_show_onscreen_controls"
             android:title="@string/title_checkbox_show_onscreen_controls"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:dependency="checkbox_show_onscreen_controls"
             android:key="checkbox_hide_osc_when_has_gamepad"
             android:summary="@string/summary_hide_osc_when_has_gamepad"
             android:title="@string/title_hide_osc_when_has_gamepad"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_show_onscreen_controls"
             android:key="checkbox_onscreen_style_official"
             android:summary="@string/summary_checkbox_onscreen_style_official"
             android:title="@string/title_checkbox_onscreen_style_official"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:dependency="checkbox_show_onscreen_controls"
             android:key="checkbox_vibrate_osc"
             android:summary="@string/summary_checkbox_vibrate_osc"
             android:title="@string/title_checkbox_vibrate_osc"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_show_onscreen_controls"
             android:key="checkbox_only_show_L3R3"
             android:summary="@string/summary_only_l3r3"
             android:title="@string/title_only_l3r3"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:defaultValue="true"
@@ -705,7 +711,7 @@
             app:iconSpaceReserved="false"
             seekbar:min="0"
             seekbar:step="1" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_show_onscreen_controls"
             android:key="checkbox_enable_analog_stick_new"
@@ -733,29 +739,29 @@
             android:summary="@string/summary_reset_osc"
             android:title="@string/title_reset_osc"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_special_key_layout"
         android:title="@string/title_special_key_layout"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_keyboard_setting"
         app:iconSpaceReserved="false">
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_keyboard"
             android:summary="@string/summary_show_virtual_key"
             android:title="@string/title_show_virtual_key"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_clear_default_special_button"
             android:summary="@string/summary_clear_default_special_button"
             android:title="@string/title_clear_default_special_button"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_vibrate_keyboard"
             android:summary="@string/summary_vibrate_keyboard"
@@ -772,7 +778,7 @@
             android:title="@string/title_default_layout_scheme"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_enable_keyboard"
             android:key="checkbox_enable_keyboard_square"
@@ -803,22 +809,22 @@
             android:title="@string/title_export_keyboard_layout"
             app:iconSpaceReserved="false" />
 
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_virtual_trackpad_settings"
         android:title="@string/title_virtual_trackpad_settings"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_section_trackpad"
         app:iconSpaceReserved="false">
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_touch_sensitivity"
             android:summary="@string/summary_touch_sensitivity"
             android:title="@string/title_touch_sensitivity"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_enable_touch_sensitivity"
             android:key="checkbox_enable_global_touch_sensitivity"
@@ -826,7 +832,7 @@
             android:title="@string/title_global_touch_sensitivity"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:dependency="checkbox_enable_touch_sensitivity"
             android:key="checkbox_enable_touch_sensitivity_rotation_auto"
@@ -880,34 +886,34 @@
             seekbar:min="10"
             seekbar:step="10" />
 
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_perf_monitor_settings"
         android:title="@string/category_perf_monitor_settings"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_section_perf"
         app:iconSpaceReserved="false">
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_enable_perf_overlay"
             android:summary="@string/summary_enable_perf_overlay"
             android:title="@string/title_enable_perf_overlay"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_enable_perf_overlay"
             android:key="checkbox_enable_perf_overlay_lite"
             android:summary="@string/summary_checkbox_enable_perf_overlay_lite"
             android:title="@string/title_checkbox_enable_perf_overlay_lite"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_enable_perf_overlay_lite"
             android:key="checkbox_enable_perf_overlay_lite_dialog"
             android:summary="@string/summary_checkbox_enable_perf_overlay_lite_dialog"
             android:title="@string/title_checkbox_enable_perf_overlay_lite_dialog"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_enable_perf_overlay"
             android:key="checkbox_enable_perf_overlay_bottom"
@@ -915,7 +921,7 @@
             android:title="@string/title_checkbox_enable_perf_overlay_bottom"
             app:iconSpaceReserved="false" />
 
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:dependency="checkbox_enable_perf_overlay"
             android:key="checkbox_enable_perf_logging"
@@ -934,14 +940,14 @@
             android:summary="@string/summary_performance_link"
             android:title="@string/title_performance_link"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_advanced_settings"
         android:title="@string/category_advanced_settings"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_section_advanced"
         app:iconSpaceReserved="false">
-        <ListPreference
+        <com.limelight.preferences.SegmentedListPreference
             android:defaultValue="auto"
             android:entries="@array/video_format_names"
             android:entryValues="@array/video_format_values"
@@ -949,36 +955,36 @@
             android:summary="@string/summary_video_format"
             android:title="@string/title_video_format"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_unlock_fps"
             android:summary="@string/summary_unlock_fps"
             android:title="@string/title_unlock_fps"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_reduce_refresh_rate"
             android:summary="@string/summary_checkbox_reduce_refresh_rate"
             android:title="@string/title_checkbox_reduce_refresh_rate"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_full_range"
             android:summary="@string/summary_full_range"
             android:title="@string/title_full_range"
             app:iconSpaceReserved="false" />
-        <CheckBoxPreference
+        <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="checkbox_prevent_packet_loss"
             android:summary="@string/summary_prevent_packet_loss"
             android:title="@string/title_prevent_packet_loss"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 
-    <PreferenceCategory
+    <com.limelight.preferences.CollapsibleCategory
         android:key="category_settings_misc"
         android:title="@string/title_settings_misc"
-        app:initialExpandedChildrenCount="1"
+        app:sectionIcon="@drawable/ic_section_misc"
         app:iconSpaceReserved="false">
 
         <com.limelight.preferences.LanguagePreference
@@ -1022,5 +1028,5 @@
             android:summary="@string/summary_follow_update"
             android:title="@string/title_follow_update"
             app:iconSpaceReserved="false" />
-    </PreferenceCategory>
+    </com.limelight.preferences.CollapsibleCategory>
 </PreferenceScreen>

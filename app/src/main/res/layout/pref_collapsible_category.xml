@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Section header for the settings screen: icon, title, live value, chevron.
+
+    The live value on the right is what makes a collapsed section useful — you
+    can read the resolution or the bitrate without expanding anything, which is
+    the whole reason for collapsing in the first place.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="@dimen/settings_section_min_height"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/settings_section_bg"
+    android:paddingStart="@dimen/settings_h_padding"
+    android:paddingEnd="@dimen/settings_h_padding"
+    android:paddingTop="@dimen/settings_v_padding"
+    android:paddingBottom="@dimen/settings_v_padding"
+    android:clickable="true"
+    android:focusable="true">
+
+    <ImageView
+        android:id="@+id/section_icon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="14dp"
+        android:contentDescription="@null"
+        android:tint="@color/settings_accent" />
+
+    <TextView
+        android:id="@+id/section_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/settings_text_primary"
+        android:textSize="@dimen/settings_section_text"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/section_value"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:textColor="@color/settings_value"
+        android:textSize="@dimen/settings_value_text"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/section_chevron"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/settings_text_secondary"
+        android:textSize="14sp"
+        android:includeFontPadding="false" />
+
+</LinearLayout>

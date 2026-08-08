@@ -24,6 +24,7 @@ import androidx.preference.EditTextPreference;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
+import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 import androidx.preference.PreferenceScreen;
@@ -62,6 +63,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Iterator;
 import java.util.Map;
 
@@ -328,13 +330,108 @@ public class StreamSettings extends AppCompatActivity {
         }
 
         @Override
+        public void onResume() {
+            super.onResume();
+            // Header values are live, so they must be refreshed on every return
+            // to the screen -- a value may have changed in a sub-screen.
+            refreshSectionSummaries();
+        }
+
+        @Override
         public void onCreatePreferences(Bundle bundle, String s) {
             initializePreferences();
+        }
+
+        /**
+         * Gives every ordinary preference row the settings row layout.
+         *
+         * <p>Skips anything that already brought its own layout — the
+         * collapsible section headers, the segmented rows and the inline
+         * sliders all set theirs in their constructors, and overwriting those
+         * would replace the widget with a plain row and break them.
+         *
+         * <p>Presentation only. Nothing here touches a key, a default or a
+         * persisted value.
+         */
+        private void applyRowLayout(PreferenceGroup group) {
+            for (int i = 0; i < group.getPreferenceCount(); i++) {
+                Preference p = group.getPreference(i);
+
+                if (p instanceof PreferenceGroup) {
+                    // A CollapsibleCategory styles its own header; recurse into
+                    // its children either way.
+                    if (!(p instanceof CollapsibleCategory)) {
+                        p.setLayoutResource(R.layout.pref_collapsible_category);
+                    }
+                    applyRowLayout((PreferenceGroup) p);
+                    continue;
+                }
+
+                if (p instanceof SegmentedListPreference || p instanceof SeekBarPreference) {
+                    continue;
+                }
+
+                p.setLayoutResource(R.layout.pref_row);
+            }
+        }
+
+        /**
+         * Puts the current value of the settings people actually look for onto
+         * the collapsed section headers.
+         *
+         * <p>This is what makes collapsing an improvement rather than just
+         * hiding: "Video — 1080p 60 · 20 Mbps" answers the common question
+         * without expanding anything. Reads the same {@code SharedPreferences}
+         * the preferences themselves use, so it cannot drift from them.
+         *
+         * <p>Main thread only, called from {@code onResume} and after any
+         * change, like all preference UI work.
+         */
+        private void refreshSectionSummaries() {
+            PreferenceScreen screen = getPreferenceScreen();
+            if (screen == null) {
+                return;
+            }
+
+            PreferenceConfiguration config = PreferenceConfiguration.readPreferences(requireContext());
+
+            setSectionValue("category_video_settings",
+                    config.width + "x" + config.height + " · " + config.fps + "fps · "
+                            + String.format(Locale.getDefault(), "%.1f", config.bitrate / 1000.0) + " Mbps");
+
+            setSectionValue("category_audio_settings", describeAudio(config.audioConfiguration));
+
+            // Deliberately no entry for the latency trace here: that preference
+            // lives on the instrumentation branch and this one has to stand
+            // alone. It gets a section value when the two are merged.
+        }
+
+        private String describeAudio(com.limelight.nvstream.jni.MoonBridge.AudioConfiguration audioConfiguration) {
+            if (audioConfiguration == null) {
+                return null;
+            }
+            switch (audioConfiguration.channelCount) {
+                case 2: return "Stereo";
+                case 6: return "5.1";
+                case 8: return "7.1";
+                default: return audioConfiguration.channelCount + "ch";
+            }
+        }
+
+        private void setSectionValue(String key, String value) {
+            Preference p = findPreference(key);
+            if (p instanceof CollapsibleCategory) {
+                ((CollapsibleCategory) p).setLiveValue(value);
+            }
         }
 
         public void initializePreferences() {
             addPreferencesFromResource(R.xml.preferences);
             PreferenceScreen screen = getPreferenceScreen();
+
+            // Restyle every plain row in one pass rather than adding android:layout
+            // to 130 XML entries.
+            applyRowLayout(screen);
 
             AppCompatActivity activity = (AppCompatActivity) requireActivity();
             PackageManager pm = activity.getPackageManager();
