@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Palette and metrics for the rebuilt settings screen.
+
+    Kept in its own file rather than merged into colors.xml so the settings
+    restyle is self-contained and easy to review or revert. Nothing here is
+    referenced by the streaming UI.
+
+    High contrast on a dark ground, because this runs on a handheld that is
+    often used in bright light, and touch targets sized for a thumb rather than
+    a mouse pointer.
+-->
+<resources>
+    <color name="settings_bg">#FF0E0F12</color>
+    <color name="settings_surface">#FF181A1F</color>
+    <color name="settings_surface_raised">#FF23262D</color>
+    <color name="settings_divider">#FF2C3038</color>
+
+    <color name="settings_text_primary">#FFF2F4F8</color>
+    <color name="settings_text_secondary">#FFA2AAB8</color>
+    <color name="settings_text_hint">#FF6C7483</color>
+
+    <color name="settings_accent">#FF4FA3FF</color>
+    <color name="settings_accent_dim">#332F87E8</color>
+    <color name="settings_value">#FF6FD08C</color>
+
+    <color name="segment_track">#FF13151A</color>
+    <color name="segment_selected">#FF2F6FD0</color>
+    <color name="segment_text">#FFC7CEDA</color>
+    <color name="segment_text_selected">#FFFFFFFF</color>
+
+    <!-- Touch sizing. 48dp is the Android minimum; the segmented buttons and
+         section headers go above it because this is a handheld held in two
+         hands with thumbs, not a phone tapped with an index finger. -->
+    <dimen name="settings_row_min_height">56dp</dimen>
+    <dimen name="settings_section_min_height">64dp</dimen>
+    <dimen name="settings_segment_min_height">52dp</dimen>
+    <dimen name="settings_h_padding">18dp</dimen>
+    <dimen name="settings_v_padding">12dp</dimen>
+    <dimen name="settings_corner">10dp</dimen>
+
+    <dimen name="settings_title_text">16sp</dimen>
+    <dimen name="settings_summary_text">13sp</dimen>
+    <dimen name="settings_value_text">15sp</dimen>
+    <dimen name="settings_section_text">17sp</dimen>
+    <dimen name="settings_segment_text">14sp</dimen>
+</resources>

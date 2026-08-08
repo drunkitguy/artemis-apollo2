@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="CollapsibleCategory">
+        <!-- Icon drawn at the start of the section header. -->
+        <attr name="sectionIcon" format="reference" />
+        <!-- Whether the section is open the first time it is shown. The stored
+             state wins after that, so this only sets the initial impression. -->
+        <attr name="startExpanded" format="boolean" />
+    </declare-styleable>
+
+    <declare-styleable name="InlineSeekBar">
+        <!-- One-line explanation printed under the slider, e.g. what a low or
+             high value actually costs. -->
+        <attr name="explanation" format="string" />
+        <!-- Overrides for the endpoint labels when the raw numbers are not the
+             useful thing to show. -->
+        <attr name="minLabel" format="string" />
+        <attr name="maxLabel" format="string" />
+    </declare-styleable>
+</resources>

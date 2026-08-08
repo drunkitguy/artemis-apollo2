@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Standard preference row: title, summary, and whatever widget the preference
+    supplies (switch, etc).
+
+    Sized for a thumb rather than a pointer. The widget sits at the end with its
+    own generous touch area, which matters on a switch: a mis-tap on a settings
+    screen silently changes a setting rather than merely navigating wrongly.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="@dimen/settings_row_min_height"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="?android:attr/selectableItemBackground"
+    android:paddingStart="@dimen/settings_h_padding"
+    android:paddingEnd="@dimen/settings_h_padding"
+    android:paddingTop="@dimen/settings_v_padding"
+    android:paddingBottom="@dimen/settings_v_padding">
+
+    <LinearLayout
+        android:id="@+id/icon_frame"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:visibility="gone">
+        <ImageView
+            android:id="@android:id/icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@android:id/title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/settings_text_primary"
+            android:textSize="@dimen/settings_title_text" />
+
+        <TextView
+            android:id="@android:id/summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:textColor="@color/settings_text_secondary"
+            android:textSize="@dimen/settings_summary_text" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@android:id/widget_frame"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:minWidth="48dp"
+        android:layout_marginStart="12dp"
+        android:orientation="vertical"
+        android:gravity="center" />
+
+</LinearLayout>
