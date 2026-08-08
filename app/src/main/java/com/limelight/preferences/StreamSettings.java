@@ -301,6 +301,34 @@ public class StreamSettings extends AppCompatActivity {
             pref.setEntryValues(entryValues);
         }
 
+        /**
+         * Shows what Full Screen currently resolves to, so the choice is not
+         * opaque before a session starts.
+         *
+         * <p>Reads the display this settings screen is on. If the user docks a
+         * different display the number changes on the next visit, which is the
+         * honest representation of a value that is resolved at stream start
+         * rather than stored.
+         */
+        private void updateFullscreenResolutionSummary() {
+            ListPreference pref = findPreference(PreferenceConfiguration.RESOLUTION_PREF_STRING);
+            if (pref == null) {
+                return;
+            }
+
+            if (!PreferenceConfiguration.isFullscreenResolution(pref.getValue())) {
+                pref.setSummary(R.string.summary_resolution_list);
+                return;
+            }
+
+            android.graphics.Point size = PreferenceConfiguration.getDisplayNativeSize(
+                    PreferenceConfiguration.getDisplayForContext(getContext()));
+            String resolved = size == null
+                    ? getString(R.string.resolution_fullscreen)
+                    : size.x + " x " + size.y;
+            pref.setSummary(getString(R.string.summary_resolution_fullscreen, resolved));
+        }
+
         private void resetBitrateToDefault(SharedPreferences prefs, String res, String fps) {
             if (res == null) {
                 res = prefs.getString(PreferenceConfiguration.RESOLUTION_PREF_STRING, PreferenceConfiguration.DEFAULT_RESOLUTION);
@@ -309,9 +337,14 @@ public class StreamSettings extends AppCompatActivity {
                 fps = prefs.getString(PreferenceConfiguration.FPS_PREF_STRING, PreferenceConfiguration.DEFAULT_FPS);
             }
 
+            // Marks the value as ours rather than the user's. Only an
+            // auto-derived bitrate may later be recomputed for a different
+            // resolved mode; overriding a number the user deliberately chose
+            // would be worse than the bug that motivates recomputing it.
             prefs.edit()
                     .putInt(PreferenceConfiguration.BITRATE_PREF_STRING,
-                            PreferenceConfiguration.getDefaultBitrate(res, fps))
+                            PreferenceConfiguration.getDefaultBitrate(getContext(), res, fps))
+                    .putBoolean(PreferenceConfiguration.BITRATE_IS_AUTO_PREF_STRING, true)
                     .apply();
         }
 
@@ -668,6 +701,21 @@ public class StreamSettings extends AppCompatActivity {
                 }
             }
 
+            updateFullscreenResolutionSummary();
+
+            // Dragging the bitrate slider is an explicit user choice, so it
+            // must clear the auto marker. Without this the slider would keep
+            // being overwritten by the derived value on every Full Screen session.
+            Preference bitrateSliderPref = findPreference(PreferenceConfiguration.BITRATE_PREF_STRING);
+            if (bitrateSliderPref != null) {
+                bitrateSliderPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                    getPrefs().edit()
+                            .putBoolean(PreferenceConfiguration.BITRATE_IS_AUTO_PREF_STRING, false)
+                            .apply();
+                    return true;
+                });
+            }
+
             // Add a listener to the FPS and resolution preference
             // so the bitrate can be auto-adjusted
             findPreference(PreferenceConfiguration.RESOLUTION_PREF_STRING).setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
@@ -697,6 +745,10 @@ public class StreamSettings extends AppCompatActivity {
 
                     // Write the new bitrate value
                     resetBitrateToDefault(prefs, valueStr, null);
+                    // Deferred: the new value is not committed until this
+                    // listener returns true, so reading it now would give the old one.
+                    new Handler(android.os.Looper.getMainLooper())
+                            .post(() -> updateFullscreenResolutionSummary());
 
                     // Allow the original preference change to take place
                     return true;
@@ -874,7 +926,10 @@ public class StreamSettings extends AppCompatActivity {
                     float bitrateValue = Float.parseFloat(value) * 1000;
                     int bitrate = (int) bitrateValue;
                     SharedPreferences prefs = getPrefs();
-                    prefs.edit().putInt(PreferenceConfiguration.BITRATE_PREF_STRING, bitrate).apply();
+                    prefs.edit().putInt(PreferenceConfiguration.BITRATE_PREF_STRING, bitrate)
+                            // Explicit user choice: stop deriving it.
+                            .putBoolean(PreferenceConfiguration.BITRATE_IS_AUTO_PREF_STRING, false)
+                            .apply();
                     Toast.makeText(getActivity(), getString(R.string.pref_set_success), Toast.LENGTH_SHORT).show();
                     return true;
                 });

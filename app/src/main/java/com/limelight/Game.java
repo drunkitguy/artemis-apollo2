@@ -398,6 +398,22 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         boolean shouldInvertDecoderResolution = false;
 
+        // Full Screen resolution: resolve the sentinel against the display this
+        // session is actually landing on. This is the whole point of the option
+        // -- the existing "Native" entries store concrete pixels chosen when the
+        // settings screen was open, so they go stale the moment a different
+        // display is used. Done before the block below so the ordinary path
+        // picks it up; the external-display branch overrides with the same
+        // display's mode anyway, which is the same intent.
+        if (prefConfig.fullscreenResolution && prefConfig.renderMode == 0) {
+            android.graphics.Point nativeSize =
+                    PreferenceConfiguration.getDisplayNativeSize(currentDisplay);
+            if (nativeSize != null) {
+                prefConfig.width = nativeSize.x;
+                prefConfig.height = nativeSize.y;
+            }
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                 && onExternelDisplay
                 && prefConfig.renderMode == 0 // For 3D we want to maintain configured resolution
@@ -433,8 +449,33 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
             // Enter landscape unless we're on a square screen
             setPreferredOrientationForActivity();
+
         }
 
+        // Bitrate must follow the mode we just resolved, not the one stored in
+        // preferences.
+        //
+        // This is the other half of the same bug. getDefaultBitrate() keys off
+        // the *preference* resolution and frame rate, and the branch above can
+        // change both out from under it -- external-display mode always could,
+        // and Full Screen now does deliberately. On the one real hardware
+        // capture that divergence had a 4K60 session requesting the 4K120
+        // figure: 113 Mbps where its own table says 80, 41% over, permanently,
+        // with nothing reporting it. Half the frames never arrived.
+        //
+        // Only an auto-derived bitrate is recomputed. A number the user chose
+        // deliberately is left alone; silently overriding it would be a worse
+        // bug than the one being fixed.
+        if (prefConfig.bitrateIsAutoDerived) {
+            int resolvedBitrate = PreferenceConfiguration.getDefaultBitrate(
+                    prefConfig.width, prefConfig.height, Math.round(prefConfig.fps));
+            if (resolvedBitrate != prefConfig.bitrate) {
+                LimeLog.info("Bitrate re-derived for resolved mode "
+                        + prefConfig.width + "x" + prefConfig.height + "@" + Math.round(prefConfig.fps)
+                        + ": " + prefConfig.bitrate + " -> " + resolvedBitrate + " kbps");
+                prefConfig.bitrate = resolvedBitrate;
+            }
+        }
 
         if (
                 prefConfig.videoScaleMode == PreferenceConfiguration.ScaleMode.STRETCH ||
