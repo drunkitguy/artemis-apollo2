@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background"/>
+    <!-- A gradient bitmap rather than a flat colour: cyan and magenta read far
+         better on a dark ground than on the source artwork's off-white, and the
+         gradient keeps the icon from vanishing on a black launcher wallpaper. -->
+    <background android:drawable="@mipmap/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-    <monochrome android:drawable="@mipmap/ic_launcher_foreground"/>
+    <!-- Themed icons tint by alpha, so this needs to be a silhouette. Pointing
+         it at the colour foreground would work by accident; a dedicated asset
+         means the silhouette can be tuned without disturbing the colour one. -->
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
 </adaptive-icon>
