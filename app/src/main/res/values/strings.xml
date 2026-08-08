@@ -198,6 +198,17 @@
     <string name="suffix_seekbar_bitrate_mbps">Mbps</string>
     <string name="title_resolution_scale_factor">Resolution Scale Factor</string>
     <string name="summary_resolution_scale_factor">Server side requested virtual screen resolution will be multiplied by this factor. Streaming resolution are not affected.\ne.g. 120% will make 2000x1000 become 2400x1200.\nSetting a higher scale factor will improve image quality for some games.\nRequires Apollo to take effect.</string>
+    <string name="title_settings_panel">Settings</string>
+    <string name="game_menu_settings_panel">Settings</string>
+    <string name="settings_panel_edge_off">Off</string>
+    <string name="settings_panel_edge_left">Slide from left edge</string>
+    <string name="settings_panel_edge_right">Slide from right edge</string>
+    <string name="title_settings_panel_edge">Open settings while streaming</string>
+    <string name="summary_settings_panel_edge">Swipe in from a screen edge to open settings over the running stream, without leaving it. The panel costs nothing while closed.</string>
+    <string name="title_settings_panel_slide_distance">Gesture slide distance</string>
+    <string name="summary_settings_panel_slide_distance">How far you must drag in from the edge before the panel opens. Raise it if you trigger it by accident while playing.</string>
+    <string name="settings_panel_close">Close settings</string>
+    <string name="settings_panel_more">More options</string>
     <string name="resolution_prefix_native">Native</string>
     <string name="resolution_prefix_native_fullscreen">Native Full-Screen</string>
     <string name="resolution_prefix_native_landscape">(Landscape)</string>

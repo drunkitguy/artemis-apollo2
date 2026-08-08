@@ -297,6 +297,13 @@ public class PreferenceConfiguration {
     //自由摇杆啊
     public boolean enableNewAnalogStick;
 
+    // Which screen edge opens the settings panel while streaming: "off",
+    // "left" or "right". A separate panel can take the opposite edge later.
+    public String settingsPanelEdge;
+
+    // How far in dp the user must drag from the edge before the panel opens.
+    public int settingsPanelSlideDistance;
+
     public boolean enableFullExDisplay;
 
     //串流画面顶部居中显示
@@ -964,6 +971,9 @@ private static int getFramePacingValue(Context context) {
         config.enableNewAnalogStick=prefs.getBoolean(CHECKBOX_CHECKBOX_ENABLE_ANALOG_STICK_NEW,false);
 
         config.enableFullExDisplay=prefs.getBoolean("checkbox_enable_fullexdisplay",false);
+
+        config.settingsPanelEdge = prefs.getString("list_settings_panel_edge", "left");
+        config.settingsPanelSlideDistance = prefs.getInt("seekbar_settings_panel_slide_distance", 40);
 
         config.alignDisplayTopCenter =prefs.getBoolean("checkbox_enable_view_top_center",false);
 

@@ -43,6 +43,8 @@ import com.limelight.profiles.ProfilesManager;
 import com.limelight.ui.ExternalControllerView;
 import com.limelight.ui.GameGestures;
 import com.limelight.ui.StreamContainer;
+import com.limelight.preferences.EdgeSwipeDetector;
+import com.limelight.preferences.SettingsPanel;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.ExternalDisplayControlActivity;
 import com.limelight.utils.MouseModeOption;
@@ -312,6 +314,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     // Queue for batching commitText payloads
     private static final int UTF8_CHUNK_SIZE = 512;
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
+    // Settings as a slide-in panel over the running stream. Created lazily on
+    // first use, so a session where it is never opened never inflates it and
+    // costs nothing. Main thread only.
+    private SettingsPanel settingsPanel;
+    private EdgeSwipeDetector settingsEdgeSwipe;
+
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
 
     private final Runnable flushCommitTextQueue = new Runnable() {
@@ -3971,11 +3979,51 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void onBackPressed() {
+        // The panel takes back first, so closing it does not also leave the stream.
+        if (settingsPanel != null && settingsPanel.onBackPressed()) {
+            return;
+        }
+
         if(prefConfig.enableBackMenu){
             showGameMenu(null);
             return;
         }
         super.onBackPressed();
+    }
+
+    /**
+     * Opens or closes the settings panel over the running stream.
+     *
+     * <p>Deliberately an overlay View rather than launching the settings
+     * activity: an activity on top would put this one through onPause, and a
+     * paused activity is one the platform may stop rendering or tear down. The
+     * stream must not notice that settings were opened.
+     */
+    public void toggleSettingsPanel() {
+        if (settingsPanel == null) {
+            boolean fromLeft = !"right".equals(prefConfig.settingsPanelEdge);
+            settingsPanel = new SettingsPanel(this, fromLeft);
+        }
+        settingsPanel.toggle();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        // Observe only. The detector never consumes the event, so a gesture it
+        // misreads still reaches the stream -- swallowing input on a heuristic
+        // is not a trade worth making on a streaming client.
+        if (settingsEdgeSwipe == null && prefConfig != null
+                && !"off".equals(prefConfig.settingsPanelEdge)) {
+            boolean fromLeft = !"right".equals(prefConfig.settingsPanelEdge);
+            settingsEdgeSwipe = new EdgeSwipeDetector(this, fromLeft,
+                    prefConfig.settingsPanelSlideDistance, this::toggleSettingsPanel);
+        }
+
+        if (settingsEdgeSwipe != null && (settingsPanel == null || !settingsPanel.isOpen())) {
+            settingsEdgeSwipe.onTouchEvent(event, getWindow().getDecorView().getWidth());
+        }
+
+        return super.dispatchTouchEvent(event);
     }
 
     public void sendExecServerCmd(int cmdId) {
