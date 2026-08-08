@@ -125,6 +125,10 @@
     <string name="delete_pc_msg">Are you sure you want to delete this PC?</string>
     <string name="slow_connection_msg">Slow connection to PC\nReduce your bitrate</string>
     <string name="poor_connection_msg">Poor connection to PC</string>
+    <!-- Link health summary shown after a session with significant frame loss -->
+    <string name="link_health_notable">%1$d%% of video frames never arrived. The stream was dropping frames on the way to this device.</string>
+    <string name="link_health_severe">%1$d%% of video frames never arrived — the connection could not carry this stream.</string>
+    <string name="link_health_suggestion">You asked for %1$d Mbps. Try around %2$d Mbps, or use a lower resolution.</string>
     <string name="perf_overlay_streamdetails">Video stream: %1$s %2$.2f FPS</string>
     <string name="perf_overlay_decoder">Decoder: %1$s</string>
     <string name="perf_overlay_incomingfps">Incoming frame rate from network: %1$.2f FPS</string>

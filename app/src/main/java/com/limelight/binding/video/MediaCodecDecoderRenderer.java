@@ -2921,6 +2921,24 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         return minDecodeTime < Float.MAX_VALUE;
     }
 
+    /**
+     * Frames the client actually received and decoded this session.
+     *
+     * <p>Read at session end, after the video receive thread has been joined,
+     * so the counters are quiescent by the time anyone calls this.
+     */
+    public int getTotalFramesReceived() {
+        return globalVideoStats.totalFramesReceived;
+    }
+
+    /**
+     * Frames the host produced that never arrived, counted from gaps in the
+     * frame numbering rather than inferred from timing.
+     */
+    public int getTotalFramesLost() {
+        return globalVideoStats.framesLost;
+    }
+
     @SuppressLint("DefaultLocale")
     public String getMinDecoderLatency() {
         return String.format("%1$.2f", minDecodeTime);

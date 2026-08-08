@@ -46,6 +46,7 @@ import com.limelight.ui.GameGestures;
 import com.limelight.ui.StreamContainer;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.ExternalDisplayControlActivity;
+import com.limelight.utils.LinkHealthSummary;
 import com.limelight.utils.MouseModeOption;
 import com.limelight.utils.PanZoomHandler;
 import com.limelight.utils.PerformanceDataTracker;
@@ -81,6 +82,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.os.PersistableBundle;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -313,6 +315,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     // Queue for batching commitText payloads
     private static final int UTF8_CHUNK_SIZE = 512;
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
+// When the stream actually started, for the end-of-session link health report.
+    // Written once on the UI thread before the connection starts, read once on the
+    // UI thread after it ends.
+    private long streamStartUptimeMs;
+
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
 
     // Text input focus hints from the host.
@@ -953,6 +960,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             if (!attemptedConnection) {
                 LimeLog.info("Surface is available, starting connection...");
                 attemptedConnection = true;
+                streamStartUptimeMs = SystemClock.uptimeMillis();
 
                 // Der Decoder erhält die jeweils aktive Oberfläche vom Container
                 decoderRenderer.setRenderTarget(streamContainer.getSurface());
@@ -1915,6 +1923,30 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             if (message != null) {
                 if (prefConfig.enableLatencyToast) {
                     Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                }
+            }
+
+            // Frame loss report. Deliberately NOT behind enableLatencyToast: that
+            // preference is off by default and is about latency curiosity, whereas
+            // this fires only when a large fraction of the video never arrived,
+            // which is not a detail the user opted into hearing about. On the first
+            // hardware capture half the frames were lost and the client's only
+            // output was a "poor connection" overlay with no number on it, so there
+            // was nothing to act on and nothing that outlived the session.
+            //
+            // Still respects disableWarnings, which is the user explicitly asking
+            // not to be told about connection problems.
+            if (!prefConfig.disableWarnings && decoderRenderer != null) {
+                LinkHealthSummary health = new LinkHealthSummary(
+                        decoderRenderer.getTotalFramesReceived(),
+                        decoderRenderer.getTotalFramesLost(),
+                        prefConfig.bitrate,
+                        SystemClock.uptimeMillis() - streamStartUptimeMs);
+
+                String healthMessage = health.buildMessage(this);
+                if (healthMessage != null) {
+                    Toast.makeText(this, healthMessage, Toast.LENGTH_LONG).show();
+                    LimeLog.info("Link health: " + health.toDiagnosticString());
                 }
             }
 
