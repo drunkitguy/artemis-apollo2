@@ -202,6 +202,8 @@
     <string name="suffix_seekbar_bitrate_mbps">Mbps</string>
     <string name="title_resolution_scale_factor">Resolution Scale Factor</string>
     <string name="summary_resolution_scale_factor">Server side requested virtual screen resolution will be multiplied by this factor. Streaming resolution are not affected.\ne.g. 120% will make 2000x1000 become 2400x1200.\nSetting a higher scale factor will improve image quality for some games.\nRequires Apollo to take effect.</string>
+    <string name="resolution_fullscreen">Full Screen</string>
+    <string name="summary_resolution_fullscreen">Always use the full native resolution of whichever screen is in use, resolved when the stream starts. Right now that is %1$s. Bitrate follows it automatically unless you set one yourself.</string>
     <string name="resolution_prefix_native">Native</string>
     <string name="resolution_prefix_native_fullscreen">Native Full-Screen</string>
     <string name="resolution_prefix_native_landscape">(Landscape)</string>
