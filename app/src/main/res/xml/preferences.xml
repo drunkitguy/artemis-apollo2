@@ -234,6 +234,25 @@
             android:summary="@string/summary_auto_keyboard_on_focus"
             android:title="@string/title_auto_keyboard_on_focus"
             app:iconSpaceReserved="false" />
+
+        <com.limelight.preferences.SegmentedListPreference
+            android:defaultValue="left"
+            android:entries="@array/settings_panel_edge_names"
+            android:entryValues="@array/settings_panel_edge_values"
+            android:key="list_settings_panel_edge"
+            android:summary="@string/summary_settings_panel_edge"
+            android:title="@string/title_settings_panel_edge"
+            app:iconSpaceReserved="false" />
+
+        <com.limelight.preferences.SeekBarPreference
+            android:defaultValue="40"
+            android:key="seekbar_settings_panel_slide_distance"
+            android:max="200"
+            android:summary="@string/summary_settings_panel_slide_distance"
+            android:title="@string/title_settings_panel_slide_distance"
+            app:iconSpaceReserved="false"
+            seekbar:min="10"
+            seekbar:step="5" />
     </com.limelight.preferences.CollapsibleCategory>
 
     <com.limelight.preferences.CollapsibleCategory

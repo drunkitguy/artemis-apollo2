@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="settings_panel_edge_names">
+        <item>@string/settings_panel_edge_off</item>
+        <item>@string/settings_panel_edge_left</item>
+        <item>@string/settings_panel_edge_right</item>
+    </string-array>
+    <string-array name="settings_panel_edge_values" translatable="false">
+        <item>off</item>
+        <item>left</item>
+        <item>right</item>
+    </string-array>
+
     <string-array name="resolution_names">
         <item>@string/resolution_360p</item>
         <item>@string/resolution_480p</item>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Slide-in settings panel.
+
+    The root is a full-screen container so it can hold both the dimmed scrim and
+    the sheet, but it is GONE whenever the panel is closed. That matters more
+    than usual here: this thing can sit on top of a live stream, and a View that
+    is GONE is not measured, laid out, drawn or composited at all, whereas an
+    INVISIBLE or alpha-0 view still costs a compositing pass every frame.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settings_panel_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:visibility="gone">
+
+    <!-- Tapping the exposed area closes the panel, which is the gesture people
+         expect from a sheet. Kept separate from the sheet so touches on the
+         sheet itself are not intercepted. -->
+    <View
+        android:id="@+id/settings_panel_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="false" />
+
+    <LinearLayout
+        android:id="@+id/settings_panel_sheet"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="@color/settings_bg"
+        android:elevation="16dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:id="@+id/settings_panel_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/settings_section_min_height"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/settings_surface"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp">
+
+            <ImageButton
+                android:id="@+id/settings_panel_collapse"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/settings_panel_close"
+                android:src="@drawable/ic_close"
+                android:tint="@color/settings_text_primary" />
+
+            <TextView
+                android:id="@+id/settings_panel_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/title_settings_panel"
+                android:textColor="@color/settings_text_primary"
+                android:textSize="@dimen/settings_section_text"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/settings_panel_overflow"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/settings_panel_more"
+                android:src="@drawable/ic_section_misc"
+                android:tint="@color/settings_text_primary" />
+        </LinearLayout>
+
+        <androidx.fragment.app.FragmentContainerView
+            android:id="@+id/settings_panel_content"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+
+</FrameLayout>

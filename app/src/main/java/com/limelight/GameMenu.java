@@ -314,6 +314,9 @@ public class GameMenu implements Game.GameMenuCallbacks {
                     }
                 }));
 
+        options.add(new MenuOption(getString(R.string.game_menu_settings_panel), false,
+                game::toggleSettingsPanel));
+
         options.add(new MenuOption(getString(R.string.game_menu_toggle_keyboard), true,
                 game::toggleKeyboard));
 

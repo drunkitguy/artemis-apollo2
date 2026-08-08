@@ -327,6 +327,13 @@ public class PreferenceConfiguration {
     //自由摇杆啊
     public boolean enableNewAnalogStick;
 
+    // Which screen edge opens the settings panel while streaming: "off",
+    // "left" or "right". A separate panel can take the opposite edge later.
+    public String settingsPanelEdge;
+
+    // How far in dp the user must drag from the edge before the panel opens.
+    public int settingsPanelSlideDistance;
+
     public boolean enableFullExDisplay;
     // Which screen Full External Display Mode targets. See DISPLAY_TARGET_* above.
     public String displayTarget;
@@ -1200,6 +1207,9 @@ private static int getFramePacingValue(Context context) {
         config.displayTarget = prefs.getString(DISPLAY_TARGET_PREF_STRING, DISPLAY_TARGET_AUTO);
 
         config.autoKeyboardOnFocus=prefs.getBoolean("checkbox_auto_keyboard_on_focus",false);
+
+        config.settingsPanelEdge = prefs.getString("list_settings_panel_edge", "left");
+        config.settingsPanelSlideDistance = prefs.getInt("seekbar_settings_panel_slide_distance", 40);
 
         config.alignDisplayTopCenter =prefs.getBoolean("checkbox_enable_view_top_center",false);
 
