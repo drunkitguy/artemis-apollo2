@@ -363,7 +363,8 @@ public class MoonBridge {
                                               byte[] riAesKey, byte[] riAesIv,
                                               int videoCapabilities,
                                               int colorSpace, int colorRange,
-                                              int latencyTraceEnabled);
+                                              int latencyTraceEnabled,
+                                              int inputProbeEnabled);
 
     public static native void stopConnection();
 
@@ -372,6 +373,17 @@ public class MoonBridge {
     public static native void sendExecServerCmd(int cmdId);
 
     public static native void sendEmptyPayload();
+
+    // Input round-trip probe. Call immediately before the matching send, on the
+    // same thread. Returns after one branch when the probe is not negotiated.
+    public static native void setNextInputEventTime(long eventTimeUs);
+
+    // Drains probe samples into a flat long array, 8 longs per sample. Returns
+    // the number of samples written.
+    public static native int drainInputProbes(long[] out);
+
+    // {sent, rateLimited, echoesMatched, conversionFailures}
+    public static native int[] getInputProbeStats();
 
     public static native void sendMouseMove(short deltaX, short deltaY);
 

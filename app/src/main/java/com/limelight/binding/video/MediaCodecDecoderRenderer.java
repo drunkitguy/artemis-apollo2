@@ -2070,6 +2070,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 trace.setRendererDiagnostics(getRendererDiagnostics());
                 File written = trace.flushToCsv(traceFlushContext);
 
+                // Input probes go to a sibling file rather than into the frame
+                // trace: there is no key that joins an input event to a frame,
+                // and inventing one would be a guess dressed as a measurement.
+                // Written here so both files land in the same directory and are
+                // retrieved by the same export path. No-ops when the probe was
+                // never negotiated, since the ring will be empty.
+                InputProbeTraceWriter.flush(traceFlushContext, null);
+
                 // Tell the user the trace exists and where to get it. Without
                 // this the file is written silently into app-specific external
                 // storage, which Android 11+ hides from MTP and from every other

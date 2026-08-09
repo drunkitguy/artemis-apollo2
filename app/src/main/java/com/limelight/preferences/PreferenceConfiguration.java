@@ -281,6 +281,10 @@ public class PreferenceConfiguration {
     // also requires the host to advertise support before anything is sent.
     public boolean enableLatencyTrace;
 
+    // Measure input round trip: kernel event time, send time, host receive and
+    // inject times echoed back. Off by default; needs host support.
+    public boolean enableInputProbe;
+
     public boolean enableLatencyToast;
     public boolean enableBackMenu;
     public boolean enableFloatingButton;
@@ -928,6 +932,7 @@ private static int getFramePacingValue(Context context) {
         config.enablePerfOverlayLite = prefs.getBoolean("checkbox_enable_perf_overlay_lite",DEFAULT_ENABLE_PERF_OVERLAY);
         config.enablePerfOverlayBottom = prefs.getBoolean("checkbox_enable_perf_overlay_bottom",DEFAULT_PERF_OVERLAY_BOTTOM);
         config.enableLatencyTrace = prefs.getBoolean("checkbox_enable_latency_trace", false);
+        config.enableInputProbe = prefs.getBoolean("checkbox_enable_input_probe", false);
         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);
         config.mouseNavButtons = prefs.getBoolean(MOUSE_NAV_BUTTONS_STRING, DEFAULT_MOUSE_NAV_BUTTONS);

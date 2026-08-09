@@ -801,6 +801,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 .setColorRange(decoderRenderer.getPreferredColorRange())
                 .setPersistGamepadsAfterDisconnect(!prefConfig.multiController)
                 .setLatencyTraceEnabled(prefConfig.enableLatencyTrace)
+                .setInputProbeEnabled(prefConfig.enableInputProbe)
                 .build();
 
         // Apollo 2.0 SPEC.md §3. Allocated before the connection starts so the

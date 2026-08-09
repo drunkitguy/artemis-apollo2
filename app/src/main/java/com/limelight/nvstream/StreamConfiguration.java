@@ -32,6 +32,7 @@ public class StreamConfiguration {
     private boolean persistGamepadsAfterDisconnect;
     private boolean enableUltraLowLatency;
     private boolean latencyTraceEnabled;
+    private boolean inputProbeEnabled;
 
     public static class Builder {
         private StreamConfiguration config = new StreamConfiguration();
@@ -141,6 +142,11 @@ public class StreamConfiguration {
         // enabled; also requires the host to advertise support.
         public StreamConfiguration.Builder setLatencyTraceEnabled(boolean enabled) {
             config.latencyTraceEnabled = enabled;
+            return this;
+        }
+
+        public StreamConfiguration.Builder setInputProbeEnabled(boolean enabled) {
+            config.inputProbeEnabled = enabled;
             return this;
         }
 
@@ -261,6 +267,10 @@ public class StreamConfiguration {
 
     public boolean getLatencyTraceEnabled() {
         return latencyTraceEnabled;
+    }
+
+    public boolean getInputProbeEnabled() {
+        return inputProbeEnabled;
     }
 
     public int getColorSpace() {

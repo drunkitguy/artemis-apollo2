@@ -920,6 +920,12 @@
             android:summary="@string/summary_checkbox_enable_latency_trace"
             android:title="@string/title_checkbox_enable_latency_trace"
             app:iconSpaceReserved="false" />
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:key="checkbox_enable_input_probe"
+            android:summary="@string/summary_checkbox_enable_input_probe"
+            android:title="@string/title_checkbox_enable_input_probe"
+            app:iconSpaceReserved="false" />
         <Preference
             android:key="export_latency_trace"
             android:summary="@string/summary_export_latency_trace"

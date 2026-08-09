@@ -476,7 +476,8 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
                                                            jbyteArray riAesKey, jbyteArray riAesIv,
                                                            jint videoCapabilities,
                                                            jint colorSpace, jint colorRange,
-                                                           jint latencyTraceEnabled) {
+                                                           jint latencyTraceEnabled,
+                                                           jint inputProbeEnabled) {
     SERVER_INFORMATION serverInfo = {
             .address = (*env)->GetStringUTFChars(env, address, 0),
             .serverInfoAppVersion = (*env)->GetStringUTFChars(env, appVersion, 0),
@@ -497,7 +498,8 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
             .encryptionFlags = ENCFLG_AUDIO,
             .colorSpace = colorSpace,
             .colorRange = colorRange,
-            .latencyTraceEnabled = latencyTraceEnabled
+            .latencyTraceEnabled = latencyTraceEnabled,
+            .inputProbeEnabled = inputProbeEnabled
     };
 
     jbyte* riAesKeyBuf = (*env)->GetByteArrayElements(env, riAesKey, NULL);
