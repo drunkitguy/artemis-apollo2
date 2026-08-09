@@ -125,7 +125,15 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // queue back-off engage" and "which display was chosen, and where did
         // the controls go".
         sb.append(" output_queue_ceiling_start=").append(OUTPUT_BUFFER_QUEUE_MAX);
-        sb.append(" output_queue_ceiling_settled=").append(outputQueueCeiling);
+        // Deliberately NOT called "settled". The ceiling starts at the maximum
+        // and only decrements, so on its own it cannot distinguish "the back-off
+        // ran and stopped here" from "the back-off never ran". The two fields
+        // after it are the ones that carry evidence: a max observed depth of 2
+        // with zero back-off events means the extra-depth path never executed,
+        // whatever the ceiling says.
+        sb.append(" output_queue_ceiling_now=").append(outputQueueCeiling);
+        sb.append(" output_queue_max_depth_observed=").append(outputQueueMaxDepthObserved);
+        sb.append(" output_queue_backoff_events=").append(outputQueueBackoffEvents);
         sb.append(" late_frame_tolerance_final_us=").append(jitterToleranceNs / 1000L);
         sb.append(" display_selection=[").append(ServerHelper.getLastDisplaySelection()).append(']');
         // --- end integration join ---
@@ -619,6 +627,19 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
      * non-increasing within a session.
      */
     private volatile int outputQueueCeiling = OUTPUT_BUFFER_QUEUE_MAX;
+
+    // High-water mark of the queue depth actually observed, and how many times
+    // the back-off fired.
+    //
+    // These exist because outputQueueCeiling alone is NOT evidence: it is
+    // initialised to OUTPUT_BUFFER_QUEUE_MAX and only ever decremented, so it
+    // reads 4 whether the adaptive path ran or not. Reporting it as
+    // "settled" made a value that had never moved look like a result, and I
+    // read it back as proof the mechanism had run when it had not. A settled
+    // value indistinguishable from its initial value is a broken measurement.
+    // Renderer thread only, read once at teardown.
+    private volatile int outputQueueMaxDepthObserved;
+    private volatile int outputQueueBackoffEvents;
     private int outputStarvationStreak;
     private boolean outputQueueCeilingLatched;
 
@@ -647,6 +668,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         outputStarvationStreak = 0;
         outputQueueCeiling--;
+        outputQueueBackoffEvents++;
         LimeLog.warning("Decoder starved while holding " + (outputQueueCeiling + 1)
                 + " output buffers; reducing BALANCED queue ceiling to " + outputQueueCeiling);
 
@@ -2029,6 +2051,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
                                 // Add this buffer
                                 outputBufferQueue.add(lastIndex);
+                                if (outputBufferQueue.size() > outputQueueMaxDepthObserved) {
+                                    outputQueueMaxDepthObserved = outputBufferQueue.size();
+                                }
                                 // NB: in BALANCED non presentiamo qui; lasciamo il fallback stats sotto
                             }
 

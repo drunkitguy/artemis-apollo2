@@ -158,7 +158,7 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_ENABLE_ULTRA_LOW_LATENCY = true;
     private static final boolean DEFAULT_ENFORCE_DISPLAY_MODE = false;
     private static final boolean DEFAULT_USE_VIRTUAL_DISPLAY = false;
-    private static final String DEFAULT_VIDEO_SCALE_MODE = "stretch";
+    private static final String DEFAULT_VIDEO_SCALE_MODE = "fit";
     private static final boolean DEFAULT_AUTO_INVERT_VIDEO_RESOLUTION = true;
     private static final int DEFAULT_RESOLUTION_SCALE_FACTOR = 100;
     private static final boolean DEFAULT_RESUME_WITHOUT_CONFIRM = false;
