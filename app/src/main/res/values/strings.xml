@@ -204,6 +204,22 @@
     <string name="summary_resolution_scale_factor">Server side requested virtual screen resolution will be multiplied by this factor. Streaming resolution are not affected.\ne.g. 120% will make 2000x1000 become 2400x1200.\nSetting a higher scale factor will improve image quality for some games.\nRequires Apollo to take effect.</string>
     <string name="resolution_fullscreen">Full Screen</string>
     <string name="summary_resolution_fullscreen">Always use the full native resolution of whichever screen is in use, resolved when the stream starts. Right now that is %1$s. Bitrate follows it automatically unless you set one yourself.</string>
+    <string name="preset_docked">Docked / external screen</string>
+    <string name="preset_handheld">Handheld / built-in screen</string>
+    <string name="title_recommended_settings">Recommended settings</string>
+    <string name="summary_recommended_settings">Apply a known-good set for low latency and clean picture. Shows what will change first, and can be undone.</string>
+    <string name="recommended_apply">Apply</string>
+    <string name="recommended_revert">Undo</string>
+    <string name="recommended_no_changes">Everything already matches this preset.</string>
+    <string name="recommended_confirm_title">Apply %1$s?</string>
+    <string name="recommended_applied">Recommended settings applied. You can undo this from Settings.</string>
+    <string name="recommended_reverted">Your previous settings have been restored.</string>
+    <string name="migration_notice_title">We updated a few video settings</string>
+    <string name="migration_notice_body">This update changed these settings so the picture is not scaled and latency is lower:
+
+%1$s
+
+Everything else is exactly as you left it.</string>
     <string name="title_settings_panel">Settings</string>
     <string name="game_menu_settings_panel">Settings</string>
     <string name="settings_panel_edge_off">Off</string>

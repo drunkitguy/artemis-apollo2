@@ -218,6 +218,12 @@
             android:summary="@string/summary_fullexdisplay_mode"
             android:title="@string/title_fullexdisplay_mode"
             app:iconSpaceReserved="false" />
+        <Preference
+            android:key="pref_recommended_settings"
+            android:summary="@string/summary_recommended_settings"
+            android:title="@string/title_recommended_settings"
+            app:iconSpaceReserved="false" />
+
         <com.limelight.preferences.SegmentedListPreference
             android:defaultValue="auto"
             android:dependency="checkbox_enable_fullexdisplay"

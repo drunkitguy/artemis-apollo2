@@ -385,6 +385,70 @@ public class StreamSettings extends AppCompatActivity {
          * honest representation of a value that is resolved at stream start
          * rather than stored.
          */
+        // Preset chooser: pick a preset, see only what would change, confirm.
+        // Deliberately shows the differences rather than the whole set -- a
+        // dialog listing twelve settings of which eleven already match trains
+        // people to press OK without reading it.
+        private void setupRecommendedSettingsPreference() {
+            Preference pref = findPreference("pref_recommended_settings");
+            if (pref == null) {
+                return;
+            }
+
+            pref.setOnPreferenceClickListener(p -> {
+                final android.content.Context ctx = requireContext();
+                final String[] presets = {
+                        RecommendedSettings.PRESET_DOCKED,
+                        RecommendedSettings.PRESET_HANDHELD };
+                final String[] names = {
+                        getString(R.string.preset_docked),
+                        getString(R.string.preset_handheld) };
+
+                androidx.appcompat.app.AlertDialog.Builder b =
+                        new androidx.appcompat.app.AlertDialog.Builder(ctx);
+                b.setTitle(R.string.title_recommended_settings);
+                b.setItems(names, (d, which) -> showPresetPreview(ctx, presets[which], names[which]));
+
+                if (RecommendedSettings.canRestore(ctx)) {
+                    b.setNeutralButton(R.string.recommended_revert, (d, w) -> {
+                        RecommendedSettings.restore(ctx);
+                        Toast.makeText(ctx, R.string.recommended_reverted, Toast.LENGTH_LONG).show();
+                        initializePreferences();
+                    });
+                }
+                b.setNegativeButton(android.R.string.cancel, null);
+                b.show();
+                return true;
+            });
+        }
+
+        private void showPresetPreview(android.content.Context ctx, String preset, String name) {
+            java.util.List<RecommendedSettings.Change> changes =
+                    RecommendedSettings.preview(ctx, preset);
+
+            if (changes.isEmpty()) {
+                Toast.makeText(ctx, R.string.recommended_no_changes, Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            StringBuilder sb = new StringBuilder();
+            for (RecommendedSettings.Change c : changes) {
+                sb.append("• ").append(c.label).append('\n');
+            }
+
+            new androidx.appcompat.app.AlertDialog.Builder(ctx)
+                    .setTitle(getString(R.string.recommended_confirm_title, name))
+                    .setMessage(sb.toString().trim())
+                    .setPositiveButton(R.string.recommended_apply, (d, w) -> {
+                        RecommendedSettings.apply(ctx, preset);
+                        Toast.makeText(ctx, R.string.recommended_applied, Toast.LENGTH_LONG).show();
+                        // Rebuild so every row shows its new value immediately.
+                        initializePreferences();
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+        }
+
         private void updateFullscreenResolutionSummary() {
             ListPreference pref = findPreference(PreferenceConfiguration.RESOLUTION_PREF_STRING);
             if (pref == null) {
@@ -451,7 +515,7 @@ public class StreamSettings extends AppCompatActivity {
         /**
          * Gives every ordinary preference row the settings row layout.
          *
-         * <p>Skips anything that already brought its own layout — the
+         * <p>Skips anything that already brought its own layout â the
          * collapsible section headers, the segmented rows and the inline
          * sliders all set theirs in their constructors, and overwriting those
          * would replace the widget with a plain row and break them.
@@ -486,7 +550,7 @@ public class StreamSettings extends AppCompatActivity {
          * the collapsed section headers.
          *
          * <p>This is what makes collapsing an improvement rather than just
-         * hiding: "Video — 1080p 60 · 20 Mbps" answers the common question
+         * hiding: "Video â 1080p 60 Â· 20 Mbps" answers the common question
          * without expanding anything. Reads the same {@code SharedPreferences}
          * the preferences themselves use, so it cannot drift from them.
          *
@@ -502,7 +566,7 @@ public class StreamSettings extends AppCompatActivity {
             PreferenceConfiguration config = PreferenceConfiguration.readPreferences(requireContext());
 
             setSectionValue("category_video_settings",
-                    config.width + "x" + config.height + " · " + config.fps + "fps · "
+                    config.width + "x" + config.height + " Â· " + config.fps + "fps Â· "
                             + String.format(Locale.getDefault(), "%.1f", config.bitrate / 1000.0) + " Mbps");
 
             setSectionValue("category_audio_settings", describeAudio(config.audioConfiguration));
@@ -870,6 +934,8 @@ public class StreamSettings extends AppCompatActivity {
                     hdrPref.setSummary("Update the firmware on your NVIDIA SHIELD Android TV to enable HDR");
                 }
             }
+
+            setupRecommendedSettingsPreference();
 
             updateFullscreenResolutionSummary();
 
@@ -1252,8 +1318,8 @@ public class StreamSettings extends AppCompatActivity {
                     Iterator it = object.keys();
                     prefEditor.clear();
                     while (it.hasNext()) {
-                        String key = (String) it.next();// 获得key
-                        String value = object.getString(key);// 获得value
+                        String key = (String) it.next();// è·å¾key
+                        String value = object.getString(key);// è·å¾value
                         prefEditor.putString(key, value);
                     }
                     prefEditor.apply();
@@ -1309,11 +1375,11 @@ public class StreamSettings extends AppCompatActivity {
             return file1;
         }
 
-        //获取所有设置项配置文件
+        //è·åææè®¾ç½®é¡¹éç½®æä»¶
         private File getAllJsonData(File file){
             SharedPreferences pref = getPrefs();
             Map<String,?> map = pref.getAll();
-            //获取适配电脑的数据库信息
+            //è·åééçµèçæ°æ®åºä¿¡æ¯
 //            List<ComputerDetails> map= new ComputerDatabaseManager(context).getAllComputers();
             File file1= new File(file,"allJSON.json");
             String jsonStr=new Gson().toJson(map);

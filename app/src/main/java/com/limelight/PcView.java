@@ -20,6 +20,7 @@ import com.limelight.nvstream.wol.WakeOnLanSender;
 import com.limelight.preferences.AddComputerManually;
 import com.limelight.preferences.GlPreferences;
 import com.limelight.preferences.PreferenceConfiguration;
+import com.limelight.preferences.RecommendedSettings;
 import com.limelight.preferences.StreamSettings;
 import com.limelight.profiles.ProfilesManager;
 import com.limelight.ui.AdapterFragment;
@@ -367,9 +368,44 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
         }
     }
 
-    @Override
+    private void maybeRunSettingsMigration() {
+        try {
+            if (RecommendedSettings.isMigrationPending(this)) {
+                RecommendedSettings.migrateOnce(this);
+            }
+
+            final String summary = RecommendedSettings.consumeMigrationSummary(this);
+            if (summary == null) {
+                return;
+            }
+
+            // Told after the fact rather than asked beforehand, because this
+            // runs on first launch after an update and a modal on the way into
+            // a stream would be worse than the problem. Dismissible, and the
+            // undo restores the exact prior values including keys that were
+            // previously unset.
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.migration_notice_title)
+                    .setMessage(getString(R.string.migration_notice_body, summary))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .setNegativeButton(R.string.recommended_revert, (d, w) -> {
+                        RecommendedSettings.restore(this);
+                        Toast.makeText(this, R.string.recommended_reverted, Toast.LENGTH_LONG).show();
+                    })
+                    .show();
+        }
+        catch (Throwable t) {
+            // A notice failing must never stop the app starting.
+        }
+    }
+
     protected void onResume() {
         super.onResume();
+
+        // One-time settings migration on upgrade. Runs before anything else
+        // touches preferences, and the notice is a dismissible dialog rather
+        // than anything that blocks getting into a stream.
+        maybeRunSettingsMigration();
 
         // Display a decoder crash notification if we've returned after a crash
         UiHelper.showDecoderCrashDialog(this);

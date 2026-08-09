@@ -150,12 +150,15 @@ public class PreferenceConfiguration {
 
     private static final String CHECKBOX_ENABLE_COMMIT_TEXT = "checkbox_enable_commit_text";
 
-    static final String DEFAULT_RESOLUTION = "1280x720";
+    // Fresh installs start on the display in use, which is 1:1 and derives the
+    // bitrate from the mode actually negotiated. Existing installs are
+    // unaffected: a default only applies when the key is absent.
+    static final String DEFAULT_RESOLUTION = "fullscreen"; // == RES_FULLSCREEN, declared below
     static final String DEFAULT_FPS = "60";
-    private static final boolean DEFAULT_ENABLE_ULTRA_LOW_LATENCY = false;
+    private static final boolean DEFAULT_ENABLE_ULTRA_LOW_LATENCY = true;
     private static final boolean DEFAULT_ENFORCE_DISPLAY_MODE = false;
     private static final boolean DEFAULT_USE_VIRTUAL_DISPLAY = false;
-    private static final String DEFAULT_VIDEO_SCALE_MODE = "fit";
+    private static final String DEFAULT_VIDEO_SCALE_MODE = "stretch";
     private static final boolean DEFAULT_AUTO_INVERT_VIDEO_RESOLUTION = true;
     private static final int DEFAULT_RESOLUTION_SCALE_FACTOR = 100;
     private static final boolean DEFAULT_RESUME_WITHOUT_CONFIRM = false;
