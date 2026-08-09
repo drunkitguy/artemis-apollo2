@@ -903,6 +903,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 .setPersistGamepadsAfterDisconnect(!prefConfig.multiController)
                 .setLatencyTraceEnabled(prefConfig.enableLatencyTrace)
                 .setTextFocusEnabled(isTextFocusHintUsable())
+                .setInputProbeEnabled(prefConfig.enableInputProbe)
                 .build();
 
         // Apollo 2.0 SPEC.md §3. Allocated before the connection starts so the

@@ -419,6 +419,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         // We must do this after clearing the currentControllers entry so this
         // causes the device to be removed on the server PC.
         if (context.assignedControllerNumber) {
+            publishInputEventTime();
             conn.sendControllerInput(context.controllerNumber, getActiveControllerMask(),
                     (short) 0,
                     (byte) 0, (byte) 0,
@@ -1212,6 +1213,31 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         }
     }
 
+    // Kernel event time of the input event currently being handled, in the
+    // client monotonic microsecond epoch, or 0 when unknown.
+    //
+    // getEventTime() is when the kernel saw the event; the difference between it
+    // and our handler running is Android input plumbing, which is exactly the
+    // term this instrumentation has to separate from our own. It is reported in
+    // SystemClock.uptimeMillis(), which is CLOCK_MONOTONIC in milliseconds and
+    // therefore the same epoch the native trace uses -- but only to millisecond
+    // resolution on API 33, so this term carries about 1 ms of quantisation.
+    // getEventTimeNanos() would remove that but is API 34.
+    //
+    // Touched only on the input handling thread.
+    private long currentInputEventTimeUs;
+
+    private void stampInputEventTime(long eventTimeMs) {
+        currentInputEventTimeUs = eventTimeMs * 1000L;
+    }
+
+    // Publishes the stamp to the native layer immediately before a send. Cheap
+    // enough to call unconditionally: the native side returns after one branch
+    // when the probe was not negotiated.
+    private void publishInputEventTime() {
+        MoonBridge.setNextInputEventTime(currentInputEventTimeUs);
+    }
+
     private void sendControllerInputPacket(GenericControllerContext originalContext) {
         assignControllerNumberIfNeeded(originalContext);
 
@@ -1344,10 +1370,12 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                 }
             }
 
+            publishInputEventTime();
             conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
                     (short)0, (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
         }
         else {
+            publishInputEventTime();
             conn.sendControllerInput(controllerNumber, getActiveControllerMask(),
                     inputMap,
                     leftTrigger, rightTrigger,
@@ -1918,6 +1946,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public boolean handleMotionEvent(MotionEvent event) {
+        stampInputEventTime(event.getEventTime());
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
             return true;
@@ -2459,6 +2488,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public boolean handleButtonUp(KeyEvent event) {
+        stampInputEventTime(event.getEventTime());
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
             return true;
@@ -2706,6 +2736,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public boolean handleButtonDown(KeyEvent event) {
+        stampInputEventTime(event.getEventTime());
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
             return true;

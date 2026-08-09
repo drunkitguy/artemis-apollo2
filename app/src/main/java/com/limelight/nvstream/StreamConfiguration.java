@@ -38,6 +38,7 @@ public class StreamConfiguration {
     private int inputBatchingIntervalMs;
     // Ceiling in ms for the adaptive late-frame tolerance; 0 disables it.
     private int adaptiveLateFrameToleranceMaxMs;
+    private boolean inputProbeEnabled;
 
     public static class Builder {
         private StreamConfiguration config = new StreamConfiguration();
@@ -147,6 +148,11 @@ public class StreamConfiguration {
         // enabled; also requires the host to advertise support.
         public StreamConfiguration.Builder setLatencyTraceEnabled(boolean enabled) {
             config.latencyTraceEnabled = enabled;
+            return this;
+        }
+
+        public StreamConfiguration.Builder setInputProbeEnabled(boolean enabled) {
+            config.inputProbeEnabled = enabled;
             return this;
         }
 
@@ -294,6 +300,10 @@ public class StreamConfiguration {
 
     public boolean getLatencyTraceEnabled() {
         return latencyTraceEnabled;
+    }
+
+    public boolean getInputProbeEnabled() {
+        return inputProbeEnabled;
     }
 
     public int getColorSpace() {

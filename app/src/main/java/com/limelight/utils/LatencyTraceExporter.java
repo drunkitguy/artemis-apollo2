@@ -14,6 +14,7 @@ import androidx.core.content.FileProvider;
 
 import com.limelight.LimeLog;
 import com.limelight.R;
+import com.limelight.binding.video.InputProbeTraceWriter;
 import com.limelight.binding.video.LatencyTraceRecorder;
 
 import java.io.File;
@@ -70,8 +71,13 @@ public final class LatencyTraceExporter {
      */
     public static List<File> listTraces(Context context) {
         File dir = LatencyTraceRecorder.getTraceDirectory(context);
+        // Input probe traces are listed alongside frame traces. They are written
+        // to the same directory by the same teardown path, and a file the user
+        // cannot see through this dialog is a file that does not exist on a
+        // device with no working adb.
         File[] found = dir.listFiles((d, name) ->
-                name.startsWith(LatencyTraceRecorder.FILE_PREFIX)
+                (name.startsWith(LatencyTraceRecorder.FILE_PREFIX)
+                        || name.startsWith(InputProbeTraceWriter.FILE_PREFIX))
                         && name.endsWith(LatencyTraceRecorder.FILE_SUFFIX));
 
         if (found == null || found.length == 0) {

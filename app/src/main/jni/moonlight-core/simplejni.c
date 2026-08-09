@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <Limelight.h>
 
 #include <jni.h>
@@ -317,4 +318,93 @@ JNIEXPORT jboolean JNICALL
 Java_com_limelight_nvstream_jni_MoonBridge_guessControllerHasShareButton(JNIEnv *env, jclass clazz, jint vendorId, jint productId) {
     // Xbox Elite and DualSense Edge controllers have paddles
     return SDL_IsJoystickXboxSeriesX(vendorId, productId);
+}
+// Input round-trip probe (SPEC.md §4 Item B).
+//
+// setNextInputEventTime is on the input hot path, so it does the absolute
+// minimum: no allocation, no JNI object traffic, one native call that returns
+// after a single branch when the probe is not negotiated.
+JNIEXPORT void JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_setNextInputEventTime(JNIEnv *env, jclass clazz, jlong eventTimeUs) {
+    LiSetNextInputEventTime((uint64_t)eventTimeUs);
+}
+
+// Drains the probe ring into a flat long[] so the whole session's samples cross
+// the JNI boundary in one call at session end, rather than one object per
+// sample. Layout per sample, 8 longs:
+//   seq, clientEventTimeUs, clientSendTimeUs, clientEchoRxUs,
+//   hostRecvTimeUs, hostInjectTimeUs, flags, reserved
+// flags: bit0 batchDelayed, bit1 hostNoInput, bit2 complete
+JNIEXPORT jint JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_drainInputProbes(JNIEnv *env, jclass clazz, jlongArray out) {
+    jsize capacity;
+    int maxSamples;
+    int count;
+    int i;
+    LI_INPUT_PROBE_SAMPLE* samples;
+    jlong* buf;
+
+    if (out == NULL) {
+        return 0;
+    }
+
+    capacity = (*env)->GetArrayLength(env, out);
+    maxSamples = (int)(capacity / 8);
+    if (maxSamples <= 0) {
+        return 0;
+    }
+
+    samples = calloc((size_t)maxSamples, sizeof(*samples));
+    if (samples == NULL) {
+        return 0;
+    }
+
+    count = LiDrainInputProbes(samples, maxSamples);
+
+    buf = (*env)->GetLongArrayElements(env, out, NULL);
+    if (buf == NULL) {
+        free(samples);
+        return 0;
+    }
+
+    for (i = 0; i < count; i++) {
+        jlong flags = 0;
+        if (samples[i].batchDelayed) flags |= 0x1;
+        if (samples[i].hostNoInput)  flags |= 0x2;
+        if (samples[i].complete)     flags |= 0x4;
+
+        buf[i * 8 + 0] = (jlong)samples[i].sequenceNumber;
+        buf[i * 8 + 1] = (jlong)samples[i].clientEventTimeUs;
+        buf[i * 8 + 2] = (jlong)samples[i].clientSendTimeUs;
+        buf[i * 8 + 3] = (jlong)samples[i].clientEchoRxUs;
+        buf[i * 8 + 4] = (jlong)samples[i].hostRecvTimeUs;
+        buf[i * 8 + 5] = (jlong)samples[i].hostInjectTimeUs;
+        buf[i * 8 + 6] = flags;
+        buf[i * 8 + 7] = 0;
+    }
+
+    (*env)->ReleaseLongArrayElements(env, out, buf, 0);
+    free(samples);
+    return count;
+}
+
+// Returns {sent, rateLimited, echoesMatched, conversionFailures}.
+JNIEXPORT jintArray JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_getInputProbeStats(JNIEnv *env, jclass clazz) {
+    uint32_t sent = 0, rateLimited = 0, matched = 0, convFail = 0;
+    jint values[4];
+    jintArray result;
+
+    LiGetInputProbeStats(&sent, &rateLimited, &matched, &convFail);
+
+    values[0] = (jint)sent;
+    values[1] = (jint)rateLimited;
+    values[2] = (jint)matched;
+    values[3] = (jint)convFail;
+
+    result = (*env)->NewIntArray(env, 4);
+    if (result != NULL) {
+        (*env)->SetIntArrayRegion(env, result, 0, 4, values);
+    }
+    return result;
 }

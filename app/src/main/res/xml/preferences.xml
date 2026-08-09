@@ -977,6 +977,13 @@
             android:summary="@string/summary_list_late_frame_tolerance"
             android:title="@string/title_list_late_frame_tolerance"
             app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="checkbox_enable_input_probe"
+            android:summary="@string/summary_checkbox_enable_input_probe"
+            android:title="@string/title_checkbox_enable_input_probe"
+            app:iconSpaceReserved="false" />
         <Preference
             android:key="export_latency_trace"
             android:summary="@string/summary_export_latency_trace"

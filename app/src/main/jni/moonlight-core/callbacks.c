@@ -495,7 +495,8 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
                                                            jint latencyTraceEnabled,
                                                            jint inputBatchingIntervalMs,
                                                            jint adaptiveLateFrameToleranceMaxMs,
-                                                           jint textFocusEnabled) {
+                                                           jint textFocusEnabled,
+                                                           jint inputProbeEnabled) {
     SERVER_INFORMATION serverInfo = {
             .address = (*env)->GetStringUTFChars(env, address, 0),
             .serverInfoAppVersion = (*env)->GetStringUTFChars(env, appVersion, 0),
@@ -519,7 +520,8 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
             .latencyTraceEnabled = latencyTraceEnabled,
             .inputBatchingIntervalMs = inputBatchingIntervalMs,
             .adaptiveLateFrameToleranceMaxMs = adaptiveLateFrameToleranceMaxMs,
-            .textFocusEnabled = textFocusEnabled
+            .textFocusEnabled = textFocusEnabled,
+            .inputProbeEnabled = inputProbeEnabled
     };
 
     jbyte* riAesKeyBuf = (*env)->GetByteArrayElements(env, riAesKey, NULL);

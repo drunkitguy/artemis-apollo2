@@ -472,7 +472,8 @@ public class NvConnection {
                             context.streamConfig.getLatencyTraceEnabled() ? 1 : 0,
                             context.streamConfig.getInputBatchingIntervalMs(),
                             context.streamConfig.getAdaptiveLateFrameToleranceMaxMs(),
-                            context.streamConfig.getTextFocusEnabled() ? 1 : 0);
+                            context.streamConfig.getTextFocusEnabled() ? 1 : 0,
+                            context.streamConfig.getInputProbeEnabled() ? 1 : 0);
                     if (ret != 0) {
                         // LiStartConnection() failed, so the caller is not expected
                         // to stop the connection themselves. We need to release their

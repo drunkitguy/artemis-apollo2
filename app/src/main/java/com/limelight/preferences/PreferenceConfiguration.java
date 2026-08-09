@@ -299,6 +299,10 @@ public class PreferenceConfiguration {
     // 0 disables it, which is the default and is stock behaviour.
     public int adaptiveLateFrameToleranceMaxMs;
 
+    // Measure input round trip: kernel event time, send time, host receive and
+    // inject times echoed back. Off by default; needs host support.
+    public boolean enableInputProbe;
+
     public boolean enableLatencyToast;
     public boolean enableBackMenu;
     public boolean enableFloatingButton;
@@ -1164,6 +1168,7 @@ private static int getFramePacingValue(Context context) {
         } catch (NumberFormatException e) {
             config.adaptiveLateFrameToleranceMaxMs = 0;
         }
+        config.enableInputProbe = prefs.getBoolean("checkbox_enable_input_probe", false);
         config.bindAllUsb = prefs.getBoolean(BIND_ALL_USB_STRING, DEFAULT_BIND_ALL_USB);
         config.mouseEmulation = prefs.getBoolean(MOUSE_EMULATION_STRING, DEFAULT_MOUSE_EMULATION);
         config.mouseNavButtons = prefs.getBoolean(MOUSE_NAV_BUTTONS_STRING, DEFAULT_MOUSE_NAV_BUTTONS);
