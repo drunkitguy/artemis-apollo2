@@ -933,6 +933,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             decoderRenderer.setLatencyTraceRecorder(trace, getApplicationContext());
         }
 
+        // The overlay must show what is actually in use, not only what was asked
+        // for. Seeded with the request so they agree until something adapts.
+        decoderRenderer.setRequestedBitrate(isMetered ? prefConfig.meteredBitrate : prefConfig.bitrate);
+
         // Initialize the connection
         conn = new NvConnection(getApplicationContext(),
                 new ComputerDetails.AddressTuple(host, port),

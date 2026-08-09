@@ -211,7 +211,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
      */
     private void traceDequeuedBuffer(int bufferIndex, long presentationTimeUs) {
         LatencyTraceRecorder trace = latencyTrace;
-        if (trace == null) {
+        // The PTS table is also what the overlay uses to pair decode completion
+        // with the present call, so it must be maintained whenever either
+        // consumer is on, not only when the CSV trace is enabled.
+        if (trace == null && !stageStatsEnabled) {
             return;
         }
         // dequeueOutputBuffer() returns negative status codes (TRY_AGAIN_LATER,
@@ -226,7 +229,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             tracePtsByBufferIndex[bufferIndex] = presentationTimeUs;
             tracePtsByBufferIndexValid[bufferIndex] = true;
         }
-        trace.recordDecodeComplete(presentationTimeUs, MoonBridge.getMonotonicMicros());
+        long nowUs = MoonBridge.getMonotonicMicros();
+        if (stageStatsEnabled && bufferIndex < TRACE_MAX_BUFFER_INDEX) {
+            stageDecodeCompleteUs[bufferIndex] = nowUs;
+        }
+        if (trace != null) {
+            trace.recordDecodeComplete(presentationTimeUs, nowUs);
+        }
     }
 
     /**
@@ -238,6 +247,18 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
      */
     private void traceReleasingBuffer(int bufferIndex, boolean rendered) {
         LatencyTraceRecorder trace = latencyTrace;
+
+        // Present stage for the overlay: decode completion to the present call.
+        // Done before the trace early-return so it works with the CSV off.
+        if (rendered && stageStatsEnabled
+                && bufferIndex >= 0 && bufferIndex < TRACE_MAX_BUFFER_INDEX) {
+            long completedUs = stageDecodeCompleteUs[bufferIndex];
+            if (completedUs > 0) {
+                stagePresent.add(MoonBridge.getMonotonicMicros() - completedUs);
+                stageDecodeCompleteUs[bufferIndex] = 0;
+            }
+        }
+
         if (trace == null) {
             return;
         }
@@ -480,6 +501,48 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     // longs rather than a lock: they are only ever used together to compute a
     // target that is then clamped, so a torn pair produces a slightly wrong
     // target for one frame, never a wrong frame or a crash.
+    // --- Overlay stage telemetry (roadmap Part 7) ---
+    //
+    // Off unless the performance overlay is on, and every add() below is guarded
+    // by this flag, so with the overlay off the cost is one volatile read per
+    // stage per frame and nothing else. An overlay that perturbs the pipeline it
+    // measures is the failure mode to avoid.
+    // --- Live bitrate visibility (dynamic bitrate, client half) ---
+    //
+    // The requested bitrate and the one actually in use are different numbers the
+    // moment anything adapts, and the user previously had no way to see that
+    // 113 Mbps was not being delivered. Showing only the request is what let a
+    // misconfiguration survive for a week.
+    //
+    // Written by whoever learns of a bitrate change, read by the overlay thread.
+    // currentBitrateKbps is 0 until something reports one, in which case the
+    // overlay shows the requested value alone rather than inventing agreement.
+    private volatile int requestedBitrateKbps;
+    private volatile int currentBitrateKbps;
+    private volatile boolean bitrateAdaptationEngaged;
+
+    public void setRequestedBitrate(int kbps) {
+        requestedBitrateKbps = kbps;
+    }
+
+    // Called when the host reports a bitrate change. Marks adaptation engaged so
+    // the overlay can say so: adaptation MASKS configuration faults, and had it
+    // existed a week ago it would have settled near 55 Mbps and left the ~70
+    // Mbit link undiagnosed. Visibility is the mitigation.
+    public void setCurrentBitrate(int kbps, boolean adapting) {
+        currentBitrateKbps = kbps;
+        bitrateAdaptationEngaged = adapting;
+    }
+
+    private volatile boolean stageStatsEnabled;
+    final StagePercentiles stageArrival = new StagePercentiles();
+    final StagePercentiles stageDecode = new StagePercentiles();
+    final StagePercentiles stagePresent = new StagePercentiles();
+
+    // Decode completion time per output buffer index, so the present stage can
+    // be paired without depending on the CSV trace being enabled.
+    private final long[] stageDecodeCompleteUs = new long[TRACE_MAX_BUFFER_INDEX];
+
     private volatile long observedVsyncNs;
     private volatile long observedVsyncPeriodNs;
 
@@ -576,6 +639,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         Long enqNs = enqueueNsByPtsUs.get(presentationTimeUs);
         if (enqNs != null) {
             enqueueNsByPtsUs.delete(presentationTimeUs);
+            long decUs = (System.nanoTime() - enqNs) / 1000L;
+            if (stageStatsEnabled && decUs >= 0 && decUs < 1_000_000L) {
+                stageDecode.add(decUs);
+            }
             long decMs = (System.nanoTime() - enqNs) / 1_000_000L;
             if (decMs >= 0 && decMs < 1000) {
                 activeWindowVideoStats.decoderTimeMs += decMs;
@@ -2583,6 +2650,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Flip stats windows roughly every second
         if (SystemClock.uptimeMillis() >= activeWindowVideoStats.measurementStartTimestamp + 1000) {
+            // Enable stage sampling only while the overlay is actually showing.
+            if (stageStatsEnabled != prefs.enablePerfOverlay) {
+                stageStatsEnabled = prefs.enablePerfOverlay;
+            }
+
             if (prefs.enablePerfOverlay || prefs.enablePerfLogging) {
                 VideoStats lastTwo = new VideoStats();
                 lastTwo.add(lastWindowVideoStats);
@@ -2679,6 +2751,41 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                     }
                     sb.append(context.getString(R.string.perf_overlay_netlatency,
                             (int)(rttInfo >> 32), (int)rttInfo)).append('\n');
+
+                    // Per-stage p50 and p99 (roadmap Part 7). p99 rather than an
+                    // average, because the present stage measures 4.8 ms median
+                    // against 20 ms p99 and is bimodal — a mean near 6 ms would
+                    // show one healthy-looking number and hide the entire thing.
+                    // Requested versus in use. Deliberately shows both rather
+                    // than one number: they agree until something adapts, and
+                    // the moment they disagree that is the most important fact
+                    // on the screen.
+                    int reqMbps = requestedBitrateKbps / 1000;
+                    int curMbps = currentBitrateKbps / 1000;
+                    if (reqMbps > 0) {
+                        sb.append(context.getString(R.string.perf_overlay_bitrate_live,
+                                reqMbps,
+                                curMbps > 0 ? curMbps : reqMbps,
+                                bitrateAdaptationEngaged
+                                        ? context.getString(R.string.perf_overlay_bitrate_adapting)
+                                        : "")).append('\n');
+                    }
+
+                    StagePercentiles.Snapshot arr = stageArrival.snapshot();
+                    StagePercentiles.Snapshot dec = stageDecode.snapshot();
+                    StagePercentiles.Snapshot pres = stagePresent.snapshot();
+                    if (!dec.isEmpty()) {
+                        sb.append(context.getString(R.string.perf_overlay_stages_header)).append('\n');
+                        sb.append(context.getString(R.string.perf_overlay_stage_line,
+                                context.getString(R.string.perf_overlay_stage_arrival),
+                                arr.p50Ms(), arr.p99Ms())).append('\n');
+                        sb.append(context.getString(R.string.perf_overlay_stage_line,
+                                context.getString(R.string.perf_overlay_stage_decode),
+                                dec.p50Ms(), dec.p99Ms())).append('\n');
+                        sb.append(context.getString(R.string.perf_overlay_stage_line,
+                                context.getString(R.string.perf_overlay_stage_present),
+                                pres.p50Ms(), pres.p99Ms())).append('\n');
+                    }
                     if (lastTwo.framesWithHostProcessingLatency > 0) {
                         sb.append(context.getString(R.string.perf_overlay_hostprocessinglatency,
                                 (float)lastTwo.minHostProcessingLatency / 10,
@@ -2927,6 +3034,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         activeWindowVideoStats.totalFramesReceived++;
         activeWindowVideoStats.totalFrames++;
+
+        // Arrival stage for the overlay: last packet of the frame received, to the
+        // moment this submit path runs. receiveTimeMs is millisecond resolution,
+        // so this term is quantised to about 1 ms and the overlay says so.
+        if (stageStatsEnabled) {
+            stageArrival.add(MoonBridge.getMonotonicMicros() - (receiveTimeMs * 1000L));
+        }
 
         if (!FRAME_RENDER_TIME_ONLY) {
             // Count time from first packet received to enqueue time as receive time

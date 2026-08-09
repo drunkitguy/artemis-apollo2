@@ -126,6 +126,54 @@ public class ServerHelper {
         return display != null && (display.getFlags() & Display.FLAG_PRESENTATION) != 0;
     }
 
+    /**
+     * Every mode the display reports, as {@code WxH@Hz} separated by semicolons.
+     *
+     * <p>This exists to answer one question the trace could not: <b>does this
+     * panel have a variable refresh range at all?</b> The metadata previously
+     * recorded only the display's <em>current</em> mode, which made the roadmap's
+     * end-to-end VRR item untestable — several refresh rates at the same
+     * resolution is what an adaptive-sync capable panel looks like from here, and
+     * a single mode says the item is not applicable on this hardware.
+     *
+     * <p>It also answers the cheaper question that kept recurring: whether the
+     * 120 Hz mode the Thor advertises is actually offered to us alongside the 60
+     * Hz one we kept measuring.
+     *
+     * <p>Note what it is not: Android exposes no adaptive-sync range API to an
+     * app, so this is evidence about the mode list and nothing stronger. A panel
+     * with one mode cannot be doing VRR; a panel with several is not proof that
+     * it is.
+     */
+    private static String describeSupportedModes(Display d) {
+        if (d == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return "unavailable";
+        }
+
+        Display.Mode[] modes;
+        try {
+            modes = d.getSupportedModes();
+        }
+        catch (Throwable t) {
+            return "error";
+        }
+
+        if (modes == null || modes.length == 0) {
+            return "none";
+        }
+
+        StringBuilder sb = new StringBuilder(64);
+        for (int i = 0; i < modes.length; i++) {
+            if (i > 0) {
+                sb.append(';');
+            }
+            sb.append(modes[i].getPhysicalWidth())
+              .append('x').append(modes[i].getPhysicalHeight())
+              .append('@').append(Math.round(modes[i].getRefreshRate()));
+        }
+        return sb.toString();
+    }
+
     private static boolean isUsableDisplay(Display display) {
         return display != null && display.isValid() && display.getState() != Display.STATE_OFF;
     }
@@ -186,7 +234,8 @@ public class ServerHelper {
                 + " state=" + d.getState()
                 + " valid=" + (d.isValid() ? 1 : 0)
                 + " flags=0x" + Integer.toHexString(d.getFlags())
-                + " score=" + displayScore(d);
+                + " score=" + displayScore(d)
+                + " modes=" + describeSupportedModes(d);
     }
 
     /**

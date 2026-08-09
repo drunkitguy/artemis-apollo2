@@ -220,6 +220,13 @@
 %1$s
 
 Everything else is exactly as you left it.</string>
+    <string name="perf_overlay_stages_header">Stage p50 / p99 (ms)</string>
+    <string name="perf_overlay_stage_line">  %1$s  %2$.2f / %3$.2f</string>
+    <string name="perf_overlay_stage_arrival">arrival</string>
+    <string name="perf_overlay_stage_decode">decode&#160;</string>
+    <string name="perf_overlay_stage_present">present</string>
+    <string name="perf_overlay_bitrate_live">Bitrate: %1$d Mbps requested / %2$d Mbps in use%3$s</string>
+    <string name="perf_overlay_bitrate_adapting"> (adapting)</string>
     <string name="title_settings_panel">Settings</string>
     <string name="game_menu_settings_panel">Settings</string>
     <string name="settings_panel_edge_off">Off</string>
