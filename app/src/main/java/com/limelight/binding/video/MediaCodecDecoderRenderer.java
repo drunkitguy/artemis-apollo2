@@ -135,6 +135,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         sb.append(" output_queue_max_depth_observed=").append(outputQueueMaxDepthObserved);
         sb.append(" output_queue_backoff_events=").append(outputQueueBackoffEvents);
         sb.append(" vsync_period_observed_ns=").append(observedVsyncPeriodNs);
+        sb.append(" vsync_margin_ns=").append(currentVsyncMarginNs());
+        sb.append(" render_overshoot_ewma_ns=").append(renderOvershootValid ? renderOvershootEwmaNs : -1);
         sb.append(" rtp_recv_packets_buffered=4096");
         sb.append(" late_frame_tolerance_final_us=").append(jitterToleranceNs / 1000L);
         sb.append(" display_selection=[").append(ServerHelper.getLastDisplaySelection()).append(']');
@@ -558,6 +560,112 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
      */
     private static final long VSYNC_TARGET_SAFETY_MARGIN_NS = 2_000_000L;
 
+    // --- Measured release-to-render overshoot -----------------------------
+    //
+    // The margin above started as a guess, and a guess is the wrong shape for
+    // it: too small and frames miss the vsync they aimed at, too large and every
+    // frame waits longer than it needs to. It also cannot be one number across
+    // devices, because it is mostly the cost of getting a buffer through the
+    // codec and into the compositor, which a slow device pays more of.
+    //
+    // It turns out to be measurable. MediaCodec.OnFrameRenderedListener reports
+    // renderTimeNanos on the System.nanoTime() clock -- the same epoch as the
+    // target we asked for -- so (renderTimeNanos - targetNs) is the error
+    // between where we aimed and where the frame actually landed. That is
+    // exactly the quantity the margin exists to cover.
+    //
+    // What this still does NOT measure, and the comment must not imply
+    // otherwise: render to scan-out. The decoder writes straight into the
+    // SurfaceView, so EGL_ANDROID_get_frame_timestamps is unreachable and the
+    // final compositor hop stays invisible. That residue is why a floor remains
+    // rather than the margin collapsing to the measured value.
+    //
+    // Direct-mapped by PTS so there is no lock on the present path. A collision
+    // or a stale entry costs one dropped sample, never a wrong one, because the
+    // stored PTS is checked before the entry is used.
+    private static final int RENDER_TARGET_SLOTS = 32;
+    private final long[] renderTargetPtsUs = new long[RENDER_TARGET_SLOTS];
+    private final long[] renderTargetNs = new long[RENDER_TARGET_SLOTS];
+
+    /** EWMA of (renderTimeNanos - targetNs). Negative means we aimed late. */
+    private volatile long renderOvershootEwmaNs;
+    private volatile boolean renderOvershootValid;
+
+    /** Floor for the margin: covers the render-to-scanout hop we cannot see. */
+    private static final long VSYNC_MARGIN_FLOOR_NS = 500_000L;
+
+    /** Ceiling, so a pathological measurement cannot push presentation out. */
+    private static final long VSYNC_MARGIN_CEILING_NS = 6_000_000L;
+
+    private void noteRenderTarget(long presentationTimeUs, long targetNs) {
+        int slot = (int) Math.floorMod(presentationTimeUs, (long) RENDER_TARGET_SLOTS);
+        renderTargetPtsUs[slot] = presentationTimeUs;
+        renderTargetNs[slot] = targetNs;
+    }
+
+    /**
+     * Folds one observation into the overshoot estimate. Codec callback thread.
+     */
+    private void noteRenderCompleted(long presentationTimeUs, long renderTimeNanos) {
+        int slot = (int) Math.floorMod(presentationTimeUs, (long) RENDER_TARGET_SLOTS);
+        if (renderTargetPtsUs[slot] != presentationTimeUs) {
+            // Overwritten by a later frame, or this frame was released
+            // immediately rather than with a target. No usable sample.
+            return;
+        }
+
+        long target = renderTargetNs[slot];
+        if (target <= 0) {
+            return;
+        }
+        renderTargetNs[slot] = 0;
+
+        long overshoot = renderTimeNanos - target;
+
+        // Reject implausible samples rather than letting one bad pairing move
+        // the estimate. Anything beyond a couple of refresh periods either way
+        // is a mispairing or a stall, not the steady-state cost we are after.
+        if (overshoot < -50_000_000L || overshoot > 50_000_000L) {
+            return;
+        }
+
+        long cur = renderOvershootEwmaNs;
+        // Slow EWMA. This tracks a device constant, so it needs to converge and
+        // stay put, not chase individual frames.
+        renderOvershootEwmaNs = renderOvershootValid ? (cur * 15 + overshoot) / 16 : overshoot;
+        renderOvershootValid = true;
+    }
+
+    /**
+     * The margin to apply when choosing a target vsync.
+     *
+     * <p>Grundman's intent, kept deliberately: the point is to avoid overshooting
+     * a vsync by waiting too long, so the margin covers the measured cost of
+     * getting there and nothing more. It is clamped at both ends because an
+     * unbounded margin computed from measurements is how a latency feature turns
+     * into a latency regression on a device nobody tested.
+     */
+    private long currentVsyncMarginNs() {
+        if (!renderOvershootValid) {
+            return VSYNC_TARGET_SAFETY_MARGIN_NS;
+        }
+
+        long margin = renderOvershootEwmaNs + VSYNC_MARGIN_FLOOR_NS;
+        if (margin < VSYNC_MARGIN_FLOOR_NS) {
+            margin = VSYNC_MARGIN_FLOOR_NS;
+        }
+
+        // Never spend more than half a refresh period waiting. Above that the
+        // margin is competing with the thing it is trying to hit.
+        long period = observedVsyncPeriodNs;
+        long ceiling = period > 0 ? Math.min(VSYNC_MARGIN_CEILING_NS, period / 2)
+                                  : VSYNC_MARGIN_CEILING_NS;
+        if (margin > ceiling) {
+            margin = ceiling;
+        }
+        return margin;
+    }
+
     private void noteVsync(long frameTimeNanos) {
         long prev = observedVsyncNs;
         if (prev > 0) {
@@ -597,7 +705,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return fallbackNs;
         }
 
-        long earliest = System.nanoTime() + VSYNC_TARGET_SAFETY_MARGIN_NS;
+        long earliest = System.nanoTime() + currentVsyncMarginNs();
         if (earliest <= last) {
             return last;
         }
@@ -622,7 +730,15 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             if (immediate) {
                 traceRelease(bufferIndex, true);
             } else {
-                traceRelease(bufferIndex, targetVsyncNanos(frameTimeNanos));
+                long target = targetVsyncNanos(frameTimeNanos);
+                // Remember where we aimed, so onFrameRendered can tell us where
+                // it actually landed. Recorded before the release, because the
+                // callback can fire before the call returns.
+                if (bufferIndex >= 0 && bufferIndex < TRACE_MAX_BUFFER_INDEX
+                        && tracePtsByBufferIndexValid[bufferIndex]) {
+                    noteRenderTarget(tracePtsByBufferIndex[bufferIndex], target);
+                }
+                traceRelease(bufferIndex, target);
             }
         } catch (Throwable t) {
             try {
@@ -1479,6 +1595,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             activeWindowVideoStats.totalTimeMs += delta;
                         }
                     }
+
+                    // Where the frame actually landed against where we aimed.
+                    // renderTimeNanos is on the System.nanoTime() clock, the
+                    // same epoch as the target, so this difference is directly
+                    // meaningful and needs no clock conversion.
+                    noteRenderCompleted(presentationTimeUs, renderTimeNanos);
 
                     TraceVsyncMonitor monitor = traceVsyncMonitor;
                     if (monitor != null) {
