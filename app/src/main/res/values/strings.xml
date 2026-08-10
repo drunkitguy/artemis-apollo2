@@ -227,6 +227,7 @@ Everything else is exactly as you left it.</string>
     <string name="perf_overlay_stage_present">present</string>
     <string name="perf_overlay_bitrate_live">Bitrate: %1$d Mbps requested / %2$d Mbps in use%3$s</string>
     <string name="perf_overlay_bitrate_adapting"> (adapting)</string>
+    <string name="app_search_hint">Search games</string>
     <string name="title_settings_panel">Settings</string>
     <string name="game_menu_settings_panel">Settings</string>
     <string name="settings_panel_edge_off">Off</string>

@@ -9,7 +9,7 @@
         android:id="@+id/appFragmentContainer"
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/appListText"
+        android:layout_below="@+id/appSearchBox"
         android:layout_alignParentStart="true"
         android:layout_alignParentLeft="true"
         android:layout_alignParentEnd="true"
@@ -29,6 +29,26 @@
         android:paddingBottom="5dp"
         android:preferKeepClear="true"
         android:textSize="28sp" />
+
+    <!-- Always visible rather than behind a menu: this is a handheld driven by a
+         gamepad, and a search affordance that needs a hidden menu to reach is one
+         most people will never find. Placed between the title and the grid so
+         D-pad focus reaches it on the way down. -->
+    <EditText
+        android:id="@+id/appSearchBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/appListText"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="4dp"
+        android:hint="@string/app_search_hint"
+        android:imeOptions="actionSearch"
+        android:inputType="text"
+        android:maxLines="1"
+        android:minHeight="48dp"
+        android:singleLine="true"
+        android:visibility="gone" />
 
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/profilesButton"

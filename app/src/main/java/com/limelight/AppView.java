@@ -305,6 +305,7 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
         UiHelper.setLocale(this);
 
         setContentView(R.layout.activity_app_view);
+        setupAppSearch();
 
         // Allow floating expanded PiP overlays while browsing apps
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -653,11 +654,75 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
                     }
                 }
 
+                updateSearchVisibility();
+
                 if (updated) {
                     appGridAdapter.notifyDataSetChanged();
                 }
             }
         });
+    }
+
+    /**
+     * Wires the search box. Shown only once the library is large enough that
+     * scrolling stops being a reasonable way to find something.
+     *
+     * <p>The threshold is derived rather than picked: it is the number of tiles
+     * the grid actually shows at once on this screen, so search appears exactly
+     * when the list stops fitting. That keeps it absent for the handful of
+     * hand-added apps this screen was built for and present for a synced
+     * library, without assuming any particular library size.
+     */
+    private void setupAppSearch() {
+        final android.widget.EditText search = findViewById(R.id.appSearchBox);
+        if (search == null) {
+            return;
+        }
+
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int st, int b, int c) {}
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                if (appGridAdapter != null) {
+                    appGridAdapter.setSearchFilter(s.toString());
+                }
+            }
+        });
+    }
+
+    // Reveals the search box once the library outgrows a screenful. Called after
+    // the list changes; never hides it again mid-session, because a box that
+    // disappears while you are typing in it is worse than one that stays.
+    private void updateSearchVisibility() {
+        final android.widget.EditText search = findViewById(R.id.appSearchBox);
+        if (search == null || appGridAdapter == null || search.getVisibility() == View.VISIBLE) {
+            return;
+        }
+
+        int visibleTiles = 0;
+        View fragmentView = findViewById(R.id.appFragmentContainer);
+        if (fragmentView instanceof android.view.ViewGroup) {
+            android.view.ViewGroup vg = (android.view.ViewGroup) fragmentView;
+            if (vg.getChildCount() > 0 && vg.getChildAt(0) instanceof AbsListView) {
+                AbsListView grid = (AbsListView) vg.getChildAt(0);
+                visibleTiles = grid.getLastVisiblePosition() - grid.getFirstVisiblePosition() + 1;
+            }
+        }
+
+        // Until the grid has laid out we cannot know how many tiles fit, so do
+        // nothing rather than guess a number.
+        if (visibleTiles <= 0) {
+            return;
+        }
+
+        if (appGridAdapter.getTotalAppCount() > visibleTiles) {
+            search.setVisibility(View.VISIBLE);
+        }
     }
 
     private void updateUiWithAppList(final List<NvApp> appList) {
@@ -666,28 +731,34 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
             public void run() {
                 boolean updated = false;
 
+                // Index the existing apps by ID once, instead of rescanning the
+                // whole adapter for every incoming app. The nested scan made
+                // reconciliation O(N*M): invisible for the handful of apps this
+                // screen was built for, and quadratic for a synced library.
+                android.util.SparseArray<AppObject> existingById =
+                        new android.util.SparseArray<>(appGridAdapter.getCount());
+                for (int i = 0; i < appGridAdapter.getCount(); i++) {
+                    AppObject existing = (AppObject) appGridAdapter.getItem(i);
+                    existingById.put(existing.app.getAppId(), existing);
+                }
+
                 // First handle app updates and additions
+                java.util.List<AppObject> newApps = new java.util.ArrayList<>();
                 for (NvApp app : appList) {
-                    boolean foundExistingApp = false;
+                    AppObject existingApp = existingById.get(app.getAppId());
 
-                    // Try to update an existing app in the list first
-                    for (int i = 0; i < appGridAdapter.getCount(); i++) {
-                        AppObject existingApp = (AppObject) appGridAdapter.getItem(i);
-                        if (existingApp.app.getAppId() == app.getAppId()) {
-                            // Found the app; update its properties
-                            if (!existingApp.app.getAppName().equals(app.getAppName())) {
-                                existingApp.app.setAppName(app.getAppName());
-                                updated = true;
-                            }
-
-                            foundExistingApp = true;
-                            break;
+                    if (existingApp != null) {
+                        // Found the app; update its properties
+                        if (!existingApp.app.getAppName().equals(app.getAppName())) {
+                            existingApp.app.setAppName(app.getAppName());
+                            updated = true;
                         }
                     }
-
-                    if (!foundExistingApp) {
-                        // This app must be new
-                        appGridAdapter.addApp(new AppObject(app));
+                    else {
+                        // This app must be new. Collected rather than added one
+                        // at a time, so the adapter sorts once for the batch
+                        // instead of once per app.
+                        newApps.add(new AppObject(app));
 
                         // We could have a leftover shortcut from last time this PC was paired
                         // or if this app was removed then added again. Enable those shortcuts
@@ -698,19 +769,23 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
                     }
                 }
 
+                if (!newApps.isEmpty()) {
+                    appGridAdapter.addApps(newApps);
+                }
+
                 // Next handle app removals
+                // Same treatment for the removal pass: index the incoming list
+                // once rather than rescanning it per existing app.
+                android.util.SparseArray<NvApp> incomingById =
+                        new android.util.SparseArray<>(appList.size());
+                for (NvApp app : appList) {
+                    incomingById.put(app.getAppId(), app);
+                }
+
                 int i = 0;
                 while (i < appGridAdapter.getCount()) {
-                    boolean foundExistingApp = false;
                     AppObject existingApp = (AppObject) appGridAdapter.getItem(i);
-
-                    // Check if this app is in the latest list
-                    for (NvApp app : appList) {
-                        if (existingApp.app.getAppId() == app.getAppId()) {
-                            foundExistingApp = true;
-                            break;
-                        }
-                    }
+                    boolean foundExistingApp = incomingById.get(existingApp.app.getAppId()) != null;
 
                     // This app was removed in the latest app list
                     if (!foundExistingApp) {
