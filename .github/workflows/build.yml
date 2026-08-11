@@ -89,7 +89,12 @@ jobs:
           retention-days: 90
 
       - name: Publish GitHub Release
-        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_release)
+        # Only the working branch publishes, so feature branches do not spam the
+        # release list with a tag per push.
+        if: |
+          github.event_name != 'pull_request' &&
+          (github.event_name != 'workflow_dispatch' || inputs.publish_release) &&
+          github.ref == 'refs/heads/claude/voidlink-android-streaming-5l52vu'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

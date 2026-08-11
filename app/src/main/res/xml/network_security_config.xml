@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The GameStream/Sunshine control API is served over plaintext HTTP on port 47989
+  for the unauthenticated endpoints (/serverinfo, /unpair) before a client
+  certificate exists. targetSdk 34 blocks cleartext by default, which would make
+  host discovery and pairing fail with "CLEARTEXT communication not permitted".
+
+  Hosts are arbitrary user-supplied LAN addresses, so they cannot be enumerated as
+  domains here and cleartext has to be permitted broadly. This is not a downgrade
+  of the streaming session itself: the authenticated endpoints are used over TLS
+  on port 47984 with a pinned, self-signed host certificate and client-certificate
+  authentication, and the stream's own encryption is negotiated separately.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
