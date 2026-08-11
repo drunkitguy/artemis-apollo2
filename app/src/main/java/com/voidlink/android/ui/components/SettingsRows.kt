@@ -458,22 +458,21 @@ fun PickerRow(
                     onDismissRequest = { menuOpen = false },
                 ) {
                     options.forEachIndexed { index, option ->
+                        val chosen = index == selectedIndex
                         DropdownMenuItem(
                             text = { Text(text = option, style = VoidLinkTheme.body) },
                             onClick = {
                                 menuOpen = false
                                 onSelect(index)
                             },
-                            trailingIcon = if (index == selectedIndex) {
-                                {
+                            trailingIcon = {
+                                if (chosen) {
                                     Icon(
                                         imageVector = Icons.Filled.Check,
                                         contentDescription = null,
                                         tint = colors.accent,
                                     )
                                 }
-                            } else {
-                                null
                             },
                         )
                     }
