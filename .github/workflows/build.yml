@@ -16,8 +16,10 @@ permissions:
   contents: write
 
 concurrency:
+  # Queue rather than cancel: every push should produce a downloadable APK, so a
+  # rapid follow-up push must not kill the build that was about to publish one.
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
