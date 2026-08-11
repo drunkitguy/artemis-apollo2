@@ -54,9 +54,10 @@ The user journey we must support end-to-end:
    UDP, decode with `MediaCodec` into a `SurfaceView`, play audio with `AudioTrack`, and send
    input (touch, on-screen controls, physical controllers, keyboard, mouse) back over the
    encrypted control channel.
-6. **Configure.** A settings surface with global defaults and **per-host overrides**:
-   bitrate, resolution, frame rate, codec preference, HDR, YUV 4:4:4, surround audio, touch
-   mode, on-screen widget set, gyro mode, gestures.
+6. **Configure.** A settings surface with global defaults and **whole-object per-host
+   overrides**: bitrate, resolution, frame rate, codec preference, HDR, YUV 4:4:4, surround
+   audio, touch mode, on-screen widget set, gyro mode, gesture bindings, peripherals. The
+   canonical field list is `data/StreamSettings.kt`; see `02-ARCHITECTURE.md` §6.
 7. **Wake.** Wake-on-LAN magic packets for offline-but-known hosts.
 
 ## 3. Target device profile
@@ -64,7 +65,7 @@ The user journey we must support end-to-end:
 | Property | Value |
 |---|---|
 | Form factors | Phone (portrait + landscape) and tablet / large screen (primary design target, mirroring the iPad reference) |
-| Orientation | Full support; stream view defaults to sensor-landscape but supports portrait streaming |
+| Orientation | Full support. `StreamActivity` is `screenOrientation="fullUser"`; portrait streaming is a **layout** feature only — the negotiated stream size never changes on rotation. Specified in `03-UI-SPEC.md` §5.7. |
 | Input | Touch, physical game controllers (`InputDevice.SOURCE_GAMEPAD`), USB/BT keyboards and mice, stylus |
 | Network | LAN / Wi-Fi first. Remote/WAN streaming is best-effort, not a target for v1 |
 | Decoders | Hardware `MediaCodec` H.264 required; HEVC and AV1 opportunistic |
@@ -94,8 +95,18 @@ These are **out of scope**. Do not build them; do not leave stubs that imply the
 10. **No Android TV / leanback UI.** Touch-first. (Controller navigation of the launcher UI
     is a nice-to-have, not a v1 gate.)
 11. **No IPv6-specific handling beyond what `InetAddress` gives us for free.**
-12. **No native (NDK/JNI) code except where unavoidable** — see the Reed-Solomon and Opus
-    notes in `04-ROADMAP.md`. Default posture: pure Kotlin/Java + platform APIs.
+12. **No native (NDK/JNI) code except where unavoidable.** Default posture: pure Kotlin/Java
+    + platform APIs. Exactly three exceptions are pre-sanctioned, each requiring a deliberate,
+    discussed decision rather than a quiet fix, and each documented in `04-ROADMAP.md`:
+    (a) **Reed-Solomon FEC** if a pure-Kotlin implementation cannot be made to interoperate;
+    (b) **libopus** for multistream surround decoding, which `MediaCodec` handles unreliably;
+    (c) **ENet**, if hand-writing the reliable-UDP subset stalls the project (Risk 3).
+    None of these may be taken without also adding the dependency to the version catalog,
+    which is currently **frozen** — so in practice all three are post-v1.
+13. **No database and no new dependencies.** `gradle/libs.versions.toml` is fixed. There is no
+    Room, no KSP, no DI framework, no image-loading library, no HTTP client beyond
+    `java.net`/`javax.net.ssl`. Persistence is DataStore-Preferences holding JSON
+    (`02-ARCHITECTURE.md` §7). A design that needs a new library is a design to be changed.
 
 ## 5. Hard product requirements
 

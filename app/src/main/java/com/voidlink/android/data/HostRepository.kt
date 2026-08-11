@@ -160,6 +160,9 @@ class HostRepository(private val dataStore: DataStore<Preferences>) {
         if (raw.isNullOrBlank()) return emptyList()
         return runCatching { SettingsRepository.json.decodeFromString(serializer, raw) }
             .getOrDefault(emptyList())
+            // Sorting on read as well as on write is what makes the [hosts] contract true for a
+            // blob this build did not write — an older version's file, or a restored backup.
+            .sortedBy { it.name.lowercase() }
     }
 
     companion object {

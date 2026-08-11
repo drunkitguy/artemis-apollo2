@@ -155,7 +155,7 @@ com.voidlink.android
 │   │   ├── RtpParser.kt
 │   │   ├── NvVideoPacket.kt
 │   │   ├── FrameAssembler.kt       FEC block bookkeeping + reassembly
-│   │   ├── ReedSolomon.kt          (phase 6; interface + no-op impl first)
+│   │   ├── ReedSolomon.kt          (Phase 11; interface + no-op impl first)
 │   │   └── DecodeUnit.kt
 │   │
 │   ├── audio/
@@ -324,11 +324,11 @@ the UI as a `StateFlow<SessionState>`.
 ```kotlin
 sealed interface SessionState {
     data object Idle : SessionState
-    data class QueryingServer(val host: Host) : SessionState
+    data class QueryingServer(val host: KnownHost) : SessionState
     data class Pairing(val pin: String, val phase: PairPhase) : SessionState
-    data class LoadingApps(val host: Host) : SessionState
-    data class AppsReady(val host: Host, val apps: List<AppEntry>, val runningAppId: Long?) : SessionState
-    data class Launching(val app: AppEntry, val progress: LaunchStep) : SessionState
+    data class LoadingApps(val host: KnownHost) : SessionState
+    data class AppsReady(val host: KnownHost, val apps: List<HostApp>, val runningAppId: String?) : SessionState
+    data class Launching(val app: HostApp, val progress: LaunchStep) : SessionState
     data class Negotiating(val step: RtspStep) : SessionState
     data class Connecting(val step: ConnectStep) : SessionState
     data class Streaming(val stats: StreamStats, val quality: ConnQuality) : SessionState
@@ -566,6 +566,8 @@ data class StreamSettings(
     val yuv444Enabled: Boolean = false,
     val resolution: StreamResolution = RES_1080P,     // 720p|1080p|1440p|4K|Native
     val frameRate: FrameRate = FPS_60,                // 30|60|90|120
+    val optimizeGameSettings: Boolean = true,         // the host's `sops` flag
+    val showStatsOverlay: Boolean = false,
 
     // ---- Touch & Controller ------------------------------------------------
     val touchMode: TouchMode = NATIVE_TOUCH,          // TOUCHPAD|NATIVE_TOUCH|ABSOLUTE_TOUCH
@@ -577,6 +579,7 @@ data class StreamSettings(
     val emulatedControllerType: EmulatedControllerType = XBOX_360, // XBOX_360|DUALSHOCK_4|BOTH
     val gyroMode: GyroMode = OFF,                     // OFF|AUTO|BUILT_IN|CONTROLLER
     val gyroSensitivityPercent: Int = 100,            // 25..300, coerced
+    val rumbleEnabled: Boolean = true,
 
     // ---- Gestures ----------------------------------------------------------
     val threeFingerTapEnabled: Boolean = true,
@@ -611,11 +614,14 @@ third category.
 | `hdrEnabled` | `/launch?hdrMode=1&clientHdrCap*` (§3.6) + SDP `dynamicRangeMode` |
 | `yuv444Enabled` | SDP `x-ss-video[0].chromaSamplingType` (Sunshine only) |
 | `resolution`, `frameRate` | `/launch?mode=WxHxF` + SDP `clientViewportWd/Ht`, `maxFPS` |
+| `optimizeGameSettings` | `/launch?sops=` — **but forced to `0`** by the NVIDIA non-standard-resolution clamp (§3.6) regardless of the user's choice |
+| `showStatsOverlay` | **Local only** — draws the overlay chip |
 | `touchMode` | Selects between `SS_TOUCH` packets, relative-mouse packets, and absolute-mouse packets (§10.3) |
 | `dividerPositionPercent`, `touchPointerVelocityPercent` | **Local only** — they shape how touches become packets, and are never transmitted |
 | `onScreenWidgetEnabled`, `onScreenWidgets`, `swapFaceButtons` | **Local only** — they synthesize ordinary controller packets |
 | `emulatedControllerType` | `SS_CONTROLLER_ARRIVAL.type` (§6.2 below) |
 | `gyroMode`, `gyroSensitivityPercent` | Gates and scales `SS_CONTROLLER_MOTION` (§10.3) |
+| `rumbleEnabled` | **Local only** — gates whether an inbound rumble message (§9.6) reaches a motor |
 | `threeFingerTap*`, `edgeSwipe*` | **Local only** — gesture recognition and overlay actions |
 | `externalDisplayMode` | **Local only**, and inert in v1 (non-goal, `00-OVERVIEW` §4.6) |
 | `captureMouse` | **Local only** — whether we request pointer capture |
@@ -628,7 +634,6 @@ protocol layer must not invent rows for them:
 
 | Parameter | Value |
 |---|---|
-| `sops` | `1`, except forced to `0` by the NVIDIA non-standard-resolution clamp (§3.6) |
 | `gcpersist` | `1` |
 | `remoteControllersBitmap` / `gcmap` | Computed live from connected controllers |
 | `rikey` / `rikeyid` | Generated per session |

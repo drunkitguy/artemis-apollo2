@@ -193,6 +193,15 @@ data class StreamSettings(
     val resolution: StreamResolution = StreamResolution.RES_1080P,
     /** Requested frame rate. */
     val frameRate: FrameRate = FrameRate.FPS_60,
+    /**
+     * The host's `sops` flag: let the host rewrite in-game graphics settings to match the stream.
+     *
+     * On by default because a host that renders at its own desktop resolution and then downscales
+     * wastes both GPU time and bitrate.
+     */
+    val optimizeGameSettings: Boolean = true,
+    /** Draw the live bitrate/latency chip over the stream. */
+    val showStatsOverlay: Boolean = false,
 
     // ---- Touch & Controller ------------------------------------------------------------------
     /** How touches are translated into host input. */
@@ -213,6 +222,8 @@ data class StreamSettings(
     val gyroMode: GyroMode = GyroMode.OFF,
     /** Gyro sensitivity multiplier in percent (25..300). */
     val gyroSensitivityPercent: Int = 100,
+    /** Route the host's force feedback to a controller, or to this device when it has no motors. */
+    val rumbleEnabled: Boolean = true,
 
     // ---- Gestures ----------------------------------------------------------------------------
     /** Whether the three-finger tap gesture is recognised at all. */

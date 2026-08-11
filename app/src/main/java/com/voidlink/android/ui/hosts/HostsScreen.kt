@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -76,7 +78,6 @@ private val HostCardMinWidth = 320.dp
  * @param onUnpair unpair was chosen from a card's context menu.
  * @param onWake wake was chosen from a card's context menu.
  * @param onHostSettings per-host settings was chosen from a card's context menu.
- * @param onConnect the user wants to open this host's app list.
  * @param onDismissPairing closes the PIN sheet.
  * @param onMessageShown clears the transient message once displayed.
  * @param modifier layout modifier.
@@ -93,7 +94,6 @@ fun HostsScreen(
     onUnpair: (KnownHost) -> Unit,
     onWake: (KnownHost) -> Unit,
     onHostSettings: (KnownHost) -> Unit,
-    onConnect: (KnownHost) -> Unit,
     onDismissPairing: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
@@ -155,15 +155,24 @@ fun HostsScreen(
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = HostCardMinWidth),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(spacing.lg),
+                // Extra room at the bottom so the last card clears the navigation bar inset.
+                contentPadding = PaddingValues(
+                    start = spacing.xl,
+                    end = spacing.xl,
+                    top = spacing.lg,
+                    bottom = spacing.xxl * 2,
+                ),
                 horizontalArrangement = Arrangement.spacedBy(spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(spacing.lg),
             ) {
                 items(items = state.hosts, key = { it.host.uuid }) { card ->
                     HostCard(
                         card = card,
+                        // Tapping the card body does whatever its footer button does: a paired,
+                        // online host opens; an unpaired one starts pairing; an offline one wakes.
+                        // Navigating into the app grid of a machine that is asleep would only ever
+                        // show an empty screen.
                         onPrimaryAction = { onCardAction(card) },
-                        onOpen = { onConnect(card.host) },
                         onRename = { renameTarget = card.host },
                         onDelete = { onDelete(card.host) },
                         onUnpair = { onUnpair(card.host) },
@@ -223,8 +232,7 @@ fun HostsScreen(
  * button whose meaning depends on whether the host is online and paired.
  *
  * @param card the host and its status.
- * @param onPrimaryAction the footer button was tapped.
- * @param onOpen the card body was tapped.
+ * @param onPrimaryAction the footer button, or the card body, was tapped.
  * @param onRename context menu: rename.
  * @param onDelete context menu: delete.
  * @param onUnpair context menu: unpair.
@@ -237,7 +245,6 @@ fun HostsScreen(
 fun HostCard(
     card: HostCardState,
     onPrimaryAction: () -> Unit,
-    onOpen: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onUnpair: () -> Unit,
@@ -255,7 +262,7 @@ fun HostCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = onOpen,
+                    onClick = onPrimaryAction,
                     onLongClick = { menuOpen = true },
                 ),
         ) {
@@ -271,12 +278,15 @@ fun HostCard(
                         contentDescription = null,
                         size = 72.dp,
                         backgroundColor = if (online) colors.accentFill else colors.fill,
-                        iconColor = if (online) colors.accent else colors.secondaryLabel,
+                        iconColor = if (online) colors.accent else colors.offline,
                     )
                     if (card.needsPairing) {
                         Box(
+                            // Nudged past the tile's corner so the badge reads as cut out of it,
+                            // the way the reference draws it.
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
+                                .offset(x = 6.dp, y = 6.dp)
                                 .size(26.dp)
                                 .clip(RoundedCornerShape(13.dp))
                                 .background(colors.card)
@@ -400,8 +410,10 @@ private fun HostFooterButton(
         HostAction.WAKE -> {
             label = "Wake-on-LAN"
             icon = VoidLinkIcons.Power
-            contentColor = colors.secondaryLabel
-            fill = colors.fill
+            // Muted and untinted: waking is the fallback offer for a machine that is asleep, not
+            // the confident blue call to action a reachable host gets.
+            contentColor = colors.offline
+            fill = Color.Transparent
         }
     }
 
@@ -421,7 +433,11 @@ private fun HostFooterButton(
             modifier = Modifier.size(20.dp),
         )
         Spacer(modifier = Modifier.width(spacing.sm))
-        Text(text = label, style = VoidLinkTheme.body, color = contentColor)
+        Text(
+            text = label,
+            style = VoidLinkTheme.body.copy(fontWeight = FontWeight.SemiBold),
+            color = contentColor,
+        )
     }
 }
 
@@ -664,7 +680,6 @@ private fun HostsScreenPreview() {
             onUnpair = {},
             onWake = {},
             onHostSettings = {},
-            onConnect = {},
             onDismissPairing = {},
             onMessageShown = {},
         )

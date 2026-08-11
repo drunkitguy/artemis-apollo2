@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -176,7 +177,7 @@ class HostsViewModel(
     fun delete(uuid: String) {
         viewModelScope.launch {
             hostRepository.delete(uuid)
-            statuses.value = statuses.value - uuid
+            statuses.update { it - uuid }
         }
     }
 

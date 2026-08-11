@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Menu
@@ -79,6 +80,9 @@ object VoidLinkIcons {
 
     /** Dismiss. */
     val Close: ImageVector = Icons.Filled.Close
+
+    /** Return to the previous screen — a chevron, matching the reference rather than Material. */
+    val Back: ImageVector = Icons.Filled.KeyboardArrowLeft
 
     /** External display options. */
     val Display: ImageVector = Icons.Filled.Tv

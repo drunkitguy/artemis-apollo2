@@ -26,6 +26,39 @@ class SettingsFormatTest {
     }
 
     @Test
+    fun `the megabit boundary itself switches units exactly once`() {
+        assertEquals("999 kbps", SettingsFormat.bitrate(999))
+        assertEquals("1.0 Mbps", SettingsFormat.bitrate(1_000))
+        assertEquals("1.0 Mbps", SettingsFormat.bitrate(1_001))
+    }
+
+    @Test
+    fun `bitrate rounds to one decimal rather than truncating`() {
+        assertEquals("23.5 Mbps", SettingsFormat.bitrate(23_500))
+        assertEquals("23.5 Mbps", SettingsFormat.bitrate(23_460))
+        assertEquals("23.4 Mbps", SettingsFormat.bitrate(23_440))
+    }
+
+    @Test
+    fun `divider position always sums to one hundred percent`() {
+        (0..100).forEach { left ->
+            assertEquals("| $left% | ${100 - left}% |", SettingsFormat.dividerPosition(left))
+        }
+    }
+
+    @Test
+    fun `the divider label matches the design reference at the default position`() {
+        assertEquals("| 50% | 50% |", SettingsFormat.dividerPosition(StreamSettings().dividerPositionPercent))
+    }
+
+    @Test
+    fun `percent renders the whole legal range without decoration`() {
+        assertEquals("0%", SettingsFormat.percent(0))
+        assertEquals("1%", SettingsFormat.percent(1))
+        assertEquals("400%", SettingsFormat.percent(400))
+    }
+
+    @Test
     fun `bitrate uses a dot as the decimal separator regardless of the default locale`() {
         val previous = java.util.Locale.getDefault()
         try {

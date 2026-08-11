@@ -40,6 +40,20 @@ class HostApp(
     }
 
     override fun toString(): String = "HostApp(id=$id, name=$name, isDesktop=$isDesktop)"
+
+    companion object {
+        /**
+         * The order a host's library is drawn in: Desktop first, then everything else
+         * alphabetically and case-insensitively.
+         *
+         * Lives here rather than in the view model so the rule is one pure, tested thing — the
+         * grid, any future search result and the in-stream switcher must not disagree about it.
+         */
+        val displayOrder: Comparator<HostApp> =
+            compareByDescending<HostApp> { it.isDesktop }
+                .thenBy { it.name.lowercase() }
+                .thenBy { it.id }
+    }
 }
 
 /**

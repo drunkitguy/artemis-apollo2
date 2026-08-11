@@ -73,7 +73,7 @@ class AppsViewModel(
                 return@launch
             }
             val status: HostStatus = statusProvider.probe(host)
-            val apps = catalogProvider.listApps(host).sortedWith(desktopFirst)
+            val apps = catalogProvider.listApps(host).sortedWith(HostApp.displayOrder)
             state.value = AppsUiState(
                 host = host,
                 apps = apps,
@@ -107,10 +107,6 @@ class AppsViewModel(
     }
 
     companion object {
-        /** Desktop always sorts first; everything else is alphabetical. */
-        private val desktopFirst: Comparator<HostApp> =
-            compareByDescending<HostApp> { it.isDesktop }.thenBy { it.name.lowercase() }
-
         /**
          * Builds the production view model for [hostId] from [ServiceLocator].
          *

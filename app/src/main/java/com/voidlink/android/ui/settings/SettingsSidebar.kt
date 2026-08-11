@@ -160,8 +160,9 @@ private fun SidebarHeader(
             )
         }
         Text(
+            // A 340dp panel cannot carry the 34sp screen title without crowding both icon buttons.
             text = "Settings",
-            style = VoidLinkTheme.largeTitle,
+            style = VoidLinkTheme.cardTitle,
             color = colors.label,
             modifier = Modifier.weight(1f),
             maxLines = 1,
@@ -262,6 +263,21 @@ private fun VideoSection(
             info = "Frames per second requested from the host. Values above this display's own " +
                 "refresh rate will not be visible.",
         )
+        ToggleRow(
+            label = "Optimize Game Settings",
+            checked = settings.optimizeGameSettings,
+            onCheckedChange = { enabled -> onUpdate { it.copy(optimizeGameSettings = enabled) } },
+            info = "Lets the host change a game's own resolution and quality settings to match " +
+                "the stream. Turn it off if you would rather the game keep the settings you " +
+                "chose on the PC itself.",
+        )
+        ToggleRow(
+            label = "Show Stats Overlay",
+            checked = settings.showStatsOverlay,
+            onCheckedChange = { enabled -> onUpdate { it.copy(showStatsOverlay = enabled) } },
+            info = "Draws a small chip over the stream with the live resolution, frame rate, " +
+                "bitrate, decode time and packet loss.",
+        )
     }
 }
 
@@ -298,10 +314,11 @@ private fun TouchAndControllerSection(
         SliderRow(
             label = "Divider Position",
             value = settings.dividerPositionPercent.toFloat(),
-            valueText = SettingsFormat.dividerPosition(settings.dividerPositionPercent),
             range = StreamSettings.DIVIDER_MIN_PERCENT.toFloat()..StreamSettings.DIVIDER_MAX_PERCENT.toFloat(),
-            onValueChange = { raw ->
-                onUpdate { it.copy(dividerPositionPercent = raw.roundToInt()) }
+            format = { raw -> SettingsFormat.dividerPosition(raw.roundToInt()) },
+            quantize = { raw -> raw.roundToInt().toFloat() },
+            onCommit = { chosen ->
+                onUpdate { current -> current.copy(dividerPositionPercent = chosen.roundToInt()) }
             },
             enabled = settings.onScreenWidgetEnabled,
             info = "Where the screen splits between the two touch halves, measured from the left " +
@@ -310,10 +327,13 @@ private fun TouchAndControllerSection(
         SliderRow(
             label = "Touch Pointer Velocity",
             value = settings.touchPointerVelocityPercent.toFloat(),
-            valueText = SettingsFormat.percent(settings.touchPointerVelocityPercent),
             range = StreamSettings.VELOCITY_MIN_PERCENT.toFloat()..StreamSettings.VELOCITY_MAX_PERCENT.toFloat(),
-            onValueChange = { raw ->
-                onUpdate { it.copy(touchPointerVelocityPercent = roundToStep(raw, VELOCITY_STEP_PERCENT)) }
+            format = { raw -> SettingsFormat.percent(raw.roundToInt()) },
+            quantize = { raw -> snapTo(raw, VELOCITY_STEP_PERCENT) },
+            onCommit = { chosen ->
+                onUpdate { current ->
+                    current.copy(touchPointerVelocityPercent = chosen.roundToInt())
+                }
             },
             enabled = settings.touchMode != TouchMode.ABSOLUTE_TOUCH,
             info = "How far the host cursor travels for a given finger movement. Absolute Touch " +
@@ -327,8 +347,10 @@ private fun TouchAndControllerSection(
                 onUpdate { it.copy(onScreenWidgets = OnScreenWidgetPreset.ordered[index]) }
             },
             enabled = settings.onScreenWidgetEnabled,
+            disabledOptions = CUSTOM_WIDGETS_DISABLED,
             info = "Simple shows a stick and the face buttons; Full adds triggers, bumpers and " +
-                "the D-pad; Custom uses your own saved layout.",
+                "the D-pad. Custom is greyed out because the layout editor is not in this " +
+                "release yet.",
         )
         ToggleRow(
             label = "Swap A/B X/Y Buttons",
@@ -358,13 +380,22 @@ private fun TouchAndControllerSection(
         SliderRow(
             label = "Gyro Sensitivity",
             value = settings.gyroSensitivityPercent.toFloat(),
-            valueText = SettingsFormat.percent(settings.gyroSensitivityPercent),
             range = StreamSettings.VELOCITY_MIN_PERCENT.toFloat()..StreamSettings.VELOCITY_MAX_PERCENT.toFloat(),
-            onValueChange = { raw ->
-                onUpdate { it.copy(gyroSensitivityPercent = roundToStep(raw, VELOCITY_STEP_PERCENT)) }
+            format = { raw -> SettingsFormat.percent(raw.roundToInt()) },
+            quantize = { raw -> snapTo(raw, VELOCITY_STEP_PERCENT) },
+            onCommit = { chosen ->
+                onUpdate { current -> current.copy(gyroSensitivityPercent = chosen.roundToInt()) }
             },
             enabled = settings.gyroMode != GyroMode.OFF,
-            info = "Scales how much aim movement a given amount of physical rotation produces.",
+            info = "Scales how much aim movement a given amount of physical rotation produces. " +
+                "Only applies once Gyro Mode is something other than Off.",
+        )
+        ToggleRow(
+            label = "Rumble",
+            checked = settings.rumbleEnabled,
+            onCheckedChange = { enabled -> onUpdate { it.copy(rumbleEnabled = enabled) } },
+            info = "Passes the host's force-feedback events to a connected controller, or to this " +
+                "device's own vibrator when the pad has no motors.",
         )
     }
 }
@@ -479,8 +510,10 @@ private fun AudioSection(
             options = SurroundMode.ordered.map { it.label },
             selectedIndex = SurroundMode.ordered.indexOf(settings.surroundMode),
             onSelect = { index -> onUpdate { it.copy(surroundMode = SurroundMode.ordered[index]) } },
-            info = "Requests a multi-channel mix from the host. Surround only helps if the output " +
-                "device on this end can actually play it.",
+            disabledOptions = SURROUND_DISABLED,
+            info = "Requests a multi-channel mix from the host. 5.1 and 7.1 are greyed out " +
+                "because this release decodes stereo only; surround decoding lands with the " +
+                "audio work.",
         )
         ToggleRow(
             label = "Mute Host Audio",
@@ -496,14 +529,28 @@ private fun AudioSection(
 // Helpers
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Segments that exist but cannot be chosen yet.
+ *
+ * They are shown greyed out rather than hidden: a control that silently loses an option leaves the
+ * user hunting for a feature they know the app has.
+ */
+private val CUSTOM_WIDGETS_DISABLED: Set<Int> =
+    setOf(OnScreenWidgetPreset.ordered.indexOf(OnScreenWidgetPreset.CUSTOM))
+
+private val SURROUND_DISABLED: Set<Int> = setOf(
+    SurroundMode.ordered.indexOf(SurroundMode.SURROUND_5_1),
+    SurroundMode.ordered.indexOf(SurroundMode.SURROUND_7_1),
+)
+
 /** Bitrate snaps to half-megabit stops so the label never shows jittery values. */
 private const val BITRATE_STEP_KBPS = 500
 
 /** Velocity and sensitivity snap to 5% stops. */
 private const val VELOCITY_STEP_PERCENT = 5
 
-/** Rounds a raw slider position to the nearest multiple of [step]. */
-private fun roundToStep(raw: Float, step: Int): Int = (raw / step).roundToInt() * step
+/** Snaps a raw slider position to the nearest multiple of [step]. */
+private fun snapTo(raw: Float, step: Int): Float = ((raw / step).roundToInt() * step).toFloat()
 
 @Preview(name = "Settings sidebar", widthDp = 340, heightDp = 900)
 @Composable

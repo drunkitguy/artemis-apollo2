@@ -350,7 +350,7 @@ Full parameter list, in the order the reference implementation sends them:
 | `clientHdrCapSupportedFlagsInUint32` | `0` — only when HDR requested |
 | `clientHdrCapMetaDataId` | `NV_STATIC_METADATA_TYPE_1` — only when HDR requested |
 | `clientHdrCapDisplayData` | `0x0x0x0x0x0x0x0x0x0x0` — only when HDR requested |
-| `localAudioPlayMode` | `1` to also play audio on the host's speakers, else `0` |
+| `localAudioPlayMode` | `1` to also play audio on the host's speakers, else `0`. **Note the inversion versus the UI setting:** `StreamSettings.muteHostAudio == true` ⇒ `localAudioPlayMode=0` |
 | `surroundAudioInfo` | `(channelMask << 16) | channelCount` as a decimal int (§8.2) |
 | `remoteControllersBitmap` | bitmask of attached gamepads |
 | `gcmap` | same bitmask as `remoteControllersBitmap` |
@@ -839,7 +839,14 @@ adjust.
 | `x-ml-video.configuredBitrateKbps` | bitrate (Sunshine extension — lets the host know the *user's* number even if we adjusted the negotiated one) |
 
 Setting min == max == our value **disables the host's adaptive bitrate**, which is what we
-want: we control quality from the client. (Gen ≥ 7 uses the `…Kbps` names; older gens use
+want: we control quality from the client.
+
+**Consequence the UI depends on: bitrate cannot be changed mid-session.** These attributes are
+sent once, in ANNOUNCE, before PLAY. There is no client→host bitrate message anywhere in the
+control protocol (§9.3–9.5), and because we pin min == max the host will not adapt on its own
+either. Changing bitrate requires tearing down and re-launching the session — which is why
+`03-UI-SPEC.md` §5.3 marks the bitrate row "Reconnect required" alongside resolution and frame
+rate. Do not add a speculative "set bitrate" control message; none exists. (Gen ≥ 7 uses the `…Kbps` names; older gens use
 `x-nv-vqos[0].bw.minimumBitrate` / `maximumBitrate` without the suffix, and
 `x-nv-video[0].averageBitrate=4` / `peakBitrate=4`.)
 
@@ -1736,6 +1743,9 @@ SS_CONTROLLER_ARRIVAL_MAGIC = 0x55000004
 body:
   uint8  controllerNumber
   uint8  type                  // 0x00 unknown, 0x01 Xbox, 0x02 PlayStation, 0x03 Nintendo
+                               // (0x02 is what the UI labels "DS4"; the settings enum calls it
+                               //  DUALSHOCK_4 — see 02-ARCHITECTURE §6.2 for the type-selection
+                               //  policy, including what "Both" means)
   uint16 capabilities
   uint32 supportedButtonFlags  // the full 32-bit button mask this pad can produce
 ```

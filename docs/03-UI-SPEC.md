@@ -497,7 +497,13 @@ scroll):
 |---|---|
 | Leading | Sidebar-toggle icon button (24 dp) — collapses the panel |
 | Center-start | "Settings" in `navTitle` |
-| Trailing | Overflow `more_horiz` icon button — menu: "Reset section to defaults", "Reset all settings", "Add to favorites…", "Diagnostics" |
+| Trailing | Overflow `VoidLinkIcons.Overflow` (`MoreVert`) icon button — menu: **"Reset all settings"**, **"Diagnostics"**, and — only once §4.10 is built — "Add to favorites…" |
+
+The overflow menu contains nothing else. In particular there is **no "Unlock high bitrate"**
+entry: the 150 Mbps ceiling is enforced in the model and is not user-liftable (§4.8).
+"Reset section to defaults" is not offered either — `SettingsRepository.resetToDefaults()`
+resets the whole object, and a per-section reset would need field grouping the model does not
+express.
 
 Body is a `LazyColumn` of sections. Bottom content padding `space10` so the last row clears
 the navigation bar inset.
@@ -613,96 +619,148 @@ If **every** segment would be disabled, disable the whole row and explain in the
 | Value text | None — the switch *is* the value |
 | Haptics | `HapticFeedbackType.ToggleOn` / `ToggleOff` |
 
-### 4.7 Component: `StepperRow` and `NavigationRow`
+### 4.7 Component: `PickerRow`
 
-* **`StepperRow`** — label, value in `accent`, then a `−`/`+` pair in a 32 dp `surfaceVariant`
-  rounded (`radiusSm`) pill. Used for controller slot counts and similar small integers.
-* **`NavigationRow`** — label, optional summary value in `accent`, trailing 20 dp
-  `chevron_right` in `onSurfaceTertiary`. Opens a sub-screen (Resolution picker, Gesture
-  editor, Diagnostics).
+* **`PickerRow`** — label, current value in `accent`, trailing 20 dp `ChevronRight` in
+  `onSurfaceTertiary`. Opens an inline or dialog picker for enums with too many options to fit
+  a segmented control. Used for the two `GestureAction` rows.
+* There is **no `StepperRow` and no `NavigationRow`** — nothing in the shipped settings model
+  needs a stepper, and every option set is either a segment row or a `PickerRow`. Do not add
+  them speculatively.
 
 ### 4.8 Section contents
 
-Rows are listed in the exact order they must render. "Info" column summarizes the required
-help text; the coder writes the full sentence.
+**These rows are exactly the fields of `data/StreamSettings.kt`, in render order.** The mapping
+is one-to-one and must stay that way: a row with no field cannot persist, and a field with no
+row cannot be changed. Where a setting is local-only or reaches the wire, see
+`02-ARCHITECTURE.md` §6.1.
 
-#### Video — glyph `videocam`
+"Info" summarizes what the help text must cover; the coder writes the full sentence.
 
-| Row | Type | Values | Notes / info text must cover |
-|---|---|---|---|
-| Bitrate | Slider | 0.5–150 Mbps default range; **extended to 500 Mbps** when the user enables "Unlock high bitrate" in the overflow menu | What bitrate costs on Wi‑Fi; that above ~150 Mbps most decoders stall |
-| Resolution | Navigation | 720p / 1080p / 1440p / 4K / Native / Custom | Explains SOPS clamping on NVIDIA hosts (spec 01 §3.6) |
-| Frame Rate | Segmented | 30 / 60 / 90 / 120 | Options above the display's refresh rate are disabled |
-| Preferred Codec | Segmented | **H.264 \| Auto** (plus HEVC and AV1 as additional segments when probed OK) | What Auto picks and why; that AV1 hardware decode is unreliable on many devices |
-| HDR | Toggle | on/off | Requires a 10-bit codec, an HDR display, and an HDR-capable app; disabled with reason when any is missing |
-| YUV 4:4:4 | Toggle | on/off | Sharper text; **Sunshine/Apollo only**; costs bandwidth; disabled on GFE and on decoders without a 4:4:4 profile |
-| Optimize Game Settings | Toggle | on/off | The `sops` flag: lets the host change in-game resolution |
-| Show Stats Overlay | Toggle | on/off | Draws the live stats chip during streaming |
+#### Video — `VoidLinkIcons.Video`
 
-#### Audio — glyph `volume_up`
+| Row | Type | Field | Values | Info text must cover |
+|---|---|---|---|---|
+| Bitrate | Slider | `bitrateKbps` | 0.5–150 Mbps, label `"23.0 Mbps"` | What bitrate costs on Wi‑Fi; that above ~150 Mbps most decoders stall; **that a change takes effect on the next connection, not the current one** |
+| Preferred Codec | Segmented | `codec` | **H.264 \| HEVC \| AV1 \| Auto** | What Auto picks and why; that AV1 hardware decode is unreliable on many devices |
+| HDR | Toggle | `hdrEnabled` | on/off | Requires a 10-bit codec, an HDR display, and an HDR-capable app; disabled with reason when any is missing |
+| YUV 4:4:4 | Toggle | `yuv444Enabled` | on/off | Sharper text; **Sunshine/Apollo only**; costs bandwidth; disabled on GFE and on decoders without a 4:4:4 profile |
+| Resolution | Segmented | `resolution` | **720p \| 1080p \| 1440p \| 4K \| Native** | Native means the device's own display size, resolved at launch; explains SOPS clamping on NVIDIA hosts (spec 01 §3.6) |
+| FPS | Segmented | `frameRate` | **30 \| 60 \| 90 \| 120** | Options above the display's refresh rate are disabled |
+| Optimize Game Settings | Toggle | `optimizeGameSettings` | on/off | The host's `sops` flag: lets the host rewrite in-game graphics settings to match the stream. On by default. Explains the NVIDIA clamp (spec 01 §3.6): on a GFE host at a non-standard resolution we send `sops=0` regardless of this setting |
+| Show Stats Overlay | Toggle | `showStatsOverlay` | on/off | Draws the live bitrate/latency chip over the stream |
 
-| Row | Type | Values | Notes |
-|---|---|---|---|
-| Channels | Segmented | Stereo \| 5.1 \| 7.1 | **5.1/7.1 disabled in v1** with info text saying surround decoding is not yet supported (spec 01 §8.5) |
-| Play Audio on PC | Toggle | on/off | Also plays through the host's speakers |
+**Bitrate range is 500–150 000 kbps and there is no "unlock" affordance.** The 500 Mbps ceiling
+mentioned in the VoidLink feature list is not a goal: `StreamSettings.BITRATE_MAX_KBPS` is
+150 000, `coerced()` enforces it on both read and write, and no UI or menu path raises it.
 
-#### Touch & Controller — glyph `sports_esports`
+**Resolution is a segmented control, not a sub-screen.** There is no resolution picker screen,
+no "Custom" option, and no file for one.
 
-| Row | Type | Values | Notes |
-|---|---|---|---|
-| Touch Mode | Segmented | **Touchpad \| Native Touch \| Absolute Touch** | Touchpad = relative mouse; Native Touch = real multi-touch passthrough (**Sunshine only**, segment disabled on GFE); Absolute Touch = the screen maps 1:1 to the desktop |
-| Enable On-Screen Widget & Peripherals | Toggle | on/off | Master switch for the virtual gamepad and on-screen keyboard/trackpad buttons |
-| Divider Position | Slider | 0–100, label `"\| 50% \| 50% \|"` | Where the screen splits into two independent touch regions (left/right touchpads); only enabled when the mode uses a split |
-| Touch Pointer Velocity | Slider | 25–400%, label `"100%"` | Pointer speed multiplier in Touchpad mode |
-| On-Screen Widgets | Segmented | **Off \| Simple \| Full \| Custom** | Custom is **disabled in v1** with info text saying the layout editor is coming |
-| Swap A/B X/Y Buttons | Toggle | on/off | Nintendo-style face-button layout |
-| Emulated Controller Type | Segmented | **Xbox 360 \| DS4 \| Both** | What the host emulates; DS4 enables gyro/touchpad passthrough; **Sunshine only** |
-| Gyro Mode | Segmented | **Off \| Auto \| Built-in \| Controller** | Auto prefers a connected controller's gyro and falls back to the device's; requires DS4 emulation on the host |
-| Gyro Sensitivity | Slider | 25–400%, label `"100%"` | Only enabled when Gyro Mode ≠ Off |
-| Rumble | Toggle | on/off | Routes host rumble to the controller, or the phone if the controller has no motor |
+#### Touch & Controller — `VoidLinkIcons.Touch`
 
-#### Gestures — glyph `gesture`
+| Row | Type | Field | Values | Info text must cover |
+|---|---|---|---|---|
+| Touch Mode | Segmented | `touchMode` | **Touchpad \| Native Touch \| Absolute Touch** | Touchpad = relative mouse; Native Touch = real multi-touch passthrough (**Sunshine only**, segment disabled on GFE); Absolute Touch = the screen maps 1:1 to the desktop |
+| Enable On-Screen Widget & Peripherals | Toggle | `onScreenWidgetEnabled` | on/off | Master switch for the virtual gamepad and on-screen peripherals |
+| Divider Position | Slider | `dividerPositionPercent` | 10–90, label `"\| 50% \| 50% \|"` | Where the screen splits into two independent touch regions; only enabled when the mode uses a split |
+| Touch Pointer Velocity | Slider | `touchPointerVelocityPercent` | 25–300%, label `"100%"` | Pointer speed multiplier in Touchpad mode |
+| On-Screen Widgets | Segmented | `onScreenWidgets` | **Off \| Simple \| Full \| Custom** | Custom is **disabled in v1** with info text saying the layout editor is not built yet |
+| Swap A/B X/Y Buttons | Toggle | `swapFaceButtons` | on/off | Nintendo-style face-button layout |
+| Emulated Controller Type | Segmented | `emulatedControllerType` | **Xbox 360 \| DS4 \| Both** | Which pad the host emulates. DS4 enables gyro/touchpad passthrough. **"Both" means "don't force a type" — each connected pad is reported as what it actually is** (`02-ARCHITECTURE.md` §6.2). **Sunshine only**; disabled on GFE |
+| Gyro Mode | Segmented | `gyroMode` | **Off \| Auto \| Built-in \| Controller** | Auto prefers a connected controller's gyro and falls back to the device's; requires DS4 emulation on the host |
+| Gyro Sensitivity | Slider | `gyroSensitivityPercent` | 25–300%, label `"100%"` | Only enabled when Gyro Mode ≠ Off |
+| Rumble | Toggle | `rumbleEnabled` | on/off | Routes the host's force feedback to the controller, or to this device when the controller has no motors |
 
-| Row | Type | Values | Notes |
-|---|---|---|---|
-| Exit Gesture | Segmented | 3-finger \| 4-finger swipe | Which gesture leaves the stream |
-| Exit Swipe Distance | Slider | 40–400 dp | How far the swipe must travel before it counts |
-| Tap to Click | Toggle | on/off | Single-finger tap = left click in Touchpad mode |
-| Two-Finger Tap = Right Click | Toggle | on/off | |
-| Three-Finger Tap = Middle Click | Toggle | on/off | |
-| Edge Swipe Opens Settings | Toggle | on/off | Left-edge swipe reveals the in-stream settings drawer |
+Slider ranges are 25–300%, not 25–400% — `VELOCITY_MAX_PERCENT` is 300 and `coerced()`
+enforces it.
 
-#### Display — glyph `cast`
+#### Gestures — `VoidLinkIcons.Gestures`
 
-| Row | Type | Values | Notes |
-|---|---|---|---|
-| External Display Mode | Segmented | Mirror \| Presentation | **Entire section disabled in v1** (spec 00 §4 non-goal). Info text states plainly that external-display streaming is not implemented yet. The section is still shown so the user can see it exists and is not hidden. |
+Gestures are **bindings**, not fixed behaviours: two recognizers, each with an on/off toggle
+and a bound action.
 
-*(The iPad reference's "Stage Manager | AirPlay (mirroring)" maps to Android's
-"Presentation | Mirror". Same idea, native terminology.)*
+| Row | Type | Field | Values | Info text must cover |
+|---|---|---|---|---|
+| Three-Finger Tap | Toggle | `threeFingerTapEnabled` | on/off | Whether the gesture is recognized at all |
+| Three-Finger Tap Action | Picker | `threeFingerTapAction` | Nothing \| Toggle Keyboard \| Toggle Settings \| Toggle Widgets \| **Disconnect** | What the gesture does; disabled when the toggle above is off |
+| Edge Swipe | Toggle | `edgeSwipeEnabled` | on/off | Swipe in from the screen edge |
+| Edge Swipe Action | Picker | `edgeSwipeAction` | same `GestureAction` set | Disabled when the toggle above is off |
+
+**There is no separate "Exit Gesture" or "Exit Swipe Distance" row, and no tap-to-click /
+two-finger / three-finger click rows.** Leaving the stream is the `DISCONNECT` action bound to
+either recognizer. Touchpad click behaviour (tap = left click, two-finger tap = right click)
+is **fixed behaviour of Touchpad mode**, not configurable — see §5.4.
+
+#### Peripherals — `VoidLinkIcons.Peripherals`
+
+| Row | Type | Field | Values | Info text must cover |
+|---|---|---|---|---|
+| External Display Mode | Segmented | `externalDisplayMode` | **Mirror \| Separate Display** | **Disabled in v1** (`00-OVERVIEW.md` §4.6 non-goal). Info text states plainly that external-display streaming is not implemented yet. The row stays visible so the feature is not silently missing. |
+| Capture Mouse | Toggle | `captureMouse` | on/off | Grabs a physical mouse for raw relative input while streaming |
+| Forward Keyboard | Toggle | `forwardKeyboard` | on/off | Sends physical keyboard input, including modifier chords, to the host |
+
+*(The iPad reference's "Stage Manager | AirPlay (mirroring)" maps to
+"Separate Display | Mirror". Same idea, native terminology.)*
+
+#### Audio — `VoidLinkIcons.Audio`
+
+| Row | Type | Field | Values | Info text must cover |
+|---|---|---|---|---|
+| Surround Sound | Segmented | `surroundMode` | **Stereo \| 5.1 \| 7.1** | **5.1/7.1 disabled in v1** with info text saying surround decoding is not yet supported (spec 01 §8.5) |
+| Mute Host Audio | Toggle | `muteHostAudio` | on/off | Keeps the PC's own speakers silent while streaming. Note the **inverted** sense versus the protocol's `localAudioPlayMode` |
+
+#### Rows that do not exist, and why
+
+These appeared in earlier drafts of this spec with no backing field. They are **not** to be
+built:
+
+| Removed row | Resolution |
+|---|---|
+| Play Audio on PC | Superseded by **Mute Host Audio**, which is the same knob inverted |
+| Unlock high bitrate | Does not exist; the ceiling is 150 Mbps, full stop |
+| Exit Gesture / Exit Swipe Distance | Replaced by the `DISCONNECT` gesture action |
+| Tap to Click / Two-Finger / Three-Finger click | Fixed behaviour of Touchpad mode |
+| Frame queue depth | Was never a user setting; the decode queue is fixed at 2 (`02-ARCHITECTURE.md` §3) |
 
 ### 4.9 Per-host overrides
 
-* Reachable from the host card's long-press menu ("Host settings…") and from the app-grid
+**The shipped model is whole-object override** (`KnownHost.settingsOverride: StreamSettings?`),
+not per-field. The UI must be honest about what that means.
+
+* Reachable from the host card's long-press menu ("Host settings…") and from the apps-screen
   sidebar toggle when a host is selected.
-* Visually identical to the global panel, with:
-  * A pinned header chip beneath "Settings": `surfaceVariant` fill, `radiusMd`,
-    "Overrides for **Gaming PC**" in `caption`, with a trailing "Reset all" text button in
-    `accent`.
-  * Any row with a per-host override shows a **4 dp `accent` bar** at its start edge (inset
-    `space1`, full row height, `radiusFull`) and adds a "Reset" text action inside the row's
-    info expansion.
-* Changing a row here writes an override; long-pressing a row offers "Reset to global".
+* Visually identical to the global panel, with a pinned header chip beneath "Settings":
+  `surfaceVariant` fill, `radiusMd`, "Using custom settings for **Gaming PC**" in `caption`,
+  and a trailing "Use global settings" text button in `accent` that clears the override.
+* **Every row is overridden or none is.** Do not draw a per-row "overridden" marker — it would
+  imply per-field inheritance that does not exist. Instead, the header chip carries the whole
+  story, and its info affordance explains: *once a host has custom settings, later changes to
+  the global settings no longer reach it.*
+* Editing any row while no override exists **creates** one, seeded from a copy of the current
+  effective settings, so it is never half-populated. A confirmation is not required, but the
+  header chip must appear immediately so the switch is visible.
+* "Use global settings" is destructive (it discards the custom values) and confirms.
 
-### 4.10 Favorites
+### 4.10 Favorites — **not built; deferred**
 
-The reference has "Add most used setting items to favorite". Ours:
+The reference has "Add most used setting items to favorite". This is **not in the shipped
+settings panel** and has no backing field: `StreamSettings` stores no favorites list, and
+adding one is a model change, not a UI change.
 
-* The overflow menu has "Add to favorites…", which enters a selection mode: every row grows a
+When it is built, the design is:
+
+* The overflow menu gains "Add to favorites…", which enters a selection mode: every row grows a
   leading 24 dp star outline toggle.
 * Favorited rows are duplicated into a **"Favorites"** section pinned to the top of the panel,
   above "Video", with the same row instances (same state, same behaviour).
 * The favorites section is hidden entirely when empty.
+* Persistence: a `Set<String>` of row keys — **UI state, not stream configuration**, so it
+  belongs in its own DataStore key, not inside `StreamSettings` (which per-host overrides copy
+  wholesale; favorites must not vary per host).
+
+Until then, the overflow menu omits the entry entirely rather than showing it disabled — an
+absent menu item is not a missing feature the user can see.
 
 ---
 
@@ -724,7 +782,7 @@ z5   Modal dialogs                     — disconnect confirm, error
 
 ### 5.2 Overlay chrome
 
-**Stats chip** (only when "Show Stats Overlay" is on): top-start, `space4` inset from the
+**Stats chip** (shown when `showStatsOverlay` is on — §4.8): top-start, `space4` inset from the
 safe area, `#000000` @ 55% fill, `radiusMd`, `space3` padding, `mono` text:
 
 ```
@@ -739,7 +797,11 @@ Updates at 2 Hz, not per frame.
 `warning` glyph + "Poor connection". Auto-hides 3 s after quality recovers.
 
 **Toasts:** bottom-center, `#000000` @ 75%, `radiusMd`, `body` in white, 2 s. Used for
-"Controller 1 connected", "Bitrate set to 30 Mbps", "Keyboard shown".
+"Controller 1 connected", "Stats shown", "Keyboard shown".
+
+**Stats chip visibility is the persisted `showStatsOverlay` setting**, reachable both from the
+main settings panel (§4.8, Video) and from the in-stream drawer. Tapping the chip itself also
+dismisses it, which writes the setting off — a dismissal the user expects to stick.
 
 All overlay chrome is `pointerInput`-transparent except for actual controls.
 
@@ -750,20 +812,31 @@ Same components as the main settings panel, but:
 * Presented as a **340 dp drawer from the start edge**, over a 30% scrim.
 * Fill: `surface` at 96% opacity with a `blur(24.dp)` backdrop on API 31+ (fall back to opaque
   `surface` below 31).
-* Opened by: the edge-swipe gesture (if enabled), a 3-finger tap, or the overlay's settings
-  button (a 40 dp circular `#000000` @ 45% button at the top-end corner, visible for 3 s after
-  any overlay interaction, then fading to 25% opacity).
-* Contains a **reduced** row set — only what is safe to change live:
-  Bitrate, Frame Rate (requires reconnect — shown with a "Reconnect required" chip),
-  Touch Mode, On-Screen Widgets, Touch Pointer Velocity, Gyro Mode, Gyro Sensitivity,
-  Rumble, Show Stats Overlay, plus the Favorites section.
+* Opened by: the `TOGGLE_SETTINGS` gesture action bound to the edge swipe or three-finger tap
+  (§4.8), or the overlay's settings button (a 40 dp circular `#000000` @ 45% button at the
+  top-end corner, visible for 3 s after any overlay interaction, then fading to 25% opacity).
+* Contains a reduced row set:
+  * **Apply live:** Touch Mode, On-Screen Widgets, Touch Pointer Velocity, Gyro Mode,
+    Gyro Sensitivity, Divider Position, Swap A/B X/Y, Rumble, Show Stats Overlay. These only
+    change how *we* synthesize packets or draw chrome, so they take effect immediately.
+  * **Reconnect required:** **Bitrate**, Resolution, FPS, Preferred Codec, HDR, YUV 4:4:4,
+    Surround Sound, Optimize Game Settings.
+  * Plus **Show Stats Overlay** and **Rumble**, which apply live and are persisted.
 * Pinned at the bottom of the drawer: a full-width `danger`-tinted "Disconnect" button
   (`radiusMd`, `danger` @ 12% fill, `danger` text) and a secondary "Quit game on PC" text
   button, also `danger`.
 
+**Bitrate cannot be changed live, and the UI must not pretend otherwise.** Every bitrate value
+is fixed at ANNOUNCE time by the SDP attributes `initialBitrateKbps` /
+`bw.minimumBitrateKbps` / `bw.maximumBitrateKbps`, which we deliberately set equal to disable
+the host's adaptive bitrate (spec 01 §6.4); there is no client→host bitrate message anywhere in
+the control protocol (spec 01 §9.3–9.5). Bitrate therefore carries the same **"Reconnect
+required"** chip as Frame Rate.
+
 Rows that cannot apply live are **not hidden** — they show a "Reconnect required" chip
 (`radiusFull`, `warning` @ 18% fill, `caption`, `warning` text) and, on change, prompt
-"Reconnect now?" with Cancel / Reconnect.
+"Reconnect now?" with Cancel / Reconnect. The new value is persisted either way; declining the
+prompt just means it applies next time.
 
 ### 5.4 Touch input surface
 
@@ -771,26 +844,33 @@ Behaviour per `touchMode`:
 
 | Mode | Behaviour |
 |---|---|
-| **Touchpad** | Single finger drag ⇒ relative mouse move scaled by `touchPointerVelocityPercent`. Tap ⇒ left click (if enabled). Two-finger drag ⇒ scroll. Two-finger tap ⇒ right click. Three-finger tap ⇒ middle click. Drag-after-tap ("tap-and-a-half") ⇒ left button held during the drag. |
-| **Native Touch** | Every pointer maps directly to `InputSink.touch(...)` with normalized coordinates and its stable `pointerId`. Up to **10 simultaneous pointers**. No gesture interpretation at all except the exit gesture. Sunshine only. |
+| **Touchpad** | Single finger drag ⇒ relative mouse move scaled by `touchPointerVelocityPercent`. Tap ⇒ left click. Two-finger drag ⇒ scroll. Two-finger tap ⇒ right click. Drag-after-tap ("tap-and-a-half") ⇒ left button held during the drag. **These are fixed behaviours, not settings.** |
+| **Native Touch** | Every pointer maps directly to `InputSink.touch(...)` with normalized coordinates and its stable `pointerId`. Up to **10 simultaneous pointers**. No gesture interpretation at all except the bound gestures below. Sunshine only. |
 | **Absolute Touch** | Finger position maps 1:1 to the host cursor via `mouseMoveAbsolute`, using the video dimensions as the reference frame. Down ⇒ move-then-left-down; up ⇒ left-up. |
 
 **Divider position** splits the surface into two independent regions at
 `dividerPositionPercent` when the mode is a split touchpad configuration; each side tracks its
 own pointer, and the label renders as `| 50% | 50% |` to show both proportions.
 
-**Exit gesture:** N fingers (3 or 4) swiping **down** more than `exitSwipeDistanceDp` shows the
-disconnect confirmation. During the swipe, a translucent sheet follows the fingers so the
-gesture is discoverable and cancellable by reversing. This gesture must be recognized **before**
-pointers are forwarded in Native Touch mode: buffer the first ~80 ms of an N-finger contact,
-and if it does not become an exit swipe, replay the buffered pointers to the host.
+**Bound gestures.** There are exactly two recognizers, each independently enabled and each
+bound to a `GestureAction` (§4.8): a **three-finger tap** and an **edge swipe** (a drag
+starting within 20 dp of the start edge and travelling ≥ 48 dp inward). Leaving the stream is
+`DISCONNECT` bound to either one; it shows the disconnect confirmation rather than acting
+immediately.
+
+Both must be recognized **before** pointers are forwarded in Native Touch mode: buffer the
+first ~80 ms of a three-finger contact or an edge-originating contact, and if it does not
+resolve into the gesture, replay the buffered pointers to the host in order. A recognizer whose
+toggle is off does no buffering at all — a user who turns both off gets completely unfiltered
+touch, which is the point of Native Touch.
 
 **Focus loss** (app backgrounded, dialog opened) ⇒ send `LI_TOUCH_EVENT_CANCEL_ALL` and
 release every held mouse/controller button. Stuck-key bugs are unforgivable here.
 
 ### 5.5 On-screen controls
 
-Three presets (`WidgetSet`), all drawn as vector shapes with `#FFFFFF` @ 22% fill and
+Three built presets from `OnScreenWidgetPreset` (the fourth, `CUSTOM`, is disabled — §4.8),
+all drawn as vector shapes with `#FFFFFF` @ 22% fill and
 `#FFFFFF` @ 55% stroke (1.5 dp), rising to 45% / 90% while pressed, over `motionFast`:
 
 | Preset | Contents |
@@ -822,6 +902,41 @@ A keyboard-toggle button shows the soft keyboard over the stream. When shown:
   **sticky-latching**: tap to latch for the next key, double-tap to lock.
 * Characters go through `InputSink.text(...)` where possible and through
   `InputSink.key(vk, ...)` for non-character keys.
+* The whole keyboard affordance is gated on `forwardKeyboard` (§4.8); when it is off, the
+  toggle button is not drawn.
+
+**Rumble** is gated on `rumbleEnabled` (§4.8). When it is on and the host sends a rumble
+message (spec 01 §9.6), it plays on the physical controller's motor if it has one, otherwise on
+the device vibrator. There is no on-screen indicator.
+
+### 5.7 Orientation and portrait streaming
+
+`StreamActivity` is declared `android:screenOrientation="fullUser"`, so **portrait streaming is
+supported** and the device's rotation lock is respected. What rotation does and does not change:
+
+* **The negotiated stream dimensions never change on rotation.** Resolution and frame rate are
+  fixed at `/launch` and ANNOUNCE (spec 01 §3.6, §6.4); there is no renegotiation path, and
+  building one is out of scope. A 1920×1080 stream stays 1920×1080 whichever way the device is
+  held.
+* **The surface re-letterboxes.** In portrait, a landscape stream occupies a horizontal band
+  centered vertically, with pure black (`#000000`) above and below. `SurfaceView` keeps
+  `holder.setFixedSize(streamWidth, streamHeight)`; only the view bounds change.
+* **Overlay chrome re-anchors** to the new safe-area insets: the stats chip stays top-start,
+  the connection pill top-center, toasts bottom-center.
+* **On-screen controls reflow, they do not scale.** In portrait, widgets anchor to the bottom
+  band **below** the letterboxed video rather than overlapping it — which is the main reason
+  portrait is worth supporting at all, since nothing occludes the game. Widget sizes stay
+  identical; only anchors move. This falls out of the data-driven `WidgetSpec` layout (§5.5) by
+  supplying a second anchor set, not a second layout engine.
+* **Touch coordinate mapping uses the video rectangle, not the view.** Normalized coordinates
+  for Native Touch and the reference frame for Absolute Touch are computed against the
+  letterboxed video rect; touches in the black bands are outside the stream and are **dropped**
+  in Native/Absolute modes, and treated as ordinary touchpad surface in Touchpad mode.
+* **Rotation must not restart the session.** `configChanges` already includes `orientation` and
+  `screenSize` (`02-ARCHITECTURE.md` §8), so the Activity is not recreated and the decoder is
+  never reconfigured.
+
+Portrait is a **layout** feature only. It adds no protocol work and no new settings.
 
 ---
 

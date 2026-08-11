@@ -128,7 +128,6 @@ private fun HostsRoute(
         // Per-host overrides are edited in the same panel as the global ones; opening it is the
         // right response until that editor gains a host-scoped mode.
         onHostSettings = { onToggleSidebar() },
-        onConnect = onOpenHost,
         onDismissPairing = viewModel::cancelPairing,
         onMessageShown = viewModel::consumeMessage,
     )
@@ -161,5 +160,6 @@ private fun AppsRoute(
         // The external-display choice lives in the settings panel, so surface it rather than
         // duplicating the control here.
         onExternalDisplay = onToggleSidebar,
+        onDismissMessage = viewModel::consumeMessage,
     )
 }

@@ -42,6 +42,24 @@ class StreamSettingsTest {
         assertTrue(defaults.onScreenWidgetEnabled)
         assertTrue(defaults.captureMouse)
         assertTrue(defaults.forwardKeyboard)
+        // sops on by default: a host rendering at its own desktop size and downscaling wastes both
+        // GPU time and bitrate.
+        assertTrue(defaults.optimizeGameSettings)
+        assertTrue(defaults.rumbleEnabled)
+        assertFalse(defaults.showStatsOverlay)
+    }
+
+    @Test
+    fun `a blob predating the video toggles keeps their defaults rather than turning them off`() {
+        // Regression guard for the whole single-blob storage strategy: a field added after a user
+        // last saved must come back as its default, not as false.
+        val legacy = """{"bitrateKbps":30000,"hdrEnabled":true}"""
+
+        val restored = json.decodeFromString(StreamSettings.serializer(), legacy)
+
+        assertTrue(restored.optimizeGameSettings)
+        assertTrue(restored.rumbleEnabled)
+        assertFalse(restored.showStatsOverlay)
     }
 
     @Test
@@ -83,6 +101,9 @@ class StreamSettingsTest {
             forwardKeyboard = false,
             surroundMode = SurroundMode.SURROUND_7_1,
             muteHostAudio = true,
+            optimizeGameSettings = false,
+            showStatsOverlay = true,
+            rumbleEnabled = false,
         )
 
         val restored = json.decodeFromString(

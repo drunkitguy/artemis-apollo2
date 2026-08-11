@@ -3,6 +3,7 @@ package com.voidlink.android.ui.apps
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -54,6 +57,9 @@ private val AppTileMinWidth = 160.dp
 /** Box art is portrait 3:4, the shape hosts publish it in. */
 private const val BOX_ART_ASPECT_RATIO = 3f / 4f
 
+/** Share of a tile's height covered by the title scrim. */
+private const val TITLE_SCRIM_FRACTION = 0.44f
+
 /**
  * The Apps screen: a host's library as a grid of portrait box-art tiles.
  *
@@ -65,6 +71,8 @@ private const val BOX_ART_ASPECT_RATIO = 3f / 4f
  * @param onLaunch the user tapped a tile — start streaming that app.
  * @param onQuitRunning the user asked to stop the app currently running on the host.
  * @param onExternalDisplay the display button in the header was tapped.
+ * @param onDismissMessage clears the transient notice; without it a message set once would sit on
+ *   the screen for the rest of the session.
  * @param modifier layout modifier.
  */
 @Composable
@@ -75,6 +83,7 @@ fun AppsScreen(
     onLaunch: (HostApp) -> Unit,
     onQuitRunning: () -> Unit,
     onExternalDisplay: () -> Unit,
+    onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VoidLinkTheme.colors
@@ -98,7 +107,7 @@ fun AppsScreen(
                 }
                 IconButton(onClick = onBack) {
                     Icon(
-                        imageVector = VoidLinkIcons.Host,
+                        imageVector = VoidLinkIcons.Back,
                         contentDescription = "Back to hosts",
                         tint = colors.accent,
                     )
@@ -130,7 +139,9 @@ fun AppsScreen(
                 text = message,
                 style = VoidLinkTheme.footnote,
                 color = colors.secondaryLabel,
-                modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.xs),
+                modifier = Modifier
+                    .clickable(onClick = onDismissMessage)
+                    .padding(horizontal = spacing.lg, vertical = spacing.sm),
             )
         }
 
@@ -217,34 +228,48 @@ fun AppTile(
             PlaceholderArt(app = app)
         }
 
-        // Name plate: a bottom scrim keeps light box art readable without dimming the whole tile.
+        // Name plate: a tall, soft bottom scrim keeps light box art readable without dimming the
+        // whole tile. A scrim only as tall as the text reads as a black bar stuck to the bottom.
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .fillMaxHeight(TITLE_SCRIM_FRACTION)
                 .background(
                     Brush.verticalGradient(
                         listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f)),
                     ),
-                )
-                .padding(horizontal = spacing.md, vertical = spacing.md),
+                ),
         ) {
             Text(
                 text = app.name,
-                style = VoidLinkTheme.body,
+                style = VoidLinkTheme.body.copy(fontWeight = FontWeight.SemiBold),
                 color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(horizontal = spacing.md, vertical = spacing.md),
             )
         }
 
         if (running) {
+            // A ring inside the rounded shape marks the tile that is actually streaming.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .border(
+                        width = 3.dp,
+                        color = colors.accent,
+                        shape = RoundedCornerShape(VoidLinkShapeTokens.TileRadius),
+                    ),
+            )
             Row(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.TopEnd)
                     .padding(spacing.sm)
                     .clip(RoundedCornerShape(VoidLinkShapeTokens.SegmentPillRadius))
-                    .background(colors.online)
+                    .background(colors.accent)
                     .clickable(onClick = onQuit)
                     .padding(horizontal = spacing.sm, vertical = spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
@@ -390,6 +415,7 @@ private fun AppsScreenPreview() {
             onLaunch = {},
             onQuitRunning = {},
             onExternalDisplay = {},
+            onDismissMessage = {},
         )
     }
 }
