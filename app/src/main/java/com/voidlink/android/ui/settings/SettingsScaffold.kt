@@ -67,7 +67,10 @@ fun SettingsScaffold(
     val colors = VoidLinkTheme.colors
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val useSplitLayout = maxWidth >= SplitLayoutMinWidth
+        // Captured here because the BoxWithConstraints receiver is not implicitly
+        // available inside the nested AnimatedVisibility content lambdas below.
+        val availableWidth = maxWidth
+        val useSplitLayout = availableWidth >= SplitLayoutMinWidth
 
         if (useSplitLayout) {
             Row(modifier = Modifier.fillMaxSize()) {
@@ -135,7 +138,7 @@ fun SettingsScaffold(
                             onResetDefaults = onResetDefaults,
                             // On a phone narrower than the panel, take the whole screen rather
                             // than leaving an unusable strip of scrim beside it.
-                            width = minOf(SettingsSidebarWidth, maxWidth),
+                            width = minOf(SettingsSidebarWidth, availableWidth),
                             overrideHostName = overrideHostName,
                             onEditGlobal = onEditGlobal,
                             onToggleFavorite = onToggleFavorite,

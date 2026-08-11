@@ -56,7 +56,13 @@ fun VoidLinkApp(
 
     // A host with no override yet is shown the global values; the first edit seeds an override
     // from them, so the panel never lies about what the host will actually stream with.
-    val shownSettings = overrideHost?.settingsOverride ?: settings
+    //
+    // Which rows are starred is deliberately taken from the global settings even inside an
+    // override, because favourites belong to the person using the app, not to the PC. Without
+    // this the star would appear not to respond while a host scope was open.
+    val shownSettings = overrideHost?.settingsOverride
+        ?.copy(favoriteRowIds = settings.favoriteRowIds)
+        ?: settings
 
     Box(
         modifier = modifier

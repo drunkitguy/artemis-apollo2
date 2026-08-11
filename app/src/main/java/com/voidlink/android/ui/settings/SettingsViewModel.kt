@@ -64,9 +64,7 @@ class SettingsViewModel(
     fun updateHostOverride(uuid: String, transform: (StreamSettings) -> StreamSettings) {
         viewModelScope.launch {
             val global = settings.value
-            hostRepository.updateHost(uuid) { host ->
-                host.copy(settingsOverride = transform(host.settingsOverride ?: global).coerced())
-            }
+            hostRepository.updateHost(uuid) { host -> host.withOverride(global, transform) }
         }
     }
 

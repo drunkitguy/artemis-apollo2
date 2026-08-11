@@ -75,6 +75,51 @@ class KnownHostTest {
     }
 
     @Test
+    fun `the first override is seeded from the global settings, not from the defaults`() {
+        // The bug this guards against: changing one row for one PC quietly resetting every other
+        // setting for that PC back to the factory value.
+        val global = StreamSettings(bitrateKbps = 30_000, hdrEnabled = true)
+
+        val updated = host().withOverride(global) { it.copy(bitrateKbps = 45_000) }
+
+        assertEquals(45_000, updated.settingsOverride?.bitrateKbps)
+        assertTrue(updated.settingsOverride?.hdrEnabled == true)
+    }
+
+    @Test
+    fun `a later override builds on the override, not on the global settings`() {
+        val global = StreamSettings(bitrateKbps = 30_000)
+        val existing = StreamSettings(bitrateKbps = 45_000, yuv444Enabled = true)
+
+        val updated = host(settingsOverride = existing).withOverride(global) {
+            it.copy(hdrEnabled = true)
+        }
+
+        assertEquals(45_000, updated.settingsOverride?.bitrateKbps)
+        assertTrue(updated.settingsOverride?.yuv444Enabled == true)
+        assertTrue(updated.settingsOverride?.hdrEnabled == true)
+    }
+
+    @Test
+    fun `an override is clamped on the way in`() {
+        val updated = host().withOverride(StreamSettings()) { it.copy(bitrateKbps = 900_000) }
+
+        assertEquals(StreamSettings.BITRATE_MAX_KBPS, updated.settingsOverride?.bitrateKbps)
+    }
+
+    @Test
+    fun `writing an override leaves the rest of the host record alone`() {
+        val original = host(macAddress = "aa:bb:cc:dd:ee:ff", paired = true)
+
+        val updated = original.withOverride(StreamSettings()) { it.copy(hdrEnabled = true) }
+
+        assertEquals(original.uuid, updated.uuid)
+        assertEquals(original.name, updated.name)
+        assertEquals(original.macAddress, updated.macAddress)
+        assertTrue(updated.paired)
+    }
+
+    @Test
     fun `preferring an address moves it to the front without duplicating it`() {
         val updated = host(addresses = listOf("192.168.1.24", "10.0.0.5"))
             .withPreferredAddress("10.0.0.5")

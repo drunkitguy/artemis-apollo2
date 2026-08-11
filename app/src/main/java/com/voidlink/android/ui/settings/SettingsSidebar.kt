@@ -118,11 +118,9 @@ fun SettingsSidebar(
         choosingFavorites = choosingFavorites,
         onToggleFavorite = onToggleFavorite,
     )
-    val favoriteRows = rows.copy(
-        include = { id -> id in settings.favoriteRowIds },
-        // Stars are not offered twice: the Favorites section mirrors rows, it does not curate them.
-        choosingFavorites = false,
-    )
+    // The same row functions, filtered to the starred ids. Rendering them twice is what makes the
+    // Favorites section carry real controls rather than shortcuts that jump somewhere else.
+    val favoriteRows = rows.copy(include = { id -> id in settings.favoriteRowIds })
 
     Column(
         modifier = modifier
