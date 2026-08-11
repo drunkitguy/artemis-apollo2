@@ -233,8 +233,10 @@ fun ScreenHeader(
             leading?.invoke(this)
         }
         Text(
+            // The un-centred variant is a nav-bar title (the app grid's host name), not a screen
+            // title: at display size it would dwarf the grid it sits above.
             text = title,
-            style = VoidLinkTheme.largeTitle,
+            style = VoidLinkTheme.cardTitle,
             color = VoidLinkTheme.colors.label,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

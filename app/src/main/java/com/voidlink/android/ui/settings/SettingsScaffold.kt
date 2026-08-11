@@ -123,6 +123,9 @@ fun SettingsScaffold(
                             onUpdate = onUpdate,
                             onClose = onDismissSidebar,
                             onResetDefaults = onResetDefaults,
+                            // On a phone narrower than the panel, take the whole screen rather
+                            // than leaving an unusable strip of scrim beside it.
+                            width = minOf(SettingsSidebarWidth, maxWidth),
                         )
                     }
                 }

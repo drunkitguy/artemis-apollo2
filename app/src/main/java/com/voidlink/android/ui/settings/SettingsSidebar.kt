@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.voidlink.android.data.EmulatedControllerType
 import com.voidlink.android.data.ExternalDisplayMode
@@ -90,7 +91,7 @@ fun SettingsSidebar(
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .width(SettingsSidebarWidth)
+            .width(width)
             .background(colors.card),
     ) {
         SidebarHeader(onClose = onClose, onResetDefaults = onResetDefaults)
@@ -558,9 +559,43 @@ private fun snapTo(raw: Float, step: Int): Float = ((raw / step).roundToInt() * 
 @Preview(name = "Settings sidebar", widthDp = 340, heightDp = 900)
 @Composable
 private fun SettingsSidebarPreview() {
-    VoidLinkTheme {
+    VoidLinkTheme(darkTheme = false) {
         SettingsSidebar(
             settings = StreamSettings(bitrateKbps = 23_000),
+            onUpdate = {},
+            onClose = {},
+            onResetDefaults = {},
+        )
+    }
+}
+
+@Preview(name = "Settings sidebar — dark", widthDp = 340, heightDp = 900)
+@Composable
+private fun SettingsSidebarDarkPreview() {
+    VoidLinkTheme(darkTheme = true) {
+        SettingsSidebar(
+            settings = StreamSettings(bitrateKbps = 23_000),
+            onUpdate = {},
+            onClose = {},
+            onResetDefaults = {},
+        )
+    }
+}
+
+/** Every row disabled, so the muted state is reviewable without driving the real settings there. */
+@Preview(name = "Settings sidebar — disabled controls", widthDp = 340, heightDp = 900)
+@Composable
+private fun SettingsSidebarDisabledPreview() {
+    VoidLinkTheme(darkTheme = false) {
+        SettingsSidebar(
+            settings = StreamSettings(
+                codec = VideoCodec.H264,
+                onScreenWidgetEnabled = false,
+                touchMode = TouchMode.ABSOLUTE_TOUCH,
+                gyroMode = GyroMode.OFF,
+                threeFingerTapEnabled = false,
+                edgeSwipeEnabled = false,
+            ),
             onUpdate = {},
             onClose = {},
             onResetDefaults = {},

@@ -637,51 +637,65 @@ private const val ADD_TILE_KEY = "voidlink.add-host-tile"
 @Preview(name = "Hosts", widthDp = 720, heightDp = 900)
 @Composable
 private fun HostsScreenPreview() {
-    VoidLinkTheme {
-        HostsScreen(
-            state = HostsUiState(
-                hosts = listOf(
-                    HostCardState(
-                        host = KnownHost(
-                            uuid = "1",
-                            name = "BATTLESTATION",
-                            addresses = listOf("192.168.1.24"),
-                            paired = false,
-                        ),
-                        status = HostStatus(reachability = HostReachability.ONLINE, paired = false),
+    VoidLinkTheme(darkTheme = false) {
+        HostsScreenPreviewContent()
+    }
+}
+
+@Preview(name = "Hosts — dark", widthDp = 720, heightDp = 900)
+@Composable
+private fun HostsScreenDarkPreview() {
+    VoidLinkTheme(darkTheme = true) {
+        HostsScreenPreviewContent()
+    }
+}
+
+/** The canned Hosts screen shared by the light and dark previews. */
+@Composable
+private fun HostsScreenPreviewContent() {
+    HostsScreen(
+        state = HostsUiState(
+            hosts = listOf(
+                HostCardState(
+                    host = KnownHost(
+                        uuid = "1",
+                        name = "BATTLESTATION",
+                        addresses = listOf("192.168.1.24"),
+                        paired = false,
                     ),
-                    HostCardState(
-                        host = KnownHost(
-                            uuid = "2",
-                            name = "Living Room PC",
-                            addresses = listOf("192.168.1.31"),
-                            paired = true,
-                        ),
-                        status = HostStatus(reachability = HostReachability.ONLINE, paired = true),
+                    status = HostStatus(reachability = HostReachability.ONLINE, paired = false),
+                ),
+                HostCardState(
+                    host = KnownHost(
+                        uuid = "2",
+                        name = "Living Room PC",
+                        addresses = listOf("192.168.1.31"),
+                        paired = true,
                     ),
-                    HostCardState(
-                        host = KnownHost(
-                            uuid = "3",
-                            name = "Studio",
-                            addresses = listOf("192.168.1.44"),
-                            macAddress = "aa:bb:cc:dd:ee:ff",
-                            paired = true,
-                        ),
-                        status = HostStatus.Offline,
+                    status = HostStatus(reachability = HostReachability.ONLINE, paired = true),
+                ),
+                HostCardState(
+                    host = KnownHost(
+                        uuid = "3",
+                        name = "Studio",
+                        addresses = listOf("192.168.1.44"),
+                        macAddress = "aa:bb:cc:dd:ee:ff",
+                        paired = true,
                     ),
+                    status = HostStatus.Offline,
                 ),
             ),
-            onToggleSidebar = {},
-            onRefresh = {},
-            onAddHost = { _, _ -> },
-            onCardAction = {},
-            onRename = { _, _ -> },
-            onDelete = {},
-            onUnpair = {},
-            onWake = {},
-            onHostSettings = {},
-            onDismissPairing = {},
-            onMessageShown = {},
-        )
-    }
+        ),
+        onToggleSidebar = {},
+        onRefresh = {},
+        onAddHost = { _, _ -> },
+        onCardAction = {},
+        onRename = { _, _ -> },
+        onDelete = {},
+        onUnpair = {},
+        onWake = {},
+        onHostSettings = {},
+        onDismissPairing = {},
+        onMessageShown = {},
+    )
 }
