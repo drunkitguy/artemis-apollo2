@@ -231,7 +231,9 @@ class HostsViewModel(
 
     private suspend fun probe(host: KnownHost) {
         val status = statusProvider.probe(host)
-        statuses.value = statuses.value + (host.uuid to status)
+        // A manual add probes on its own coroutine while a refresh sweep may be running, so the map
+        // has to be updated atomically or one of the two results is silently dropped.
+        statuses.update { it + (host.uuid to status) }
         if (status.isOnline) {
             hostRepository.updateHost(host.uuid) { stored ->
                 stored.markSeen(System.currentTimeMillis())

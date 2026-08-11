@@ -15,6 +15,7 @@ import com.voidlink.android.di.ServiceLocator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -66,21 +67,27 @@ class AppsViewModel(
     /** Re-reads the host record, its status and its app list. */
     fun refresh() {
         viewModelScope.launch {
-            state.value = state.value.copy(isLoading = true)
+            state.update { it.copy(isLoading = true) }
             val host = hostRepository.snapshot().firstOrNull { it.uuid == hostId }
             if (host == null) {
-                state.value = AppsUiState(isLoading = false, message = "That host is no longer saved.")
+                state.update {
+                    AppsUiState(isLoading = false, message = "That host is no longer saved.")
+                }
                 return@launch
             }
             val status: HostStatus = statusProvider.probe(host)
             val apps = catalogProvider.listApps(host).sortedWith(HostApp.displayOrder)
-            state.value = AppsUiState(
-                host = host,
-                apps = apps,
-                runningAppId = status.runningAppId,
-                isLoading = false,
-                message = state.value.message,
-            )
+            state.update { previous ->
+                AppsUiState(
+                    host = host,
+                    apps = apps,
+                    runningAppId = status.runningAppId,
+                    isLoading = false,
+                    // A notice set just before the refresh (e.g. "Stopped the running app.") has to
+                    // survive it, or the user never gets to read the outcome of what they did.
+                    message = previous.message,
+                )
+            }
         }
     }
 
@@ -93,17 +100,23 @@ class AppsViewModel(
         val host = state.value.host ?: return
         viewModelScope.launch {
             val quit = catalogProvider.quitRunningApp(host)
-            state.value = state.value.copy(
-                runningAppId = if (quit) null else state.value.runningAppId,
-                message = if (quit) "Stopped the running app." else "Could not stop the running app.",
-            )
+            state.update { previous ->
+                previous.copy(
+                    runningAppId = if (quit) null else previous.runningAppId,
+                    message = if (quit) {
+                        "Stopped the running app."
+                    } else {
+                        "Could not stop the running app."
+                    },
+                )
+            }
             if (quit) refresh()
         }
     }
 
     /** Clears the transient message after the screen has shown it. */
     fun consumeMessage() {
-        state.value = state.value.copy(message = null)
+        state.update { it.copy(message = null) }
     }
 
     companion object {

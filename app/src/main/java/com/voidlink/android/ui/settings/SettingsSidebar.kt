@@ -66,6 +66,8 @@ val SettingsSidebarWidth = 340.dp
  * @param onClose invoked when the user dismisses the panel.
  * @param onResetDefaults invoked from the overflow menu.
  * @param modifier layout modifier.
+ * @param width how wide the panel should be. Callers on a narrow phone pass the screen width so the
+ *   drawer does not leave a useless sliver of scrim down one side.
  */
 @Composable
 fun SettingsSidebar(
@@ -74,6 +76,7 @@ fun SettingsSidebar(
     onClose: () -> Unit,
     onResetDefaults: () -> Unit,
     modifier: Modifier = Modifier,
+    width: Dp = SettingsSidebarWidth,
 ) {
     val colors = VoidLinkTheme.colors
     val spacing = VoidLinkTheme.spacing

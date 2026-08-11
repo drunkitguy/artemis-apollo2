@@ -1,5 +1,6 @@
 package com.voidlink.android.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,9 +65,15 @@ fun VoidLinkCard(
         shape = RoundedCornerShape(VoidLinkShapeTokens.CardRadius),
         color = colors.card,
         contentColor = colors.label,
-        // A shadow under a black card is invisible and only costs a render pass.
+        // A shadow under a black card is invisible and only costs a render pass; the card is
+        // separated from the background by a hairline outline instead.
         shadowElevation = if (colors.isDark) 0.dp else VoidLinkShapeTokens.CardElevation,
         tonalElevation = 0.dp,
+        border = if (colors.isDark) {
+            BorderStroke(VoidLinkShapeTokens.Hairline, colors.separator)
+        } else {
+            null
+        },
     ) {
         Column(content = content)
     }
