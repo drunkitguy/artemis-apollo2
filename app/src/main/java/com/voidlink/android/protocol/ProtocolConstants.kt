@@ -30,6 +30,11 @@ object ProtocolConstants {
      *
      * `NsdManager` wants the type without the trailing domain; it appends `.local.` itself.
      * Confirmed against Sunshine's `SERVICE_TYPE` (spec §14).
+     *
+     * Note the spec's prose mentions the fully-qualified form `_nvstream._tcp.` while its own
+     * `discoverServices` example passes the undotted form, which is what is used here. Android
+     * normalises both, but if discovery ever finds nothing on a network where a host is definitely
+     * advertising, adding the trailing dot is the first thing to try.
      */
     const val MDNS_SERVICE_TYPE: String = "_nvstream._tcp"
 

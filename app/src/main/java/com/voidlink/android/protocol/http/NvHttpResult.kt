@@ -34,14 +34,17 @@ sealed interface NvHttpResult<out T> {
     object NotPaired : NvHttpResult<Nothing>
 
     /** The value on success, `null` otherwise. */
-    fun valueOrNull(): T? = (this as? Success)?.value
+    fun valueOrNull(): T? = when (this) {
+        is Success -> value
+        else -> null
+    }
 
     /** True when the call succeeded. */
-    val isSuccess: Boolean get() = this is Success
+    val isSuccess: Boolean get() = this is Success<*>
 
     /** A short human-readable description of the failure, or `null` on success. */
     fun errorDescription(): String? = when (this) {
-        is Success -> null
+        is Success<*> -> null
         is HostError -> statusMessage?.takeIf { it.isNotBlank() }
             ?: "host returned status $statusCode"
         is TransportError -> message

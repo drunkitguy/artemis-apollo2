@@ -124,6 +124,19 @@ enum class GyroMode(val label: String) {
     }
 }
 
+/** How many fingers the swipe that leaves a stream needs. */
+@Serializable
+enum class ExitGesture(val label: String, val fingerCount: Int) {
+    THREE_FINGER("3-finger", 3),
+    FOUR_FINGER("4-finger", 4),
+    ;
+
+    companion object {
+        /** Options in the order they appear in the segmented control. */
+        val ordered: List<ExitGesture> = listOf(THREE_FINGER, FOUR_FINGER)
+    }
+}
+
 /** Actions that a gesture can be bound to. */
 @Serializable
 enum class GestureAction(val label: String) {
@@ -218,6 +231,8 @@ data class StreamSettings(
     val swapFaceButtons: Boolean = false,
     /** Virtual gamepad type requested from the host. */
     val emulatedControllerType: EmulatedControllerType = EmulatedControllerType.XBOX_360,
+    /** How many virtual pads the host is asked to expose (1..[CONTROLLERS_MAX]). */
+    val emulatedControllerCount: Int = 1,
     /** Gyro source. */
     val gyroMode: GyroMode = GyroMode.OFF,
     /** Gyro sensitivity multiplier in percent (25..300). */
@@ -226,6 +241,16 @@ data class StreamSettings(
     val rumbleEnabled: Boolean = true,
 
     // ---- Gestures ----------------------------------------------------------------------------
+    /** Which multi-finger swipe leaves the stream. */
+    val exitGesture: ExitGesture = ExitGesture.THREE_FINGER,
+    /** How far the exit swipe must travel, in dp, before it counts. */
+    val exitSwipeDistanceDp: Int = 160,
+    /** Single-finger tap acts as a left click in Touchpad mode. */
+    val tapToClick: Boolean = true,
+    /** Two-finger tap acts as a right click. */
+    val twoFingerTapRightClick: Boolean = true,
+    /** Three-finger tap acts as a middle click. */
+    val threeFingerTapMiddleClick: Boolean = false,
     /** Whether the three-finger tap gesture is recognised at all. */
     val threeFingerTapEnabled: Boolean = true,
     /** Action bound to a three-finger tap. */
@@ -246,8 +271,23 @@ data class StreamSettings(
     // ---- Audio -------------------------------------------------------------------------------
     /** Requested channel layout. */
     val surroundMode: SurroundMode = SurroundMode.STEREO,
-    /** Ask the host to keep its own speakers silent while streaming. */
-    val muteHostAudio: Boolean = false,
+    /**
+     * Ask the host to keep its own speakers silent while streaming.
+     *
+     * Defaults to true, which is what the "Play Audio on PC" row in the sidebar renders as *off*:
+     * a PC in another room blaring the game you are streaming is nobody's idea of a default. The
+     * field stays phrased as "mute" because that is the direction the host protocol takes it in.
+     */
+    val muteHostAudio: Boolean = true,
+
+    // ---- Panel state -------------------------------------------------------------------------
+    /**
+     * Ids of the settings rows the user starred, duplicated into the panel's Favorites section.
+     *
+     * Stored with the settings rather than separately so a single blob still captures everything
+     * the panel needs to redraw itself.
+     */
+    val favoriteRowIds: Set<String> = emptySet(),
 ) {
     /**
      * Returns a copy with every numeric field forced back into its legal range.
@@ -262,6 +302,8 @@ data class StreamSettings(
             touchPointerVelocityPercent.coerceIn(VELOCITY_MIN_PERCENT, VELOCITY_MAX_PERCENT),
         gyroSensitivityPercent =
             gyroSensitivityPercent.coerceIn(VELOCITY_MIN_PERCENT, VELOCITY_MAX_PERCENT),
+        emulatedControllerCount = emulatedControllerCount.coerceIn(CONTROLLERS_MIN, CONTROLLERS_MAX),
+        exitSwipeDistanceDp = exitSwipeDistanceDp.coerceIn(EXIT_SWIPE_MIN_DP, EXIT_SWIPE_MAX_DP),
     )
 
     companion object {
@@ -285,5 +327,17 @@ data class StreamSettings(
 
         /** Highest selectable velocity / sensitivity multiplier. */
         const val VELOCITY_MAX_PERCENT: Int = 300
+
+        /** Fewest virtual controllers the host can be asked for. */
+        const val CONTROLLERS_MIN: Int = 1
+
+        /** Most virtual controllers the host can be asked for — the XInput limit. */
+        const val CONTROLLERS_MAX: Int = 4
+
+        /** Shortest exit swipe, in dp. Below this an ordinary drag would end the session. */
+        const val EXIT_SWIPE_MIN_DP: Int = 40
+
+        /** Longest exit swipe, in dp. */
+        const val EXIT_SWIPE_MAX_DP: Int = 400
     }
 }

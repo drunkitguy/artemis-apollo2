@@ -82,6 +82,8 @@ class MdnsDiscovery(context: Context) {
         if (nsdManager == null) {
             ProtocolLog.w(ProtocolLog.TAG_DISCOVERY, "NsdManager unavailable; discovery disabled")
             close()
+            // callbackFlow requires awaitClose on every path out of the block, including this one.
+            awaitClose { }
             return@callbackFlow
         }
 

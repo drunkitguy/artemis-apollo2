@@ -90,6 +90,13 @@ class SettingsFormatTest {
     }
 
     @Test
+    fun `distances read as dp`() {
+        assertEquals("160 dp", SettingsFormat.distanceDp(160))
+        assertEquals("40 dp", SettingsFormat.distanceDp(StreamSettings.EXIT_SWIPE_MIN_DP))
+        assertEquals("400 dp", SettingsFormat.distanceDp(StreamSettings.EXIT_SWIPE_MAX_DP))
+    }
+
+    @Test
     fun `video summary joins resolution and frame rate`() {
         assertEquals(
             "1080p60",

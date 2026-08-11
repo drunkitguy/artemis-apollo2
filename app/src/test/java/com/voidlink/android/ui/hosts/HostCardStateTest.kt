@@ -5,6 +5,7 @@ import com.voidlink.android.data.HostStatus
 import com.voidlink.android.data.KnownHost
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,11 +68,73 @@ class HostCardStateTest {
     }
 
     @Test
-    fun `a host that has never been probed is not treated as reachable`() {
+    fun `a host that has never been probed is checking, not offline`() {
+        // The cold-start case: claiming a PC is offline before anyone has asked it makes a working
+        // app look broken for as long as the first probe takes.
         val card = HostCardState(host = host(paired = true))
 
         assertFalse(card.isOnline)
-        assertEquals(HostAction.WAKE, card.primaryAction)
+        assertTrue(card.isChecking)
+        assertEquals(HostAction.CHECKING, card.primaryAction)
+        assertFalse(card.isActionable)
+    }
+
+    @Test
+    fun `a probed host is no longer checking, whichever way the probe went`() {
+        assertFalse(HostCardState(host = host(), status = HostStatus.Offline).isChecking)
+        assertFalse(HostCardState(host = host(paired = true), status = online).isChecking)
+    }
+
+    @Test
+    fun `wake is only actionable when the host has a MAC on record`() {
+        val withMac = HostCardState(host = host(mac = "aa:bb:cc:dd:ee:ff"), status = HostStatus.Offline)
+        val withoutMac = HostCardState(host = host(mac = null), status = HostStatus.Offline)
+
+        assertEquals(HostAction.WAKE, withMac.primaryAction)
+        assertEquals(HostAction.WAKE, withoutMac.primaryAction)
+        assertTrue(withMac.isActionable)
+        // Still shown, still explains itself when tapped — just not a button that pretends to work.
+        assertFalse(withoutMac.isActionable)
+    }
+
+    @Test
+    fun `pairing and connecting are always actionable`() {
+        assertTrue(HostCardState(host = host(paired = false), status = onlineButForgotUs).isActionable)
+        assertTrue(HostCardState(host = host(paired = true), status = online).isActionable)
+    }
+
+    @Test
+    fun `the running app name is only reported for an online host`() {
+        val running = HostStatus(
+            reachability = HostReachability.ONLINE,
+            paired = true,
+            runningAppId = "42",
+            runningAppName = "Hades II",
+        )
+
+        assertEquals(
+            "Hades II",
+            HostCardState(host = host(paired = true), status = running).runningAppName,
+        )
+        // A stale name from the last sighting must not be shown next to an offline card.
+        assertNull(
+            HostCardState(
+                host = host(paired = true),
+                status = running.copy(reachability = HostReachability.OFFLINE),
+            ).runningAppName,
+        )
+        assertNull(HostCardState(host = host(paired = true), status = online).runningAppName)
+    }
+
+    @Test
+    fun `a blank running app name is treated as no app`() {
+        val blank = HostStatus(
+            reachability = HostReachability.ONLINE,
+            paired = true,
+            runningAppName = "   ",
+        )
+
+        assertNull(HostCardState(host = host(paired = true), status = blank).runningAppName)
     }
 
     @Test
@@ -84,7 +147,7 @@ class HostCardStateTest {
     }
 
     @Test
-    fun `wake is only actionable when a MAC is on record`() {
+    fun `the stored record knows whether a wake packet can be addressed`() {
         assertFalse(host(mac = null).canWakeOnLan)
         assertTrue(host(mac = "aa:bb:cc:dd:ee:ff").canWakeOnLan)
     }

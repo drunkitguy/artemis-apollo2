@@ -3,6 +3,7 @@ package com.voidlink.android.protocol.http
 import com.voidlink.android.protocol.HostAddress
 import com.voidlink.android.protocol.ProtocolConstants
 import com.voidlink.android.protocol.ProtocolLog
+import com.voidlink.android.protocol.UnverifiedProtocolConstants
 import com.voidlink.android.protocol.crypto.ClientIdentity
 import com.voidlink.android.protocol.crypto.IdentityStore
 import kotlinx.coroutines.CancellationException
@@ -15,6 +16,7 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.security.cert.X509Certificate
 import java.util.UUID
 import javax.net.ssl.HttpsURLConnection
 
@@ -489,18 +491,18 @@ class NvHttpClient(
         ProtocolLog.unverified(
             ProtocolLog.TAG_PAIR,
             "pair-devicename",
-            "sending devicename=${com.voidlink.android.protocol.UnverifiedProtocolConstants.PAIRING_DEVICE_NAME}" +
+            "sending devicename=${UnverifiedProtocolConstants.PAIRING_DEVICE_NAME}" +
                 " verbatim; no host is known to validate it (spec 01 §4.0, item 19)",
         )
         return listOf(
-            "devicename" to com.voidlink.android.protocol.UnverifiedProtocolConstants.PAIRING_DEVICE_NAME,
-            "updateState" to com.voidlink.android.protocol.UnverifiedProtocolConstants.PAIRING_UPDATE_STATE,
+            "devicename" to UnverifiedProtocolConstants.PAIRING_DEVICE_NAME,
+            "updateState" to UnverifiedProtocolConstants.PAIRING_UPDATE_STATE,
         )
     }
 
     private class TlsSetup(
         val identity: ClientIdentity,
-        val serverCertificate: java.security.cert.X509Certificate,
+        val serverCertificate: X509Certificate,
     )
 
     private class RawResponse(val code: Int, val body: ByteArray)

@@ -27,9 +27,10 @@ import com.voidlink.android.ui.theme.VoidLinkTheme
 /**
  * Screens at least this wide put the sidebar beside the content instead of over it.
  *
- * 720dp is the point at which a 340dp panel still leaves a usable two-column host grid.
+ * 840dp is the expanded window-size class from the UI spec (§1.10): below it a 340dp panel plus a
+ * usable host grid do not both fit, so the panel overlays with a scrim instead of splitting.
  */
-private val SplitLayoutMinWidth = 720.dp
+private val SplitLayoutMinWidth = 840.dp
 
 /**
  * Hosts a screen's content alongside the settings sidebar, choosing the right presentation for the
@@ -45,6 +46,9 @@ private val SplitLayoutMinWidth = 720.dp
  * @param onUpdate invoked with a transform producing the new settings.
  * @param onResetDefaults invoked from the panel's overflow menu.
  * @param modifier layout modifier.
+ * @param overrideHostName name of the host whose overrides are being edited, or `null` for global.
+ * @param onEditGlobal leaves an override scope and returns to the global settings.
+ * @param onToggleFavorite stars or unstars a settings row.
  * @param content the screen behind or beside the panel.
  */
 @Composable
@@ -55,6 +59,9 @@ fun SettingsScaffold(
     onUpdate: ((StreamSettings) -> StreamSettings) -> Unit,
     onResetDefaults: () -> Unit,
     modifier: Modifier = Modifier,
+    overrideHostName: String? = null,
+    onEditGlobal: () -> Unit = {},
+    onToggleFavorite: (String) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val colors = VoidLinkTheme.colors
@@ -71,6 +78,9 @@ fun SettingsScaffold(
                             onUpdate = onUpdate,
                             onClose = onDismissSidebar,
                             onResetDefaults = onResetDefaults,
+                            overrideHostName = overrideHostName,
+                            onEditGlobal = onEditGlobal,
+                            onToggleFavorite = onToggleFavorite,
                         )
                         Box(
                             modifier = Modifier
@@ -126,6 +136,9 @@ fun SettingsScaffold(
                             // On a phone narrower than the panel, take the whole screen rather
                             // than leaving an unusable strip of scrim beside it.
                             width = minOf(SettingsSidebarWidth, maxWidth),
+                            overrideHostName = overrideHostName,
+                            onEditGlobal = onEditGlobal,
+                            onToggleFavorite = onToggleFavorite,
                         )
                     }
                 }

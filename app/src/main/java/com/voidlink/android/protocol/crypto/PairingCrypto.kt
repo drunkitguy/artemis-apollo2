@@ -3,6 +3,7 @@ package com.voidlink.android.protocol.crypto
 import com.voidlink.android.protocol.ProtocolConstants
 import java.security.MessageDigest
 import java.security.PrivateKey
+import java.security.SecureRandom
 import java.security.Signature
 import java.security.cert.X509Certificate
 import javax.crypto.Cipher
@@ -131,7 +132,7 @@ object PairingCrypto {
      * Built one character at a time so a leading zero survives — formatting an `Int` would turn
      * `0042` into `42` and every such pairing would fail.
      */
-    fun generatePin(random: java.security.SecureRandom): String {
+    fun generatePin(random: SecureRandom): String {
         val builder = StringBuilder(ProtocolConstants.PAIRING_PIN_DIGITS)
         repeat(ProtocolConstants.PAIRING_PIN_DIGITS) {
             builder.append('0' + random.nextInt(10))

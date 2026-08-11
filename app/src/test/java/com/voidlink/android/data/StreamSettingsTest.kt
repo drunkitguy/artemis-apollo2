@@ -38,7 +38,15 @@ class StreamSettingsTest {
         assertFalse(defaults.hdrEnabled)
         assertFalse(defaults.yuv444Enabled)
         assertFalse(defaults.swapFaceButtons)
-        assertFalse(defaults.muteHostAudio)
+        // "Play Audio on PC" is off out of the box, which is stored as the host being muted.
+        assertTrue(defaults.muteHostAudio)
+        assertEquals(ExitGesture.THREE_FINGER, defaults.exitGesture)
+        assertEquals(160, defaults.exitSwipeDistanceDp)
+        assertEquals(1, defaults.emulatedControllerCount)
+        assertTrue(defaults.tapToClick)
+        assertTrue(defaults.twoFingerTapRightClick)
+        assertFalse(defaults.threeFingerTapMiddleClick)
+        assertTrue(defaults.favoriteRowIds.isEmpty())
         assertTrue(defaults.onScreenWidgetEnabled)
         assertTrue(defaults.captureMouse)
         assertTrue(defaults.forwardKeyboard)
@@ -60,6 +68,44 @@ class StreamSettingsTest {
         assertTrue(restored.optimizeGameSettings)
         assertTrue(restored.rumbleEnabled)
         assertFalse(restored.showStatsOverlay)
+    }
+
+    @Test
+    fun `a blob predating the gesture and controller rows restores their defaults`() {
+        val legacy = """{"bitrateKbps":30000,"touchMode":"TOUCHPAD"}"""
+
+        val restored = json.decodeFromString(StreamSettings.serializer(), legacy)
+
+        assertEquals(ExitGesture.THREE_FINGER, restored.exitGesture)
+        assertEquals(160, restored.exitSwipeDistanceDp)
+        assertEquals(1, restored.emulatedControllerCount)
+        assertTrue(restored.tapToClick)
+        assertTrue(restored.twoFingerTapRightClick)
+        assertFalse(restored.threeFingerTapMiddleClick)
+        assertTrue(restored.favoriteRowIds.isEmpty())
+    }
+
+    @Test
+    fun `starred row ids survive a round trip`() {
+        val original = StreamSettings(favoriteRowIds = setOf("video.bitrate", "gestures.edgeSwipe"))
+
+        val restored = json.decodeFromString(
+            StreamSettings.serializer(),
+            json.encodeToString(StreamSettings.serializer(), original),
+        )
+
+        assertEquals(setOf("video.bitrate", "gestures.edgeSwipe"), restored.favoriteRowIds)
+    }
+
+    @Test
+    fun `coerced clamps the controller count and the exit swipe distance`() {
+        val tooMany = StreamSettings(emulatedControllerCount = 9, exitSwipeDistanceDp = 5).coerced()
+        val tooFew = StreamSettings(emulatedControllerCount = 0, exitSwipeDistanceDp = 9_000).coerced()
+
+        assertEquals(StreamSettings.CONTROLLERS_MAX, tooMany.emulatedControllerCount)
+        assertEquals(StreamSettings.EXIT_SWIPE_MIN_DP, tooMany.exitSwipeDistanceDp)
+        assertEquals(StreamSettings.CONTROLLERS_MIN, tooFew.emulatedControllerCount)
+        assertEquals(StreamSettings.EXIT_SWIPE_MAX_DP, tooFew.exitSwipeDistanceDp)
     }
 
     @Test
@@ -100,10 +146,17 @@ class StreamSettingsTest {
             captureMouse = false,
             forwardKeyboard = false,
             surroundMode = SurroundMode.SURROUND_7_1,
-            muteHostAudio = true,
+            muteHostAudio = false,
             optimizeGameSettings = false,
             showStatsOverlay = true,
             rumbleEnabled = false,
+            exitGesture = ExitGesture.FOUR_FINGER,
+            exitSwipeDistanceDp = 240,
+            tapToClick = false,
+            twoFingerTapRightClick = false,
+            threeFingerTapMiddleClick = true,
+            emulatedControllerCount = 4,
+            favoriteRowIds = setOf("video.bitrate", "touch.mode"),
         )
 
         val restored = json.decodeFromString(
@@ -183,6 +236,29 @@ class StreamSettingsTest {
         assertEquals(GestureAction.entries.toSet(), GestureAction.ordered.toSet())
         assertEquals(ExternalDisplayMode.entries.toSet(), ExternalDisplayMode.ordered.toSet())
         assertEquals(SurroundMode.entries.toSet(), SurroundMode.ordered.toSet())
+        assertEquals(ExitGesture.entries.toSet(), ExitGesture.ordered.toSet())
+        assertEquals(ExitGesture.entries.size, ExitGesture.ordered.size)
+    }
+
+    @Test
+    fun `no segmented control carries more options than its track can lay out equally`() {
+        // Past four segments the control switches to a scrolling track; that is fine, but the
+        // controls that are meant to stay equal-width must not silently cross the line.
+        assertTrue(VideoCodec.ordered.size <= 4)
+        assertTrue(FrameRate.ordered.size <= 4)
+        assertTrue(TouchMode.ordered.size <= 4)
+        assertTrue(OnScreenWidgetPreset.ordered.size <= 4)
+        assertTrue(EmulatedControllerType.ordered.size <= 4)
+        assertTrue(GyroMode.ordered.size <= 4)
+        assertTrue(SurroundMode.ordered.size <= 4)
+        assertTrue(ExitGesture.ordered.size <= 4)
+        assertTrue(ExternalDisplayMode.ordered.size <= 4)
+    }
+
+    @Test
+    fun `the exit gesture knows how many fingers it needs`() {
+        assertEquals(3, ExitGesture.THREE_FINGER.fingerCount)
+        assertEquals(4, ExitGesture.FOUR_FINGER.fingerCount)
     }
 
     @Test

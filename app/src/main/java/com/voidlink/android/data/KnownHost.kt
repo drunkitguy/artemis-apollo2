@@ -65,6 +65,22 @@ data class KnownHost(
         settingsOverride ?: globalSettings
 
     /**
+     * Returns a copy whose per-host override is [transform] applied to the settings this host
+     * currently resolves to.
+     *
+     * The seed is [effectiveSettings], not the factory defaults: the first time a user changes one
+     * row for one PC, every other setting must stay where the global panel had it. Anything else
+     * turns "raise the bitrate for the living-room PC" into "silently reset that PC".
+     *
+     * @param globalSettings the app-wide settings this host would otherwise inherit.
+     * @param transform the edit to apply.
+     */
+    fun withOverride(
+        globalSettings: StreamSettings,
+        transform: (StreamSettings) -> StreamSettings,
+    ): KnownHost = copy(settingsOverride = transform(effectiveSettings(globalSettings)).coerced())
+
+    /**
      * Returns a copy with [address] promoted to the front of [addresses], de-duplicated.
      *
      * Used after a successful probe so the address that worked is tried first next time.

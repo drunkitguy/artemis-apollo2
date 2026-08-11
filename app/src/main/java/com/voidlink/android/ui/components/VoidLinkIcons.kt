@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tv
@@ -101,4 +102,7 @@ object VoidLinkIcons {
 
     /** Audio settings section. */
     val Audio: ImageVector = Icons.Filled.VolumeUp
+
+    /** Starred settings rows. */
+    val Favorite: ImageVector = Icons.Filled.Star
 }

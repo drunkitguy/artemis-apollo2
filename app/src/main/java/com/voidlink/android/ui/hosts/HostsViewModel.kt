@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.voidlink.android.data.HostReachability
 import com.voidlink.android.data.HostRepository
 import com.voidlink.android.data.HostStatus
 import com.voidlink.android.data.HostStatusProvider
@@ -36,6 +37,15 @@ data class HostCardState(
     val isOnline: Boolean get() = status.isOnline
 
     /**
+     * True while the first probe of this host is still outstanding.
+     *
+     * A status provider only ever reports ONLINE or OFFLINE, so UNKNOWN means "not asked yet".
+     * The distinction matters: on a cold start every card would otherwise claim the PC is offline
+     * for as long as the network takes to answer, which reads as a broken app.
+     */
+    val isChecking: Boolean get() = status.reachability == HostReachability.UNKNOWN
+
+    /**
      * True when the host is reachable but has not been paired.
      *
      * Both the stored flag and the host's own report have to agree — a host that forgot this
@@ -43,17 +53,40 @@ data class HostCardState(
      */
     val needsPairing: Boolean get() = !host.paired || (isOnline && !status.paired)
 
+    /** Name of the app streaming on this host right now, when it is online and running one. */
+    val runningAppName: String?
+        get() = status.runningAppName?.takeIf { isOnline && it.isNotBlank() }
+
     /** The footer button the card should show. */
     val primaryAction: HostAction
         get() = when {
+            isChecking -> HostAction.CHECKING
             !isOnline -> HostAction.WAKE
             needsPairing -> HostAction.PAIR
             else -> HostAction.CONNECT
+        }
+
+    /**
+     * Whether [primaryAction] can actually be carried out.
+     *
+     * Wake is the interesting case: without a MAC there is no packet to send. The button is still
+     * drawn — hiding it would leave the user wondering where the feature went — but it is muted
+     * and inert, and because it stops consuming taps the press falls through to the card, which
+     * answers with the reason (spec §2.2, "Offline (MAC unknown)").
+     */
+    val isActionable: Boolean
+        get() = when (primaryAction) {
+            HostAction.CHECKING -> false
+            HostAction.WAKE -> host.canWakeOnLan
+            HostAction.PAIR, HostAction.CONNECT -> true
         }
 }
 
 /** The action offered by a host card's full-width footer button. */
 enum class HostAction {
+    /** No probe has answered yet — the card is waiting, and offers nothing. */
+    CHECKING,
+
     /** Online and unpaired — start PIN pairing. */
     PAIR,
 

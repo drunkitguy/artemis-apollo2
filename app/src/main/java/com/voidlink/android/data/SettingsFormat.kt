@@ -39,6 +39,14 @@ object SettingsFormat {
     }
 
     /**
+     * Renders a density-independent distance, e.g. `160` becomes `"160 dp"`.
+     *
+     * Kept in physical units rather than converted to millimetres or inches: the value is a
+     * gesture threshold the user tunes by feel, and dp is what the gesture code measures in.
+     */
+    fun distanceDp(value: Int): String = "$value dp"
+
+    /**
      * Renders the "1080p60" style summary shown next to the Video section header.
      */
     fun videoSummary(resolution: StreamResolution, frameRate: FrameRate): String =

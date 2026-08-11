@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -149,6 +150,43 @@ fun StatusLine(
         Text(
             // The reference sets the status line noticeably smaller than the host name; body size
             // here would compete with the 22sp title directly above it.
+            text = text,
+            style = VoidLinkTheme.footnote.copy(fontWeight = FontWeight.Medium),
+            color = tint,
+        )
+    }
+}
+
+/**
+ * The [StatusLine] variant used while a probe is still in flight: a small spinner instead of a
+ * status glyph.
+ *
+ * A host whose reachability is simply not known yet must not be drawn as offline — that is the
+ * first thing a user sees on launch, and a grid of "Offline" cards that turn green a second later
+ * reads as a broken app rather than a working one.
+ *
+ * @param text status text, e.g. "Checking…".
+ * @param tint colour applied to both spinner and text.
+ * @param modifier layout modifier.
+ */
+@Composable
+fun PendingStatusLine(
+    text: String,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = VoidLinkTheme.spacing
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs + 2.dp),
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(14.dp),
+            color = tint,
+            strokeWidth = 2.dp,
+        )
+        Text(
             text = text,
             style = VoidLinkTheme.footnote.copy(fontWeight = FontWeight.Medium),
             color = tint,

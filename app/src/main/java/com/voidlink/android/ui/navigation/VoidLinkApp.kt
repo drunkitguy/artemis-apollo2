@@ -46,7 +46,17 @@ fun VoidLinkApp(
     val navController = rememberNavController()
     val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val hosts by settingsViewModel.hosts.collectAsStateWithLifecycle()
     var sidebarOpen by rememberSaveable { mutableStateOf(false) }
+
+    // Which settings the panel is editing: null is the global set, otherwise one host's overrides.
+    // Held here rather than in the panel so it survives navigating between Hosts and Apps.
+    var overrideHostId by rememberSaveable { mutableStateOf<String?>(null) }
+    val overrideHost = hosts.firstOrNull { it.uuid == overrideHostId }
+
+    // A host with no override yet is shown the global values; the first edit seeds an override
+    // from them, so the panel never lies about what the host will actually stream with.
+    val shownSettings = overrideHost?.settingsOverride ?: settings
 
     Box(
         modifier = modifier
@@ -57,9 +67,26 @@ fun VoidLinkApp(
         SettingsScaffold(
             sidebarOpen = sidebarOpen,
             onDismissSidebar = { sidebarOpen = false },
-            settings = settings,
-            onUpdate = { transform -> settingsViewModel.update(transform) },
-            onResetDefaults = { settingsViewModel.resetToDefaults() },
+            settings = shownSettings,
+            onUpdate = { transform ->
+                val host = overrideHost
+                if (host == null) {
+                    settingsViewModel.update(transform)
+                } else {
+                    settingsViewModel.updateHostOverride(host.uuid, transform)
+                }
+            },
+            onResetDefaults = {
+                val host = overrideHost
+                if (host == null) {
+                    settingsViewModel.resetToDefaults()
+                } else {
+                    settingsViewModel.clearHostOverride(host.uuid)
+                }
+            },
+            overrideHostName = overrideHost?.name,
+            onEditGlobal = { overrideHostId = null },
+            onToggleFavorite = settingsViewModel::toggleFavoriteRow,
         ) {
             NavHost(
                 navController = navController,
@@ -68,9 +95,18 @@ fun VoidLinkApp(
             ) {
                 composable(route = VoidLinkRoutes.HOSTS) {
                     HostsRoute(
-                        onToggleSidebar = { sidebarOpen = !sidebarOpen },
+                        onToggleSidebar = {
+                            // The plain toggle always shows the global settings; only the card's
+                            // "Host settings…" menu entry scopes the panel to a host.
+                            if (!sidebarOpen) overrideHostId = null
+                            sidebarOpen = !sidebarOpen
+                        },
                         onOpenHost = { host ->
                             navController.navigate(VoidLinkRoutes.apps(host.uuid))
+                        },
+                        onHostSettings = { host ->
+                            overrideHostId = host.uuid
+                            sidebarOpen = true
                         },
                     )
                 }
@@ -100,11 +136,13 @@ fun VoidLinkApp(
  *
  * @param onToggleSidebar shows or hides the settings panel.
  * @param onOpenHost the user wants to browse a host's library.
+ * @param onHostSettings the user wants the panel scoped to one host's overrides.
  */
 @Composable
 private fun HostsRoute(
     onToggleSidebar: () -> Unit,
     onOpenHost: (KnownHost) -> Unit,
+    onHostSettings: (KnownHost) -> Unit,
 ) {
     val viewModel: HostsViewModel = viewModel(factory = HostsViewModel.Factory)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -119,15 +157,15 @@ private fun HostsRoute(
                 HostAction.PAIR -> viewModel.beginPairing(card.host)
                 HostAction.WAKE -> viewModel.wake(card.host)
                 HostAction.CONNECT -> onOpenHost(card.host)
+                // Nothing to do until the first probe answers; the card says so itself.
+                HostAction.CHECKING -> Unit
             }
         },
         onRename = { host, newName -> viewModel.rename(host.uuid, newName) },
         onDelete = { host -> viewModel.delete(host.uuid) },
         onUnpair = { host -> viewModel.unpair(host.uuid) },
         onWake = viewModel::wake,
-        // Per-host overrides are edited in the same panel as the global ones; opening it is the
-        // right response until that editor gains a host-scoped mode.
-        onHostSettings = { onToggleSidebar() },
+        onHostSettings = onHostSettings,
         onDismissPairing = viewModel::cancelPairing,
         onMessageShown = viewModel::consumeMessage,
     )

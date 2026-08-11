@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -52,6 +54,7 @@ import com.voidlink.android.data.KnownHost
 import com.voidlink.android.data.SettingsFormat
 import com.voidlink.android.ui.components.GlyphTile
 import com.voidlink.android.ui.components.HairlineDivider
+import com.voidlink.android.ui.components.PendingStatusLine
 import com.voidlink.android.ui.components.ScreenHeader
 import com.voidlink.android.ui.components.StatusLine
 import com.voidlink.android.ui.components.VoidLinkCard
@@ -312,14 +315,17 @@ fun HostCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(modifier = Modifier.height(spacing.xs))
-                    if (online) {
-                        StatusLine(
+                    when {
+                        card.isChecking -> PendingStatusLine(
+                            text = "Checking…",
+                            tint = colors.tertiaryLabel,
+                        )
+                        online -> StatusLine(
                             icon = VoidLinkIcons.Online,
-                            text = "Online",
+                            text = card.runningAppName?.let { "Online · $it" } ?: "Online",
                             tint = colors.online,
                         )
-                    } else {
-                        StatusLine(
+                        else -> StatusLine(
                             icon = VoidLinkIcons.Offline,
                             text = "Offline",
                             tint = colors.offline,
@@ -342,7 +348,11 @@ fun HostCard(
 
             HairlineDivider()
 
-            HostFooterButton(action = card.primaryAction, onClick = onPrimaryAction)
+            HostFooterButton(
+                action = card.primaryAction,
+                enabled = card.isActionable,
+                onClick = onPrimaryAction,
+            )
         }
 
         DropdownMenu(
@@ -380,10 +390,17 @@ private fun HostMenuItem(
     )
 }
 
-/** The full-width action button along the bottom of a host card. */
+/**
+ * The full-width action button along the bottom of a host card.
+ *
+ * When [enabled] is false the button is drawn muted **and stops consuming taps**, so the press
+ * falls through to the card body — which answers with the reason the action is unavailable. A
+ * silently dead button teaches the user nothing.
+ */
 @Composable
 private fun HostFooterButton(
     action: HostAction,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -391,10 +408,16 @@ private fun HostFooterButton(
     val spacing = VoidLinkTheme.spacing
 
     val label: String
-    val icon: ImageVector
+    val icon: ImageVector?
     val contentColor: Color
     val fill: Color
     when (action) {
+        HostAction.CHECKING -> {
+            label = "Checking…"
+            icon = null
+            contentColor = colors.tertiaryLabel
+            fill = Color.Transparent
+        }
         HostAction.PAIR -> {
             label = "Pair with PIN"
             icon = VoidLinkIcons.Unlocked
@@ -421,18 +444,28 @@ private fun HostFooterButton(
         modifier = modifier
             .fillMaxWidth()
             .background(fill)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else DISABLED_FOOTER_ALPHA)
             .padding(vertical = spacing.lg),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(modifier = Modifier.width(spacing.sm))
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(spacing.sm))
+        } else {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                color = contentColor,
+                strokeWidth = 2.dp,
+            )
+            Spacer(modifier = Modifier.width(spacing.sm))
+        }
         Text(
             text = label,
             style = VoidLinkTheme.body.copy(fontWeight = FontWeight.SemiBold),
@@ -440,6 +473,9 @@ private fun HostFooterButton(
         )
     }
 }
+
+/** How far a footer fades when its action cannot be carried out. */
+private const val DISABLED_FOOTER_ALPHA = 0.55f
 
 /**
  * The "Add host manually" tile that closes the grid.
