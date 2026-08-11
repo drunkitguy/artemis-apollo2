@@ -306,6 +306,19 @@ data class StreamSettings(
         exitSwipeDistanceDp = exitSwipeDistanceDp.coerceIn(EXIT_SWIPE_MIN_DP, EXIT_SWIPE_MAX_DP),
     )
 
+    /**
+     * Returns a copy with [rowId] starred if it was not, and unstarred if it was.
+     *
+     * @param rowId one of the stable row ids the settings panel declares.
+     */
+    fun withFavoriteToggled(rowId: String): StreamSettings = copy(
+        favoriteRowIds = if (rowId in favoriteRowIds) {
+            favoriteRowIds - rowId
+        } else {
+            favoriteRowIds + rowId
+        },
+    )
+
     companion object {
         /** Lowest selectable bitrate (500 kbps). */
         const val BITRATE_MIN_KBPS: Int = 500
