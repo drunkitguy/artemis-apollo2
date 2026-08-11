@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,7 +97,9 @@ fun SettingsSection(
             Spacer(modifier = Modifier.width(spacing.md))
             Text(
                 text = title,
-                style = VoidLinkTheme.cardTitle,
+                // Section headers are heavier than a row label but must not compete with the
+                // panel's own "Settings" title, so weight rather than size carries the emphasis.
+                style = VoidLinkTheme.body.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.label,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
@@ -124,34 +127,43 @@ fun SettingsSection(
  * A labelled slider: label on the left, the live value in accent blue on the right, the track
  * underneath.
  *
+ * The value label tracks the finger continuously, but the setting is persisted **once, on drag
+ * end**. Persisting on every change event would put a DataStore commit on every animation frame,
+ * and because the committed value is what feeds [value] back in, the thumb would visibly chase the
+ * round trip instead of following the finger.
+ *
  * @param label row label.
- * @param value current value.
- * @param valueText the value rendered for display, e.g. `"23.0 Mbps"` or `"| 50% | 50% |"`.
+ * @param value the currently persisted value.
  * @param range legal values.
- * @param onValueChange invoked continuously as the user drags.
+ * @param format renders a value for display, e.g. `"23.0 Mbps"` or `"| 50% | 50% |"`. Called with
+ *   the live drag value, so the label updates while dragging.
+ * @param onCommit invoked once, at the end of a drag, with the value to persist.
  * @param modifier layout modifier.
- * @param steps number of discrete stops between the endpoints; `0` means continuous.
+ * @param quantize snaps a raw slider position to the granularity the setting stores; the default
+ *   keeps the raw value. Applied during the drag so the label never shows a value that will not be
+ *   the one saved.
  * @param enabled whether the control accepts input.
  * @param info optional help text; the circled-i is rendered only when this is non-null.
- * @param onValueChangeFinished invoked once when the drag gesture ends — the right moment to
- *   persist, so a drag does not write to disk on every frame.
  */
 @Composable
 fun SliderRow(
     label: String,
     value: Float,
-    valueText: String,
     range: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
+    format: (Float) -> String,
+    onCommit: (Float) -> Unit,
     modifier: Modifier = Modifier,
-    steps: Int = 0,
+    quantize: (Float) -> Float = { it },
     enabled: Boolean = true,
     info: String? = null,
-    onValueChangeFinished: (() -> Unit)? = null,
 ) {
     val colors = VoidLinkTheme.colors
     val spacing = VoidLinkTheme.spacing
     var infoRevealed by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableStateOf<Float?>(null) }
+
+    val committed = value.coerceIn(range.start, range.endInclusive)
+    val shown = dragValue ?: committed
 
     Column(
         modifier = modifier
@@ -169,7 +181,7 @@ fun SliderRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = valueText,
+                text = format(shown),
                 style = VoidLinkTheme.body,
                 color = colors.accent,
                 maxLines = 1,
@@ -180,13 +192,18 @@ fun SliderRow(
             }
         }
         Slider(
-            value = value.coerceIn(range.start, range.endInclusive),
-            onValueChange = onValueChange,
+            value = shown,
+            onValueChange = { raw ->
+                dragValue = quantize(raw).coerceIn(range.start, range.endInclusive)
+            },
             modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
             valueRange = range,
-            steps = steps,
-            onValueChangeFinished = onValueChangeFinished,
+            onValueChangeFinished = {
+                val pending = dragValue
+                dragValue = null
+                if (pending != null && pending != committed) onCommit(pending)
+            },
             colors = SliderDefaults.colors(
                 thumbColor = Color.White,
                 activeTrackColor = colors.accent,
@@ -213,6 +230,8 @@ fun SliderRow(
  * @param onSelect invoked with the tapped index.
  * @param modifier layout modifier.
  * @param enabled whether the control accepts input.
+ * @param disabledOptions indices the host or this device cannot offer. They stay visible and
+ *   readable but inert — a capability the user cannot have should never simply vanish.
  * @param info optional help text; the circled-i is rendered only when this is non-null.
  */
 @Composable
@@ -223,6 +242,7 @@ fun SegmentedRow(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    disabledOptions: Set<Int> = emptySet(),
     info: String? = null,
 ) {
     val colors = VoidLinkTheme.colors
@@ -254,6 +274,7 @@ fun SegmentedRow(
             selectedIndex = selectedIndex,
             onSelect = onSelect,
             enabled = enabled,
+            disabledOptions = disabledOptions,
         )
         InlineInfoText(info = info, visible = infoRevealed)
     }
@@ -267,6 +288,7 @@ fun SegmentedRow(
  * @param onSelect invoked with the tapped index.
  * @param modifier layout modifier.
  * @param enabled whether the control accepts input.
+ * @param disabledOptions indices that are shown but not selectable.
  */
 @Composable
 fun SegmentedControl(
@@ -275,6 +297,7 @@ fun SegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    disabledOptions: Set<Int> = emptySet(),
 ) {
     val colors = VoidLinkTheme.colors
     Row(
@@ -300,20 +323,25 @@ fun SegmentedControl(
                 )
             }
             val selected = index == selectedIndex
+            val segmentEnabled = enabled && index !in disabledOptions
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(VoidLinkShapeTokens.SegmentPillRadius))
                     .background(if (selected) colors.accent else Color.Transparent)
-                    .clickable(enabled = enabled && !selected) { onSelect(index) }
-                    .heightIn(min = 30.dp)
+                    .clickable(enabled = segmentEnabled && !selected) { onSelect(index) }
+                    .heightIn(min = 32.dp)
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = option,
                     style = VoidLinkTheme.body.copy(fontSize = SEGMENT_FONT_SIZE),
-                    color = if (selected) Color.White else colors.label,
+                    color = when {
+                        selected -> Color.White
+                        !segmentEnabled -> colors.tertiaryLabel
+                        else -> colors.secondaryLabel
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -324,7 +352,7 @@ fun SegmentedControl(
 }
 
 /**
- * A label plus a Material switch, tinted green when on.
+ * A label plus a Material switch, tinted with the app accent when on.
  *
  * @param label row label.
  * @param checked switch state.
@@ -371,8 +399,8 @@ fun ToggleRow(
                 enabled = enabled,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = colors.online,
-                    checkedBorderColor = colors.online,
+                    checkedTrackColor = colors.accent,
+                    checkedBorderColor = colors.accent,
                     uncheckedThumbColor = Color.White,
                     uncheckedTrackColor = colors.fill,
                     uncheckedBorderColor = colors.separator,
@@ -543,17 +571,18 @@ fun InfoToggleGlyph(
 ) {
     val colors = VoidLinkTheme.colors
     Box(
+        // 44dp is the smallest target the design brief allows; the glyph itself stays 20dp.
         modifier = modifier
-            .size(28.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .size(INFO_TOUCH_TARGET)
+            .clip(RoundedCornerShape(INFO_TOUCH_TARGET / 2))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.Outlined.Info,
             contentDescription = "More information",
-            tint = if (expanded) colors.accent else colors.secondaryLabel,
-            modifier = Modifier.size(19.dp),
+            tint = if (expanded) colors.accent else colors.tertiaryLabel,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -582,6 +611,9 @@ private fun InlineInfoText(info: String?, visible: Boolean) {
 
 /** Opacity applied to a row that is present but currently inapplicable. */
 private const val DISABLED_ALPHA = 0.4f
+
+/** Minimum touch target for the circled-i, per the accessibility rules in the UI spec. */
+private val INFO_TOUCH_TARGET = 44.dp
 
 /** Segment and picker text is a notch smaller than body text so long labels still fit. */
 private val SEGMENT_FONT_SIZE = 14.sp

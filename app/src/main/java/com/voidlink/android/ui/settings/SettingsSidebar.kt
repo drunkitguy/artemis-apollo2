@@ -212,13 +212,15 @@ private fun VideoSection(
         SliderRow(
             label = "Bitrate",
             value = settings.bitrateKbps.toFloat(),
-            valueText = SettingsFormat.bitrate(settings.bitrateKbps),
             range = StreamSettings.BITRATE_MIN_KBPS.toFloat()..StreamSettings.BITRATE_MAX_KBPS.toFloat(),
-            onValueChange = { raw ->
-                onUpdate { it.copy(bitrateKbps = roundToStep(raw, BITRATE_STEP_KBPS)) }
+            format = { raw -> SettingsFormat.bitrate(raw.roundToInt()) },
+            quantize = { raw -> snapTo(raw, BITRATE_STEP_KBPS) },
+            onCommit = { chosen ->
+                onUpdate { current -> current.copy(bitrateKbps = chosen.roundToInt()) }
             },
             info = "How much data the host may spend on video each second. Raise it for sharper " +
-                "detail, lower it if the stream stutters on a busy network.",
+                "detail, lower it if the stream stutters on a busy network. Above roughly " +
+                "150 Mbps most hardware decoders stall rather than get sharper.",
         )
         SegmentedRow(
             label = "Preferred Codec",

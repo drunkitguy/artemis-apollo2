@@ -59,6 +59,8 @@ fun VoidLinkTheme(
             error = colors.destructive,
             onError = Color.White,
             scrim = Color.Black,
+            // Material's elevation overlay would tint every raised white surface blue.
+            surfaceTint = Color.Transparent,
         )
     } else {
         lightColorScheme(
@@ -81,6 +83,8 @@ fun VoidLinkTheme(
             error = colors.destructive,
             onError = Color.White,
             scrim = Color.Black,
+            // Material's elevation overlay would tint every raised white surface blue.
+            surfaceTint = Color.Transparent,
         )
     }
 
@@ -120,11 +124,11 @@ object VoidLinkTheme {
     val spacing: VoidLinkSpacing
         @Composable @ReadOnlyComposable get() = LocalVoidLinkSpacing.current
 
-    /** Convenience alias for the large-title style (28sp bold). */
+    /** Convenience alias for the large-title style (34sp bold). */
     val largeTitle: TextStyle
         @Composable @ReadOnlyComposable get() = MaterialTheme.typography.headlineLarge
 
-    /** Convenience alias for the card-title style (22sp semibold). */
+    /** Convenience alias for the card-title style (22sp bold). */
     val cardTitle: TextStyle
         @Composable @ReadOnlyComposable get() = MaterialTheme.typography.titleLarge
 

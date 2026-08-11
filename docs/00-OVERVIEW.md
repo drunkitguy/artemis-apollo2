@@ -85,7 +85,7 @@ These are **out of scope**. Do not build them; do not leave stubs that imply the
    (See `04-ROADMAP.md` — the editor is a post-v1 phase.)
 6. **No external-display / second-screen modes.** The iPad reference has Stage Manager and
    AirPlay options; the Android equivalent (presentation displays) is deferred. The UI spec
-   documents a "Display" section but it is **disabled with an explanatory info popover** in
+   documents a "Peripherals" section but its external-display row is **disabled, with the row's inline info text explaining why**, in
    v1.
 7. **No macros / command-shortcut editor**, no keyboard-shortcut recorder.
 8. **No local-file game library, no emulator integration, no non-GameStream backends

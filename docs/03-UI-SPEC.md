@@ -25,7 +25,7 @@ extended set that Material's scheme has no slot for.
 | `background` | `#F2F2F7` | App background (the "very light gray" field) |
 | `surface` | `#FFFFFF` | Cards, sheets, settings panel |
 | `surfaceVariant` | `#F7F7FA` | Nested/inset areas, segmented-control track |
-| `surfaceElevated` | `#FFFFFF` | Dialogs, popovers |
+| `surfaceElevated` | `#FFFFFF` | Dialogs |
 | `outline` | `#E3E3E8` | Card borders (1 dp hairline) |
 | `divider` | `#E5E5EA` | Row and card-footer dividers |
 | `onSurface` | `#1C1C1E` | Primary text |
@@ -104,7 +104,7 @@ purple.
 
 | Token | dp | Used by |
 |---|---|---|
-| `radiusXs` | 6 | Info popover arrow, small chips |
+| `radiusXs` | 6 | Small chips, badges |
 | `radiusSm` | 10 | Segmented control thumb, small buttons |
 | `radiusMd` | 14 | Segmented control track, text fields, in-card action button |
 | `radiusLg` | 20 | App/box-art cards, settings panel corners |
@@ -139,7 +139,11 @@ Screen horizontal padding: **`space5` (20 dp)** on compact, **`space6` (24 dp)**
 |---|---|
 | `shadowCard` | y-offset 2 dp, blur 12 dp, `shadow` color, spread 0 |
 | `shadowPanel` | y-offset 0, blur 24 dp, `shadow` color |
-| `shadowPopover` | y-offset 4 dp, blur 20 dp, `shadow` color |
+| `shadowDialog` | y-offset 4 dp, blur 20 dp, `shadow` color |
+
+**There are no popovers or tooltips anywhere in this app.** Help text is an inline expansion
+inside its row (§4.3); `shadowDialog` is for genuine modal dialogs only. If a spec sentence
+elsewhere says "popover", it means "the row's inline info expansion" and is wrong wording.
 
 Implemented with `Modifier.shadow(elevation, shape, clip = false, ambientColor, spotColor)`.
 Do not use `Card`'s default `CardDefaults.cardElevation` — it produces a harder, darker
@@ -157,7 +161,7 @@ Font: system default (`FontFamily.Default` → Roboto). Weights: 400 / 500 / 600
 | `cardTitle` | 22 / 28 / 700 / −0.3 | Host name on a host card |
 | `rowLabel` | 16 / 21 / 400 / 0 | Settings row label |
 | `rowValue` | 16 / 21 / 600 / 0 | Settings row value (blue, right-aligned) |
-| `body` | 15 / 20 / 400 / 0 | Body copy, info popovers |
+| `body` | 15 / 20 / 400 / 0 | Body copy, inline info text |
 | `caption` | 13 / 17 / 500 / 0 | Status lines ("Online"/"Offline"), helper text |
 | `button` | 16 / 21 / 600 / 0 | Card footer action buttons |
 | `appTile` | 14 / 18 / 600 / 0 | App name on box art |
@@ -165,29 +169,47 @@ Font: system default (`FontFamily.Default` → Roboto). Weights: 400 / 500 / 600
 
 ### 1.8 Iconography
 
-Material Symbols (Rounded, filled where noted) — **not** the default `Icons.Filled` sharp set,
-which is too angular for this look. Bundle the specific glyphs we need as vector drawables.
+**Shipped mechanism:** `ui/components/VoidLinkIcons.kt` maps every purpose to a named value
+backed by `material-icons-extended` (`Icons.Filled.*`), which is in the version catalog.
+Screens reference `VoidLinkIcons.Online`, never `Icons.Filled.Wifi` directly — so a glyph swap
+is one edit in one file. **Do not bundle custom vector drawables**; the extended icon set
+covers everything below.
 
-| Purpose | Glyph |
-|---|---|
-| Host / monitor | `desktop_windows` (rounded) |
-| Unpaired badge | `lock` (filled, in a small circular badge) |
-| Pair action | `lock_open` |
-| Online | `wifi` |
-| Offline | `warning` (rounded triangle) |
-| Wake-on-LAN | `power_settings_new` |
-| Sidebar toggle | `dock_to_right` / `side_navigation` |
-| Display | `display_settings` |
-| Overflow | `more_horiz` (the ••• button) |
-| Info | `info` (outlined, circled-i) |
-| Chevron | `expand_more` (rotates 180° when a section is open) |
-| Video section | `videocam` |
-| Touch & Controller | `sports_esports` |
-| Gestures | `gesture` |
-| Audio | `volume_up` |
-| Display/Peripherals | `cast` |
-| Add host | `add` |
-| Refresh | `refresh` |
+The full inventory, as shipped:
+
+| Purpose | `VoidLinkIcons` name | Backing glyph |
+|---|---|---|
+| Host / monitor tile | `Host` | `DesktopWindows` |
+| Online | `Online` | `Wifi` |
+| Offline | `Offline` | `Warning` |
+| Unpaired badge | `Locked` | `Lock` |
+| Pair action | `Unlocked` | `LockOpen` |
+| Wake-on-LAN | `Power` | `PowerSettingsNew` |
+| Connect / launch | `Connect` | `PlayArrow` |
+| Quit running app | `Quit` | `Stop` |
+| Add host | `Add` | `Add` |
+| Refresh | `Refresh` | `Refresh` |
+| Sidebar toggle | `Sidebar` | `Menu` |
+| Overflow (•••) | `Overflow` | `MoreVert` |
+| Settings | `Settings` | `Settings` |
+| Rename | `Rename` | `Edit` |
+| Delete / forget | `Delete` | `Delete` |
+| Close / dismiss | `Close` | `Close` |
+| Display | `Display` | `Tv` |
+| Video section | `Video` | `Videocam` |
+| Touch & Controller section | `Touch` | `TouchApp` |
+| Gestures section | `Gestures` | `Gesture` |
+| Peripherals section | `Peripherals` | `Keyboard` |
+| Audio section | `Audio` | `VolumeUp` |
+
+Deviations from the original plan, now normative: the overflow button is **vertical**
+(`MoreVert`), not `more_horiz`; the sidebar toggle is `Menu`; the Touch section uses `TouchApp`
+rather than a gamepad glyph; Peripherals uses `Keyboard` rather than `cast`.
+
+**Glyphs used inline without a named entry** — the info circle (`InfoButton` draws its own
+circled-i via `InfoToggleGlyph`), the section chevron (`ExpandMore`, rotated 180° when open),
+and the row chevron on `PickerRow` (`ChevronRight`). Any *new* icon a screen needs must be
+added to `VoidLinkIcons` first; screens must not reach into `Icons.Filled` themselves.
 
 Standard icon sizes: 20 dp inside rows, 24 dp in nav bars, 34 dp inside the host tile.
 
@@ -347,7 +369,7 @@ touch target 48 dp is satisfied by both.
 
 ### 2.4 Add Host dialog
 
-A centered dialog (`radiusLg`, `surfaceElevated`, `shadowPopover`, max width 400 dp):
+A centered dialog (`radiusLg`, `surfaceElevated`, `shadowDialog`, max width 400 dp):
 
 * Title "Add PC".
 * A single text field, `radiusMd`, `surfaceVariant` fill, no outline, placeholder

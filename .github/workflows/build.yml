@@ -91,6 +91,11 @@ jobs:
       - name: Publish GitHub Release
         # Only the working branch publishes, so feature branches do not spam the
         # release list with a tag per push.
+        #
+        # Best-effort: the APKs are already built, signed and uploaded as artifacts
+        # by this point, so a permissions failure on the Releases API must not fail
+        # a build that produced the actual deliverable. It warns instead.
+        continue-on-error: true
         if: |
           github.event_name != 'pull_request' &&
           (github.event_name != 'workflow_dispatch' || inputs.publish_release) &&
@@ -99,11 +104,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${{ steps.collect.outputs.version }}-b${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" dist/*.apk \
-            --title "VoidLink Android ${{ steps.collect.outputs.version }} (build ${GITHUB_RUN_NUMBER})" \
-            --notes "Automated build from \`${GITHUB_REF_NAME}\` @ \`${GITHUB_SHA}\`.
+          NOTES="Automated build from \`${GITHUB_REF_NAME}\` @ \`${GITHUB_SHA}\`.
 
           **Debug** APK is signed with the standard Android debug key. **Release** APK is signed with a throwaway key generated during this run, so installing a newer release build over an older one requires uninstalling first.
 
-          This is an independent, from-scratch reimplementation inspired by VoidLink. It is not affiliated with, endorsed by, or derived from the VoidLink or Moonlight projects." \
-            --target "${GITHUB_SHA}"
+          This is an independent, from-scratch reimplementation inspired by VoidLink. It is not affiliated with, endorsed by, or derived from the VoidLink or Moonlight projects."
+
+          for attempt in 1 2 3; do
+            if gh release create "$TAG" dist/*.apk \
+                 --title "VoidLink Android ${{ steps.collect.outputs.version }} (build ${GITHUB_RUN_NUMBER})" \
+                 --notes "$NOTES" \
+                 --target "${GITHUB_SHA}"; then
+              echo "Published release $TAG" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Release attempt $attempt failed; retrying." >&2
+            sleep $((attempt * 5))
+          done
+
+          {
+            echo "### Release publishing failed"
+            echo ""
+            echo "The APKs built and signed successfully and are attached to this run as the"
+            echo "\`voidlink-apks\` artifact. Only the Releases API call failed, which usually"
+            echo "means the workflow token lacks release-creation permission on this repository."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1

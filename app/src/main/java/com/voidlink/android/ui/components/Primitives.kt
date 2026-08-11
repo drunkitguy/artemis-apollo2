@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.voidlink.android.ui.theme.VoidLinkShapeTokens
@@ -138,20 +140,34 @@ fun StatusLine(
             modifier = Modifier.size(16.dp),
         )
         Text(
+            // The reference sets the status line noticeably smaller than the host name; body size
+            // here would compete with the 22sp title directly above it.
             text = text,
-            style = VoidLinkTheme.body,
+            style = VoidLinkTheme.footnote.copy(fontWeight = FontWeight.Medium),
             color = tint,
         )
     }
 }
 
 /**
+ * Space kept clear on both sides of a centred title so it can never sit on top of an accessory.
+ *
+ * Two 48dp icon buttons is the widest accessory group any screen uses; reserving the same amount on
+ * both sides is what keeps the title *optically* centred rather than centred in the leftover space.
+ */
+private val CenteredTitleGutter: Dp = 96.dp
+
+/**
  * The large centred (or leading) screen title used at the top of Hosts and Apps, with optional
  * leading and trailing accessory slots.
  *
+ * When [centered] is true the title is centred **in the header**, not in the space left over
+ * between the accessories — the reference centres it regardless of how many buttons flank it, and
+ * a title that shifts as buttons appear reads as a bug.
+ *
  * @param title the title text.
  * @param modifier layout modifier.
- * @param centered when true the title is centred between the accessories, as on the Hosts screen.
+ * @param centered when true the title is centred in the header, as on the Hosts screen.
  * @param leading optional leading accessory, e.g. the sidebar toggle.
  * @param trailing optional trailing accessory, e.g. a refresh or display button.
  */
@@ -164,6 +180,39 @@ fun ScreenHeader(
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
     val spacing = VoidLinkTheme.spacing
+    if (centered) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.lg, vertical = spacing.md),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = title,
+                style = VoidLinkTheme.largeTitle,
+                color = VoidLinkTheme.colors.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = CenteredTitleGutter),
+            )
+            Row(
+                modifier = Modifier.align(Alignment.CenterStart),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                leading?.invoke(this)
+            }
+            Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                trailing?.invoke(this)
+            }
+        }
+        return
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -176,26 +225,16 @@ fun ScreenHeader(
         ) {
             leading?.invoke(this)
         }
-        if (centered) {
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text(
-                    text = title,
-                    style = VoidLinkTheme.largeTitle,
-                    color = VoidLinkTheme.colors.label,
-                    maxLines = 1,
-                )
-            }
-        } else {
-            Text(
-                text = title,
-                style = VoidLinkTheme.largeTitle,
-                color = VoidLinkTheme.colors.label,
-                maxLines = 1,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = spacing.sm),
-            )
-        }
+        Text(
+            text = title,
+            style = VoidLinkTheme.largeTitle,
+            color = VoidLinkTheme.colors.label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.sm),
+        )
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(spacing.sm),

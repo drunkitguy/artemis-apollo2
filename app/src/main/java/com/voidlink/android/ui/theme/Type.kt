@@ -12,8 +12,8 @@ import androidx.compose.ui.unit.sp
  * The mapping is intentionally narrow so that reading `MaterialTheme.typography.titleLarge`
  * anywhere in the app yields exactly the "card title" style from the design:
  *
- * - [Typography.headlineLarge] — large title, 28sp bold (screen titles).
- * - [Typography.titleLarge] — card title, 22sp semibold (host names, section headers).
+ * - [Typography.headlineLarge] — large title, 34sp bold (screen titles).
+ * - [Typography.titleLarge] — card title, 22sp bold (host names, section headers).
  * - [Typography.titleMedium] — row label, 17sp medium.
  * - [Typography.bodyLarge] — body, 17sp regular.
  * - [Typography.bodyMedium] — compact body, 15sp regular (segment labels).
@@ -24,16 +24,16 @@ val VoidLinkTypography: Typography = Typography(
     headlineLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 34.sp,
-        letterSpacing = 0.sp,
+        fontSize = 34.sp,
+        lineHeight = 41.sp,
+        letterSpacing = (-0.4).sp,
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = (-0.3).sp,
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.Default,

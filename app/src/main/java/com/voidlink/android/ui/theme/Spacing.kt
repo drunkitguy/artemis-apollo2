@@ -31,10 +31,10 @@ val LocalVoidLinkSpacing = staticCompositionLocalOf { VoidLinkSpacing() }
  */
 object VoidLinkShapeTokens {
     /** Corner radius of the large content cards on the Hosts screen. */
-    val CardRadius: Dp = 20.dp
+    val CardRadius: Dp = 26.dp
 
     /** Corner radius of the rounded-square host icon tile and of box-art tiles. */
-    val TileRadius: Dp = 16.dp
+    val TileRadius: Dp = 18.dp
 
     /** Corner radius of the segmented-control track. */
     val SegmentTrackRadius: Dp = 9.dp
