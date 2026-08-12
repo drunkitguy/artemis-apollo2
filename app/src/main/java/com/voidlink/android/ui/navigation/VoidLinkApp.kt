@@ -127,7 +127,15 @@ fun VoidLinkApp(
                         .orEmpty()
                     AppsRoute(
                         hostId = hostId,
-                        onToggleSidebar = { sidebarOpen = !sidebarOpen },
+                        onToggleSidebar = {
+                            // Opening the panel from a host's library scopes it to that host:
+                            // while you are looking at one PC's games, "settings" means that PC's
+                            // (spec §4.9). The Hosts screen, which is about all of them, does not.
+                            if (!sidebarOpen) {
+                                overrideHostId = hostId
+                            }
+                            sidebarOpen = !sidebarOpen
+                        },
                         onBack = { navController.popBackStack() },
                         onLaunchStream = { app -> onLaunchStream(hostId, app) },
                     )

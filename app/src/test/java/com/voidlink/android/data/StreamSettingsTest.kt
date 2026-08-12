@@ -86,6 +86,25 @@ class StreamSettingsTest {
     }
 
     @Test
+    fun `starring a row adds it and starring it again removes it`() {
+        val once = StreamSettings().withFavoriteToggled("video.bitrate")
+        val twice = once.withFavoriteToggled("video.bitrate")
+
+        assertEquals(setOf("video.bitrate"), once.favoriteRowIds)
+        assertTrue(twice.favoriteRowIds.isEmpty())
+    }
+
+    @Test
+    fun `starring leaves the other favourites and the rest of the settings alone`() {
+        val start = StreamSettings(bitrateKbps = 45_000, favoriteRowIds = setOf("a", "b"))
+
+        val updated = start.withFavoriteToggled("c").withFavoriteToggled("a")
+
+        assertEquals(setOf("b", "c"), updated.favoriteRowIds)
+        assertEquals(45_000, updated.bitrateKbps)
+    }
+
+    @Test
     fun `starred row ids survive a round trip`() {
         val original = StreamSettings(favoriteRowIds = setOf("video.bitrate", "gestures.edgeSwipe"))
 

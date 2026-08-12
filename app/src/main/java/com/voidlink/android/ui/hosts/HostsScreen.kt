@@ -720,6 +720,26 @@ private fun HostsScreenPreviewContent() {
                     ),
                     status = HostStatus.Offline,
                 ),
+                // Offline with no MAC: the footer is shown but muted, and a tap falls through to
+                // the card, which explains why nothing can be sent.
+                HostCardState(
+                    host = KnownHost(
+                        uuid = "4",
+                        name = "Attic Server",
+                        addresses = listOf("192.168.1.9"),
+                        paired = true,
+                    ),
+                    status = HostStatus.Offline,
+                ),
+                // Not probed yet — the state every card is in for the first second after launch.
+                HostCardState(
+                    host = KnownHost(
+                        uuid = "5",
+                        name = "Workshop",
+                        addresses = listOf("192.168.1.12"),
+                        paired = true,
+                    ),
+                ),
             ),
         ),
         onToggleSidebar = {},

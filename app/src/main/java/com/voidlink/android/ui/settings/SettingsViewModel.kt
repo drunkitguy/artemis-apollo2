@@ -85,12 +85,7 @@ class SettingsViewModel(
      * wants pinned to the top of the panel is a property of the person, not of the PC.
      */
     fun toggleFavoriteRow(rowId: String) {
-        update { current ->
-            val favorites = current.favoriteRowIds
-            current.copy(
-                favoriteRowIds = if (rowId in favorites) favorites - rowId else favorites + rowId,
-            )
-        }
+        update { current -> current.withFavoriteToggled(rowId) }
     }
 
     companion object {
