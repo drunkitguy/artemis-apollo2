@@ -5,6 +5,7 @@ import com.voidlink.android.protocol.http.AudioChannelLayout
 import com.voidlink.android.protocol.http.ServerKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test

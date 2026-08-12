@@ -1,5 +1,6 @@
 package com.voidlink.android.protocol.netperf
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
