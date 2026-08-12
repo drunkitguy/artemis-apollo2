@@ -155,6 +155,66 @@ class RtspSessionNegotiatorTest {
     }
 
     @Test
+    fun `the bytes that go on the wire match the spec's own request examples`() {
+        val transport = FakeRtspTransport(responder = successResponder())
+        negotiate(transport)
+
+        assertEquals(
+            "OPTIONS rtsp://192.168.1.50:48010 RTSP/1.0\r\n" +
+                "CSeq: 1\r\n" +
+                "X-GS-ClientVersion: 14\r\n" +
+                "\r\n",
+            transport.rawRequests[0],
+        )
+        assertEquals(
+            "DESCRIBE rtsp://192.168.1.50:48010 RTSP/1.0\r\n" +
+                "CSeq: 2\r\n" +
+                "X-GS-ClientVersion: 14\r\n" +
+                "Accept: application/sdp\r\n" +
+                "If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT\r\n" +
+                "\r\n",
+            transport.rawRequests[1],
+        )
+        assertEquals(
+            "SETUP rtsp://192.168.1.50:48010/streamid=audio/0/0 RTSP/1.0\r\n" +
+                "CSeq: 3\r\n" +
+                "X-GS-ClientVersion: 14\r\n" +
+                "Transport: unicast;X-GS-ClientPort=50000-50001\r\n" +
+                "If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT\r\n" +
+                "\r\n",
+            transport.rawRequests[2],
+        )
+        assertEquals(
+            "SETUP rtsp://192.168.1.50:48010/streamid=video/0/0 RTSP/1.0\r\n" +
+                "CSeq: 4\r\n" +
+                "X-GS-ClientVersion: 14\r\n" +
+                "Transport: unicast;X-GS-ClientPort=50000-50001\r\n" +
+                "If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT\r\n" +
+                "Session: DEADBEEFCAFE\r\n" +
+                "\r\n",
+            transport.rawRequests[3],
+        )
+        assertTrue(
+            transport.rawRequests[5].startsWith(
+                "ANNOUNCE rtsp://192.168.1.50:48010/streamid=control/13/0 RTSP/1.0\r\n" +
+                    "CSeq: 6\r\n" +
+                    "X-GS-ClientVersion: 14\r\n" +
+                    "Session: DEADBEEFCAFE\r\n" +
+                    "Content-type: application/sdp\r\n" +
+                    "Content-length: ",
+            ),
+        )
+        assertEquals(
+            "PLAY rtsp://192.168.1.50:48010/streamid=audio RTSP/1.0\r\n" +
+                "CSeq: 8\r\n" +
+                "X-GS-ClientVersion: 14\r\n" +
+                "Session: DEADBEEFCAFE\r\n" +
+                "\r\n",
+            transport.rawRequests[7],
+        )
+    }
+
+    @Test
     fun `DESCRIBE and every SETUP send the If-Modified-Since header some GFE builds require`() {
         val transport = FakeRtspTransport(responder = successResponder())
         negotiate(transport)

@@ -134,18 +134,5 @@ class FakeRtspTransport(
                 body = body.ifEmpty { null },
             )
         }
-
-        /**
-         * A responder that walks a fixed list of replies, one per request, and times out once the
-         * script runs out — which shows up as a timeout at whichever step the test forgot.
-         */
-        fun script(vararg replies: FakeReply): (RtspRequest) -> FakeReply {
-            var index = 0
-            return {
-                val reply = replies.getOrNull(index) ?: FakeReply.Timeout
-                index++
-                reply
-            }
-        }
     }
 }

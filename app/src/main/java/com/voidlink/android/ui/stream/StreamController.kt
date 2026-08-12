@@ -4,6 +4,7 @@ import android.view.Surface
 import com.voidlink.android.data.HostRepository
 import com.voidlink.android.data.SettingsRepository
 import com.voidlink.android.data.StreamSettings
+import com.voidlink.android.media.CodecSupport
 import com.voidlink.android.media.DecoderChoice
 import com.voidlink.android.media.DecoderEvent
 import com.voidlink.android.media.DecoderProbe
@@ -196,6 +197,7 @@ class StreamController(
         val candidates = withContext(Dispatchers.Default) { probe.probe(formatRequest) }
         val selection = DecoderSelector.select(candidates, formatRequest)
         if (selection is DecoderSelectionResult.NoDecoder) {
+            mutableState.update { it.copy(codecSupport = selection.inventory) }
             fail(
                 title = "This device cannot decode the stream",
                 message = selection.summary,
@@ -207,7 +209,7 @@ class StreamController(
 
         // Publishing the format mounts the SurfaceView, which is what produces the surface the
         // next step waits for.
-        mutableState.update { it.copy(surfaceFormat = choice.format) }
+        mutableState.update { it.copy(surfaceFormat = choice.format, codecSupport = choice.inventory) }
         step(StreamPreparationStep.WAITING_FOR_SURFACE)
         surfaceHandoff.await()
 
@@ -234,7 +236,11 @@ class StreamController(
             fail(
                 title = "Cannot start the stream",
                 message = opened.summary,
-                detail = listOfNotNull(opened.detail, decoderSummary(choice)).joinToString("\n"),
+                detail = listOfNotNull(
+                    opened.detail,
+                    "Selected decoder: " + decoderSummary(choice),
+                    describeInventory(choice.inventory),
+                ).joinToString("\n\n"),
             )
             return
         }
@@ -273,7 +279,7 @@ class StreamController(
             fail(
                 title = "The stream ended",
                 message = "The host closed the session.",
-                detail = decoderSummary(choice),
+                detail = failureDetail(choice),
             )
         }
     }
@@ -327,7 +333,7 @@ class StreamController(
                             message = "${decoder.decoderName} refused every configuration we " +
                                 "offered for ${decoder.format.describe()}. Try a lower " +
                                 "resolution, or force H.264 in Settings.",
-                            detail = decoderSummary(choice),
+                            detail = failureDetail(choice),
                         )
                     }
                 } finally {
@@ -359,7 +365,7 @@ class StreamController(
             is DecoderEvent.FatalError -> fail(
                 title = "The video decoder failed",
                 message = event.message,
-                detail = decoderSummary(choice),
+                detail = failureDetail(choice),
             )
 
             else -> Unit
@@ -439,14 +445,40 @@ class StreamController(
     }
 
     private fun describeInspected(result: DecoderSelectionResult.NoDecoder): String? {
-        if (result.inspected.isEmpty()) return null
-        return "Decoders inspected:\n" + result.inspected.joinToString(separator = "\n") {
-            "• " + it.describe()
+        val inventory = describeInventory(result.inventory)
+        val inspected = if (result.inspected.isEmpty()) {
+            null
+        } else {
+            "Decoders inspected:\n" + result.inspected.joinToString(separator = "\n") {
+                "• " + it.describe()
+            }
         }
+        val parts = listOfNotNull(inventory, inspected)
+        return if (parts.isEmpty()) null else parts.joinToString("\n\n")
+    }
+
+    /**
+     * The device's video capability report, one line per codec.
+     *
+     * Shown on every failure screen, not only the "no decoder" one. It is the only place a user
+     * can find out whether their device has hardware AV1 — the question that decides whether the
+     * codec setting is a real choice or a wish.
+     */
+    private fun describeInventory(inventory: List<CodecSupport>): String? {
+        if (inventory.isEmpty()) return null
+        return "This device's video decoders:\n" +
+            inventory.joinToString(separator = "\n") { "• " + it.describe() }
     }
 
     private fun decoderSummary(choice: DecoderChoice): String =
-        "${choice.candidate.name} · ${choice.format.describe()}"
+        "${choice.candidate.name} · ${choice.format.describe()}" +
+            if (choice.candidate.hardwareAccelerated) " · hardware" else " · SOFTWARE"
+
+    /** The small print for a failure once a decoder had already been chosen. */
+    private fun failureDetail(choice: DecoderChoice): String = listOfNotNull(
+        "Selected decoder: " + decoderSummary(choice),
+        describeInventory(choice.inventory),
+    ).joinToString("\n\n")
 
     private companion object {
         /** Stats refresh period. UI spec §5.2 asks for 2 Hz, not per frame. */

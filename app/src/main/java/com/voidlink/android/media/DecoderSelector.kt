@@ -80,9 +80,19 @@ object DecoderSelector {
         val ladder = ladderFor(request.preferredCodec, hardware)
         val wantTenBit = request.hdr
 
-        // Rule 3: exhaust the hardware ladder before considering any software decoder.
+        // Rule 6, applied as a preference before rule 3's fallback: when HDR was asked for, a
+        // decoder that actually reports a 10-bit profile beats one further up the ladder that does
+        // not. Much of AV1's value here is 10-bit colour, and an 8-bit-only AV1 decoder delivers
+        // none of it.
         var usedSoftwareFallback = false
-        var chosen = ladder.firstNotNullOfOrNull { codec -> best(hardware, codec, wantTenBit) }
+        var chosen: DecoderCandidate? = null
+        if (wantTenBit) {
+            val tenBitCapable = hardware.filter { it.codec.tenBitCapable && it.supportsTenBit }
+            chosen = ladder.firstNotNullOfOrNull { codec -> best(tenBitCapable, codec, true) }
+        }
+        if (chosen == null) {
+            chosen = ladder.firstNotNullOfOrNull { codec -> best(hardware, codec, wantTenBit) }
+        }
         if (chosen == null) {
             chosen = ladder.firstNotNullOfOrNull { codec -> best(software, codec, wantTenBit) }
             usedSoftwareFallback = chosen != null

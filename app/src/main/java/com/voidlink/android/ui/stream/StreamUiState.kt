@@ -1,5 +1,6 @@
 package com.voidlink.android.ui.stream
 
+import com.voidlink.android.media.CodecSupport
 import com.voidlink.android.media.DecoderStats
 import com.voidlink.android.media.VideoStreamFormat
 
@@ -77,6 +78,11 @@ sealed interface StreamPhase {
  * @property stats latest decode metrics, refreshed at 2 Hz per UI spec §5.2.
  * @property showStats whether the stats chip is drawn, mirroring
  *   [com.voidlink.android.data.StreamSettings.showStatsOverlay].
+ * @property codecSupport what this device reported for AV1, HEVC and H.264 — whether a decoder
+ *   exists, whether it is hardware, its maximum resolution and frame rate, and whether it does
+ *   10-bit. Populated as soon as the probe runs, so it is available whether the session succeeds
+ *   or fails, and shown on the failure screen: a user picking a codec in Settings is guessing
+ *   unless they can see which of the three their hardware can actually decode.
  */
 data class StreamUiState(
     val appName: String? = null,
@@ -84,4 +90,5 @@ data class StreamUiState(
     val surfaceFormat: VideoStreamFormat? = null,
     val stats: DecoderStats = DecoderStats.EMPTY,
     val showStats: Boolean = false,
+    val codecSupport: List<CodecSupport> = emptyList(),
 )
