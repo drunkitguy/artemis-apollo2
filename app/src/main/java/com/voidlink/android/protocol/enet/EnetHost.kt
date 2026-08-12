@@ -236,6 +236,29 @@ class EnetHost(
         created.startConnect(clock.nowMs(), request.connectData)
     }
 
+    /**
+     * Drops a handshake whose caller has stopped waiting.
+     *
+     * Requests reach the loop in order, so an [Request.Abandon] queued by a timed-out `connect()`
+     * is always applied before any retry that caller makes — the peer is gone by the time the new
+     * CONNECT is built.
+     */
+    private fun applyAbandon(request: Request.Abandon) {
+        // complete() returns false when the handshake had already resolved this deferred: it landed
+        // in the window between the caller's deadline expiring and this request arriving. The
+        // connection is real and [state] says so, so it is left alone rather than torn down for
+        // losing a race by microseconds.
+        if (!request.result.complete(false)) return
+        if (connectResult === request.result) connectResult = null
+        val abandoned = peer ?: return
+        peer = null
+        _state.value = EnetPeerState.DISCONNECTED
+        ProtocolLog.w(
+            EnetControlConstants.TAG,
+            "abandoning the ENet handshake in state ${abandoned.state}: the caller's deadline passed",
+        )
+    }
+
     private fun applySend(request: Request.Send) {
         val current = peer
         if (current == null) {
@@ -415,6 +438,10 @@ class EnetHost(
         class Connect(
             val address: InetSocketAddress,
             val connectData: Int,
+            val result: CompletableDeferred<Boolean>,
+        ) : Request()
+
+        class Abandon(
             val result: CompletableDeferred<Boolean>,
         ) : Request()
 

@@ -10,6 +10,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.DatagramSocket
@@ -147,7 +148,11 @@ class EnetLoopbackTest {
                     timeoutMs = 1_500,
                 )
                 assertFalse("nothing is listening; the handshake must not report success", connected)
-                assertEquals(EnetPeerState.DISCONNECTED, client.state.value)
+                // The caller's deadline is the deadline: the abandoned peer must be gone, not left
+                // retransmitting for the rest of EnetConfig.connectTimeoutMs behind a caller who
+                // has moved on — and the host must be ready for another attempt.
+                withTimeout(TIMEOUT_MS) { client.state.first { it == EnetPeerState.DISCONNECTED } }
+                assertNull(client.peer)
             }
         } finally {
             client.close()
