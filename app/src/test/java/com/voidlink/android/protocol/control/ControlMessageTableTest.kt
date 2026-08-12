@@ -81,9 +81,26 @@ class ControlMessageTableTest {
     @Test
     fun `an unknown type maps to nothing, which is what makes it ignorable`() {
         // Spec §9.3: "v1: ignore unrecognized control message types".
-        assertNull(ControlMessageTable.GEN7.indexOf(0x5500))
         assertNull(ControlMessageTable.GEN7.indexOf(0x0000))
         assertNull(ControlMessageTable.GEN5.indexOf(0x0100))
+        assertNull(ControlMessageTable.GEN3.indexOf(0x5500))
+    }
+
+    @Test
+    fun `the Sunshine feedback extensions are recognised on an unencrypted Gen 7 host too`() {
+        // Spec §9.3's table lists these only in the encrypted column, but they are a Sunshine
+        // feature rather than an encryption feature, and v1 negotiates encryptionEnabled=0
+        // (spec §6.5) — so without them here, trigger rumble and the host's motion-report request
+        // would be discarded as unrecognised on every real Sunshine session.
+        assertEquals(
+            ControlMessageIndex.RUMBLE_TRIGGERS,
+            ControlMessageTable.GEN7.indexOf(0x5500),
+        )
+        assertEquals(
+            ControlMessageIndex.SET_MOTION_EVENT,
+            ControlMessageTable.GEN7.indexOf(0x5501),
+        )
+        assertEquals(0x5500, ControlMessageTable.GEN7.typeOf(ControlMessageIndex.RUMBLE_TRIGGERS))
     }
 
     @Test

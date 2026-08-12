@@ -229,30 +229,60 @@ class ControlStreamTest {
     }
 
     @Test
-    fun `a rumble payload long enough for the leading bytes is read from offset four`() = runTest {
+    fun `controller feedback is handed on unparsed, for the input layer to read`() = runTest {
+        // Rumble carries four leading bytes and rumble-triggers does not (spec §9.6 and
+        // protocol/input's HostFeedbackParser). Parsing them here as well as there would be one
+        // more place for that asymmetry to be tidied into a bug, so this layer only routes.
         val link = FakeControlLink()
         val stream = streamOf(link)
         stream.start(backgroundScope)
-        // Type 0x010b, four leading bytes, then controller 1, low 0x2211, high 0x4433.
         link.deliver(Hex.decodeOrNull("0b01" + "00000000" + "0100" + "1122" + "3344")!!)
 
-        val rumble = withTimeout(TIMEOUT_MS) { stream.events.receive() } as ControlEvent.Rumble
-        assertTrue(rumble.fromOffsetFour)
-        assertEquals(1, rumble.controllerNumber)
-        assertEquals(0x2211, rumble.lowFrequencyMotor)
-        assertEquals(0x4433, rumble.highFrequencyMotor)
+        val event = withTimeout(TIMEOUT_MS) { stream.events.receive() } as ControlEvent.HostFeedback
+        assertEquals(ControlMessageIndex.RUMBLE, event.message)
+        assertEquals("00000000010011223344", Hex.encode(event.payload))
     }
 
     @Test
-    fun `a short rumble payload is read from offset zero`() = runTest {
+    fun `the Sunshine feedback extensions route by their own slots`() = runTest {
         val link = FakeControlLink()
         val stream = streamOf(link)
         stream.start(backgroundScope)
-        link.deliver(Hex.decodeOrNull("0b01" + "0200" + "1122" + "3344")!!)
+        link.deliver(Hex.decodeOrNull("0055" + "010022334455")!!) // 0x5500 rumble triggers
+        link.deliver(Hex.decodeOrNull("0155" + "0100" + "3c00" + "01")!!) // 0x5501 motion state
 
-        val rumble = withTimeout(TIMEOUT_MS) { stream.events.receive() } as ControlEvent.Rumble
-        assertFalse(rumble.fromOffsetFour)
-        assertEquals(2, rumble.controllerNumber)
+        val triggers = withTimeout(TIMEOUT_MS) { stream.events.receive() } as ControlEvent.HostFeedback
+        assertEquals(ControlMessageIndex.RUMBLE_TRIGGERS, triggers.message)
+        val motion = withTimeout(TIMEOUT_MS) { stream.events.receive() } as ControlEvent.HostFeedback
+        assertEquals(ControlMessageIndex.SET_MOTION_EVENT, motion.message)
+    }
+
+    // ---- Input (spec §10.4) ------------------------------------------------------------------------
+
+    @Test
+    fun `an input payload is framed, urgent and reliable, and otherwise untouched`() {
+        val link = FakeControlLink()
+        val stream = streamOf(link)
+        val payload = requireNotNull(Hex.decodeOrNull("0000000cdeadbeefcafebabe"))
+
+        assertTrue(stream.sendInputPayload(payload))
+
+        val sent = link.sent.single()
+        // Type 0x0206 little-endian, then the payload byte for byte: no re-framing, no re-encryption.
+        assertEquals("0602" + "0000000cdeadbeefcafebabe", sent.hex())
+        assertEquals(EnetUnverifiedConstants.CHANNEL_URGENT, sent.channelId)
+        assertEquals(EnetDelivery.RELIABLE, sent.delivery)
+    }
+
+    @Test
+    fun `a host with no input message says so instead of sending nothing quietly`() {
+        val link = FakeControlLink()
+        val stream = streamOf(link, generation = 3)
+        assertFalse(stream.supportsInput())
+        assertFalse(stream.sendInputPayload(byteArrayOf(1, 2, 3)))
+        assertTrue(link.sent.isEmpty())
+
+        assertTrue(streamOf(FakeControlLink()).supportsInput())
     }
 
     @Test
@@ -260,10 +290,10 @@ class ControlStreamTest {
         val link = FakeControlLink()
         val stream = streamOf(link)
         stream.start(backgroundScope)
-        link.deliver(Hex.decodeOrNull("0055" + "0102")!!) // 0x5500, a Sunshine extension
+        link.deliver(Hex.decodeOrNull("9909" + "0102")!!) // 0x0999, in no column of §9.3's table
 
         val event = withTimeout(TIMEOUT_MS) { stream.events.receive() } as ControlEvent.Unrecognized
-        assertEquals(0x5500, event.type)
+        assertEquals(0x0999, event.type)
         assertEquals(2, event.payloadLength)
         assertEquals(1L, stream.stats().unrecognizedReceived)
         assertEquals(1L, stream.stats().messagesReceived)

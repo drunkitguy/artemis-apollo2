@@ -151,13 +151,25 @@ class ControlMessageTable private constructor(
             ),
         )
 
-        /** Spec §9.3, Gen 7 column — the primary target (spec §0.3). */
+        /**
+         * Spec §9.3, Gen 7 column — the primary target (spec §0.3).
+         *
+         * The Sunshine controller-feedback extensions (indices 9–12) are carried here as well as in
+         * [GEN7_ENCRYPTED], which spec §9.3's table does not show: the table lists them only in the
+         * encrypted column, but the extensions are a *Sunshine* feature rather than an *encryption*
+         * feature, and v1 negotiates `encryptionEnabled=0` (spec §6.5) — so with them absent here,
+         * trigger rumble and the host's motion-report request would arrive on every real Sunshine
+         * session and be discarded as unrecognised.
+         *
+         * Safe on GFE, which never sends `0x55xx`. See [GEN7_ENCRYPTED] for the UNVERIFIED note the
+         * four ids inherit.
+         */
         val GEN7: ControlMessageTable = ControlMessageTable(
             label = "Gen 7",
             generation = 7,
             types = intArrayOf(
                 0x0305, 0x0307, 0x0301, 0x0201, 0x0204,
-                0x0206, 0x010b, 0x0100, 0x010e, ABSENT, ABSENT, ABSENT, ABSENT,
+                0x0206, 0x010b, 0x0100, 0x010e, 0x5500, 0x5501, 0x5502, 0x5503,
             ),
         )
 

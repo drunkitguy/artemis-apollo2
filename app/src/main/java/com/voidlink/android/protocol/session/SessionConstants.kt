@@ -1,7 +1,5 @@
 package com.voidlink.android.protocol.session
 
-import com.voidlink.android.protocol.ProtocolLog
-
 /**
  * Every constant the session layer needs, from `docs/01-PROTOCOL.md` §7.5 and §11.1 and
  * `docs/02-ARCHITECTURE.md` §3 and §4.2.
@@ -97,21 +95,4 @@ object SessionConstants {
 
     /** ENet connect deadline (spec §9.1's `CONTROL_STREAM_TIMEOUT_SEC`). */
     const val CONTROL_CONNECT_TIMEOUT_MS: Long = 10_000L
-
-    /**
-     * Announces the session layer's one structural assumption, once per process.
-     *
-     * The audio stream is negotiated (RTSP SETUP audio happens, and the host will send Opus to a
-     * port nobody is listening on) but not received: `protocol/audio/` is a separate workstream. A
-     * host that requires the audio keep-alive to consider the session healthy would show this up as
-     * a session that starts and then stops, which is worth being able to look up.
-     */
-    fun announce() {
-        ProtocolLog.unverified(
-            TAG,
-            "session-no-audio-receiver",
-            "the audio stream is negotiated but not received in this build; only the video socket " +
-                "is opened and pinged (spec 01 §7.5, §8.1)",
-        )
-    }
 }

@@ -1,13 +1,23 @@
 package com.voidlink.android.protocol.session
 
 import com.voidlink.android.data.StreamSettings
+import com.voidlink.android.media.audio.AudioPipeline
+import com.voidlink.android.media.audio.AudioSessionStats
+import com.voidlink.android.media.audio.AudioSourceRequest
+import com.voidlink.android.media.audio.AudioSourceResult
+import com.voidlink.android.media.audio.AudioStreamFormat
 import com.voidlink.android.protocol.ProtocolLog
 import com.voidlink.android.protocol.control.ControlConstants
 import com.voidlink.android.protocol.control.ControlEvent
+import com.voidlink.android.protocol.control.ControlMessageIndex
 import com.voidlink.android.protocol.control.ControlMessageTable
 import com.voidlink.android.protocol.control.ControlStream
 import com.voidlink.android.protocol.control.ControlStreamStats
 import com.voidlink.android.protocol.http.NvHttpResult
+import com.voidlink.android.protocol.input.HostFeedbackParser
+import com.voidlink.android.protocol.input.InputConnection
+import com.voidlink.android.protocol.input.InputPipeline
+import com.voidlink.android.protocol.input.InputProfile
 import com.voidlink.android.protocol.rtp.FrameAssemblerConfig
 import com.voidlink.android.protocol.rtp.VideoBitstream
 import com.voidlink.android.protocol.rtp.VideoFrame
@@ -87,6 +97,18 @@ class ActiveStreamSession internal constructor(
     /** Control-stream counters for the stats overlay. */
     fun controlStats(): ControlStreamStats? = owner.controlStats()
 
+    /**
+     * Audio counters for the stats overlay, or `null` when this session has no audio.
+     *
+     * A `null` is an ordinary outcome, not an error: audio is the one part of a session that is
+     * allowed to be missing (see [StreamSession.openAudio]).
+     */
+    fun audioStats(): AudioSessionStats? = owner.audioStats()
+
+    /** What audio is playing, or `null` when there is none. */
+    val audioFormat: AudioStreamFormat?
+        get() = owner.audioFormat
+
     /** Why the stream ended, when it ended on its own rather than being stopped. */
     val endReason: SessionFailure?
         get() = owner.endReason
@@ -115,8 +137,10 @@ class ActiveStreamSession internal constructor(
  * 3. **RTSP**, which turns a launched session into ports, a session id, ping payloads and the ENet
  *    connect datum (spec §6.3).
  * 4. **Control**, which must come up before video: it is where the IDR requests that recover the
- *    first frames go (spec §9.4).
- * 5. **Video**, whose keep-alive is what makes the host send anything at all (spec §7.5).
+ *    first frames go (spec §9.4). **Input attaches here**, as soon as there is a transport to carry
+ *    it — a key pressed during the connect animation should arrive.
+ * 5. **Video**, whose keep-alive is what makes the host send anything at all (spec §7.5), and then
+ *    **audio**, which is allowed to fail and never fails the session (spec §8).
  * 6. **The first-frame watchdog**, which converts a stall into one of two specific sentences
  *    instead of a spinner that never stops (spec §11.1).
  *
@@ -158,6 +182,8 @@ class StreamSession(
     private var controlChannel: ControlChannel? = null
     private var controlJob: Job? = null
     private var video: VideoChannel? = null
+    private var audio: AudioSourceResult.Ready? = null
+    private var inputAttached: Boolean = false
     private var output: Channel<VideoFrame>? = null
 
     /** Why the stream ended on its own, when it did. Read by the caller after the channel closes. */
@@ -167,6 +193,13 @@ class StreamSession(
 
     /** Control-stream counters, or `null` before the control stream is up. */
     fun controlStats(): ControlStreamStats? = control?.stats()
+
+    /** Audio counters, or `null` when this session has no audio. */
+    fun audioStats(): AudioSessionStats? = audio?.stats?.invoke()
+
+    /** What audio is playing, or `null` when there is none. */
+    val audioFormat: AudioStreamFormat?
+        get() = audio?.format
 
     /**
      * Runs the whole start-up sequence.
@@ -178,7 +211,6 @@ class StreamSession(
      * everything opened so far, rather than being reported as a failure the user should read.
      */
     suspend fun start(request: StreamSessionRequest): StreamSessionResult {
-        SessionConstants.announce()
         return try {
             runStart(request)
         } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
@@ -281,8 +313,9 @@ class StreamSession(
         )
         control = stream
         controlJob = stream.start(scope)
+        attachInput(stream, profile, parameters)
 
-        // ---- (5) Video socket and keep-alive (spec §7.5) ----------------------------------------
+        // ---- (5) Video and audio sockets, and their keep-alives (spec §7.5, §8.1) ---------------
         val receiver = try {
             videoChannels.open(
                 VideoChannelSpec(
@@ -302,6 +335,7 @@ class StreamSession(
         video = receiver
         scope.launch { pumpVideoEvents(receiver, stream) }
         scope.launch { pumpControlEvents(stream) }
+        openAudio(session, parameters)
 
         // ---- (6) First-frame watchdog (spec §11.1, architecture §4.2) ---------------------------
         val first = awaitFirstFrame(receiver, session.videoPort)
@@ -323,11 +357,13 @@ class StreamSession(
     /**
      * Tears everything down in the order spec §9.7 mandates, and only once.
      *
-     * 1. Stop sending input (nothing to stop in this build).
+     * 1. Stop sending input — [InputPipeline.detach], which releases every held key, button and
+     *    touch *through the still-live control stream*. Skipping it leaves the host with a stuck
+     *    key after every disconnect, which is why it is step one and not an afterthought.
      * 2. Termination message, then ENet DISCONNECT with a 2 s linger.
      * 3. Close the ENet socket and stop its service loop.
-     * 4. Close the video socket and stop the receive and ping threads.
-     * 5. The decoder is the caller's to release.
+     * 4. Close the audio stream, then the video socket and its receive and ping threads.
+     * 5. The video decoder is the caller's to release.
      *
      * Runs [NonCancellable] because it is called from `finally` blocks that may already be
      * cancelled, and a teardown that gives up halfway leaves the host holding a live session.
@@ -335,6 +371,7 @@ class StreamSession(
     suspend fun stop() {
         if (!stopped.compareAndSet(false, true)) return
         withContext(NonCancellable) {
+            detachInput()
             val stream = control
             if (stream != null) {
                 val acknowledged = stream.terminate()
@@ -358,14 +395,18 @@ class StreamSession(
      * Separate from [stop] because the failure and cancellation paths must release exactly the same
      * things without first trying to disconnect a peer that may never have connected.
      */
-    private fun releaseResources() {
-        // The ping loop and the inbound pump go first: they write to the link, and cancelling them
+    private suspend fun releaseResources() {
+        // Input first, for the reason spec §9.7 puts it first: its release packets travel over the
+        // control stream, which is about to go.
+        detachInput()
+        // The ping loop and the inbound pump go next: they write to the link, and cancelling them
         // after the socket is gone means one last send into a closed transport on every teardown.
         controlJob?.cancel()
         controlJob = null
         runCatching { controlChannel?.close?.invoke() }
             .onFailure { ProtocolLog.w(SessionConstants.TAG, "ENet close failed: ${it.message}") }
         controlChannel = null
+        closeAudio()
         runCatching { video?.close() }
             .onFailure { ProtocolLog.w(SessionConstants.TAG, "video close failed: ${it.message}") }
         video = null
@@ -381,13 +422,168 @@ class StreamSession(
      * failed `start()` never receives a handle it could call [stop] on. Without this the session
      * keeps pinging a host it has given up on for the life of the process.
      */
-    private fun failed(failure: SessionFailure): StreamSessionResult.Failed {
+    private suspend fun failed(failure: SessionFailure): StreamSessionResult.Failed {
         ProtocolLog.w(SessionConstants.TAG, "session failed: ${failure.describe()}")
         releaseResources()
         control?.close()
         control = null
         scope.cancel()
         return StreamSessionResult.Failed(failure)
+    }
+
+    /**
+     * Hands one controller-feedback message to the input layer (spec §9.6, §10.3).
+     *
+     * Parsed by `protocol/input`'s `HostFeedbackParser` rather than here, because the three payloads
+     * disagree with each other in ways that are easy to normalise into a bug: rumble carries four
+     * leading bytes and rumble-triggers does not, and the motion-state message's fields are not in
+     * the order spec §10.3 lists them in. One parser, one place to fix, one set of tests.
+     */
+    private fun publishFeedback(event: ControlEvent.HostFeedback) {
+        val feedback = when (event.message) {
+            ControlMessageIndex.RUMBLE -> HostFeedbackParser.rumble(event.payload)
+            ControlMessageIndex.RUMBLE_TRIGGERS -> HostFeedbackParser.rumbleTriggers(event.payload)
+            ControlMessageIndex.SET_MOTION_EVENT ->
+                HostFeedbackParser.setMotionEventState(event.payload)
+            else -> null
+        }
+        if (feedback == null) {
+            ProtocolLog.w(
+                SessionConstants.TAG,
+                "discarding an unreadable ${event.message.label} payload of " +
+                    "${event.payload.size} bytes",
+            )
+            return
+        }
+        InputPipeline.publish(feedback)
+    }
+
+    // ---- Audio (spec §8) -------------------------------------------------------------------------
+
+    /**
+     * Starts audio, and shrugs if it cannot (spec §8.1, §8.5).
+     *
+     * **Audio can never fail a session.** A stream with no sound is far better than no stream, so
+     * every outcome here is either a running audio stream or a log line — the failure
+     * classification of [SessionFailure] is deliberately not reachable from this method. The factory
+     * is documented never to throw; it is called inside a `try` anyway, because "documented never
+     * to throw" is not a property this state machine should stake a session on.
+     *
+     * Opened before the first-frame watchdog rather than after, so the audio keep-alive of spec §7.5
+     * starts punching its own pinhole during the ten seconds we may spend waiting for video.
+     *
+     * Everything RTSP negotiated is passed straight through. In particular
+     * [com.voidlink.android.protocol.rtsp.OpusMultistreamConfig.mapping] is handed over **as it
+     * came**: spec §8.3's channel-order fix-up is applied once, while parsing the DESCRIBE body, and
+     * applying it a second time here would move LFE again and put centre-channel dialogue in a
+     * surround speaker — a fault that is inaudible in a log and obvious in a game.
+     */
+    private suspend fun openAudio(session: NegotiatedSession, parameters: SessionParameters) {
+        val opus = session.opusConfig
+        val result = try {
+            AudioPipeline.audioSourceFactory.open(
+                AudioSourceRequest(
+                    host = session.host,
+                    port = session.audioPort,
+                    pingPayload = session.audioPingPayload,
+                    channelCount = opus.channelCount,
+                    streams = opus.streams,
+                    coupledStreams = opus.coupledStreams,
+                    mapping = opus.mapping,
+                    sampleRateHz = opus.sampleRateHz,
+                    packetDurationMs = parameters.configuration.audioPacketDurationMs,
+                    audioEncryptionNegotiated =
+                        session.encryptionFlags and UnverifiedRtspConstants.SS_ENC_AUDIO != 0,
+                ),
+            )
+        } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+            throw cancellation
+        } catch (failure: Throwable) {
+            ProtocolLog.w(SessionConstants.TAG, "opening audio threw; continuing without it", failure)
+            return
+        }
+        when (result) {
+            is AudioSourceResult.Ready -> {
+                audio = result
+                ProtocolLog.i(
+                    SessionConstants.TAG,
+                    "audio playing on port ${session.audioPort}: ${result.format.describe()}",
+                )
+            }
+
+            is AudioSourceResult.Unavailable -> ProtocolLog.w(
+                SessionConstants.TAG,
+                "no audio (${result.summary})" + (result.detail?.let { " — $it" } ?: ""),
+            )
+        }
+    }
+
+    /**
+     * Stops audio, on whatever path teardown took.
+     *
+     * Runs [NonCancellable] because the codec and the socket must be released even when the caller
+     * is already cancelled, and because a second failure here must not mask the first.
+     */
+    private suspend fun closeAudio() {
+        val playing = audio ?: return
+        audio = null
+        withContext(NonCancellable) {
+            runCatching { playing.onClose.invoke() }
+                .onFailure { ProtocolLog.w(SessionConstants.TAG, "audio close failed: ${it.message}") }
+        }
+    }
+
+    // ---- Input (spec §10) ------------------------------------------------------------------------
+
+    /**
+     * Publishes the live input connection (spec §10.1, §10.4).
+     *
+     * Attached as soon as the control stream is up and before video is expected: a user pressing a
+     * key during the connect animation should have it arrive, and the host is already listening.
+     *
+     * The division of labour is the one `protocol/input`'s `InputPacketTransport` describes.
+     * Encryption, IV chaining and batching are the input layer's — it owns the riKey semantics and
+     * the runtime switches over the parts of spec §10 it found to be wrong. Framing, channel and
+     * delivery are ours: the payload arrives complete and goes out as an `INPUT_DATA` message on the
+     * urgent channel, reliably, unread and unmodified.
+     */
+    private fun attachInput(
+        stream: ControlStream,
+        profile: RtspHostProfile,
+        parameters: SessionParameters,
+    ) {
+        if (stream.supportsInput()) {
+            InputPipeline.attach(
+                InputConnection(
+                    remoteInputKey = parameters.remoteInputKey.key,
+                    remoteInputKeyId = parameters.remoteInputKey.keyId,
+                    profile = InputProfile(
+                        generation = profile.generation,
+                        isSunshine = profile.isSunshineish,
+                        // v1 announces encryptionEnabled=0 (spec §6.5), so the control stream this
+                        // session built is plaintext; the input layer needs to know because the
+                        // message type it is framed with differs per column of spec §9.3's table.
+                        controlStreamEncrypted = false,
+                    ),
+                    transport = { payload -> stream.sendInputPayload(payload) },
+                ),
+            )
+            inputAttached = true
+        } else {
+            ProtocolLog.w(
+                SessionConstants.TAG,
+                "this host has no control-stream input message (generation " +
+                    "${profile.generation}, spec §9.3); the session will stream but not accept input",
+            )
+        }
+    }
+
+    /** Releases held keys, buttons and touches, then disconnects the sink (spec §9.7 step 1). */
+    private fun detachInput() {
+        if (!inputAttached) return
+        inputAttached = false
+        runCatching { InputPipeline.detach() }
+            .onFailure { ProtocolLog.w(SessionConstants.TAG, "detaching input failed: ${it.message}") }
     }
 
     // ---- Watchdog -------------------------------------------------------------------------------
@@ -496,9 +692,19 @@ class StreamSession(
         }
     }
 
-    /** Acts on what the host tells us (spec §9.6). */
+    /**
+     * Acts on what the host tells us (spec §9.6).
+     *
+     * Two kinds of message reach here. Controller feedback is forwarded to the input layer, which
+     * owns both the parsers and the motors; a termination ends the session. Everything else was
+     * already logged and counted by [ControlStream].
+     */
     private suspend fun pumpControlEvents(stream: ControlStream) {
         for (event in stream.events) {
+            if (event is ControlEvent.HostFeedback) {
+                publishFeedback(event)
+                continue
+            }
             if (event !is ControlEvent.Terminated) continue
             val failure = SessionFailure.HostTerminated(
                 errorCode = event.errorCode,

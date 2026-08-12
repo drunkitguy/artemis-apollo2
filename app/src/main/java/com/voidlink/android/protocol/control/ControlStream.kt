@@ -56,16 +56,20 @@ sealed interface ControlEvent {
     class HdrModeChanged(val enabled: Boolean, val payload: ByteArray) : ControlEvent
 
     /**
-     * A rumble command (spec §9.6).
+     * A controller-feedback message, handed on **unparsed** (spec §9.6, §9.3 indices 6, 9, 10).
      *
-     * @property fromOffsetFour true when the three fields were read from offset 4 rather than 0 —
-     *   the branch spec §9.6 says to log, because which one fires is how we learn the real layout.
+     * Rumble, trigger rumble and the motion-report request all belong to the input layer, and
+     * `protocol/input`'s `HostFeedbackParser` already reads all three — including the asymmetry that
+     * makes this worth not duplicating: rumble carries four leading bytes and rumble-triggers does
+     * not, despite being neighbouring messages. Parsing them a second time here would be one more
+     * place for that asymmetry to be "cleaned up" into a bug.
+     *
+     * @property message which slot of spec §9.3's table it arrived in.
+     * @property payload the message body, owned by the receiver.
      */
-    class Rumble(
-        val controllerNumber: Int,
-        val lowFrequencyMotor: Int,
-        val highFrequencyMotor: Int,
-        val fromOffsetFour: Boolean,
+    class HostFeedback(
+        val message: ControlMessageIndex,
+        val payload: ByteArray,
     ) : ControlEvent
 
     /** A message this build does not act on. Carried so the session can count and log it. */
@@ -290,6 +294,31 @@ class ControlStream(
     }
 
     /**
+     * Sends one already-built input payload (spec §10, §10.4).
+     *
+     * The seam `protocol/input`'s `InputPacketTransport` fills: the payload arrives complete —
+     * big-endian length prefix, tag and ciphertext — and is framed with the control header and put
+     * on the **urgent** channel, reliably. Nothing here reads, re-frames or re-encrypts it;
+     * encryption and IV chaining are the input layer's, framing and delivery are ours.
+     *
+     * @return false when this host has no input message at all (Gen 3/4, spec §9.3), or when the
+     *   transport refused it. A single lost input packet is a dropped keystroke, not a dead session.
+     */
+    /**
+     * Whether this host has an input message at all (spec §9.3).
+     *
+     * False on Gen 3/4, whose input travelled over the legacy TCP control stream this client does
+     * not implement — a session there streams video and accepts no input, which is worth saying out
+     * loud rather than discovering one keystroke at a time.
+     */
+    fun supportsInput(): Boolean = table.typeOf(ControlMessageIndex.INPUT_DATA) != null
+
+    fun sendInputPayload(payload: ByteArray): Boolean {
+        val type = table.typeOf(ControlMessageIndex.INPUT_DATA) ?: return false
+        return send(type, payload, urgent = true, EnetDelivery.RELIABLE)
+    }
+
+    /**
      * Tells the host we are done, in spec §9.7's order.
      *
      * 1. Termination message on the urgent channel — see
@@ -410,7 +439,17 @@ class ControlStream(
                 _events.trySend(ControlEvent.HdrModeChanged(enabled, message.payload))
             }
 
-            ControlMessageIndex.RUMBLE -> parseRumble(message.payload)?.let { _events.trySend(it) }
+            ControlMessageIndex.RUMBLE,
+            ControlMessageIndex.RUMBLE_TRIGGERS,
+            ControlMessageIndex.SET_MOTION_EVENT,
+            -> {
+                val index = requireNotNull(table.indexOf(message.type))
+                ProtocolLog.d(
+                    ControlConstants.TAG,
+                    "host feedback ${index.label}: ${ControlFraming.describe(message.payload)}",
+                )
+                _events.trySend(ControlEvent.HostFeedback(index, message.payload))
+            }
 
             else -> {
                 unrecognizedCount.incrementAndGet()
@@ -422,39 +461,6 @@ class ControlStream(
                 _events.trySend(ControlEvent.Unrecognized(message.type, message.payload.size))
             }
         }
-    }
-
-    /**
-     * Reads a rumble payload, applying spec §9.6's explicit rule for its UNVERIFIED layout.
-     *
-     * "if `payloadLength >= 4 + 6`, read the three uint16s from offset 4 (little-endian); otherwise
-     * read them from offset 0. Log which branch fired." The log line is the point: it is how a
-     * single session against real hardware settles the layout.
-     */
-    private fun parseRumble(payload: ByteArray): ControlEvent.Rumble? {
-        val leading = ControlConstants.RUMBLE_LEADING_BYTES
-        val fields = ControlConstants.RUMBLE_FIELD_BYTES
-        val offset = if (payload.size >= leading + fields) leading else 0
-        if (payload.size < offset + fields) {
-            ProtocolLog.w(
-                ControlConstants.TAG,
-                "discarding a ${payload.size}-byte rumble payload: too short for three uint16s",
-            )
-            return null
-        }
-        ProtocolLog.unverified(
-            ControlConstants.TAG,
-            "control-rumble-offset",
-            "reading rumble fields from offset $offset of a ${payload.size}-byte payload " +
-                "(spec 01 §9.6 marks the layout UNVERIFIED and prescribes exactly this branch)",
-        )
-        val buffer = ByteBuffer.wrap(payload, offset, fields).order(ByteOrder.LITTLE_ENDIAN)
-        return ControlEvent.Rumble(
-            controllerNumber = buffer.short.toInt() and 0xFFFF,
-            lowFrequencyMotor = buffer.short.toInt() and 0xFFFF,
-            highFrequencyMotor = buffer.short.toInt() and 0xFFFF,
-            fromOffsetFour = offset == leading,
-        )
     }
 
     // ---- Sending -------------------------------------------------------------------------------
