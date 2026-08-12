@@ -13,8 +13,30 @@ browser and the collapsible settings sidebar — brought to Android idioms.
 
 ## Status
 
-Early development. See [`docs/04-ROADMAP.md`](docs/04-ROADMAP.md) for what works today and
-what is still missing — that document is kept honest about which pieces are incomplete.
+Early development. **It does not stream video yet.** Being precise about that:
+
+| Area | State |
+| --- | --- |
+| Host discovery (mDNS) and manual host entry | Implemented |
+| Host reachability probing, online/offline/checking | Implemented |
+| Pairing with PIN (five-phase handshake, pinned TLS, client certificate) | Implemented |
+| App list and box art | Implemented |
+| Launch / resume / quit requests | Implemented |
+| Wake-on-LAN | Implemented |
+| Hosts, app grid and settings UI | Implemented |
+| Per-host setting overrides and favourites | Implemented |
+| RTSP negotiation, ENet control, RTP video/audio, FEC | **Not built** |
+| Video decode, audio playback, input forwarding | **Not built** |
+
+Everything above the line is written from scratch against the protocol
+specification in [`docs/01-PROTOCOL.md`](docs/01-PROTOCOL.md) and covered by unit tests,
+but none of it has been run against a real host from this project's build environment — see
+the verification note in [`docs/04-ROADMAP.md`](docs/04-ROADMAP.md), which labels every
+milestone as CI-verifiable or user-verifiable.
+
+Assumptions taken from areas of the protocol that could not be verified are collected in
+`UnverifiedProtocolConstants` and logged once per process, so a single run against real
+hardware produces a checklist of what to confirm.
 
 ## Building
 
