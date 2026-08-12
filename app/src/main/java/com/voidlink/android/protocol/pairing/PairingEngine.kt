@@ -58,6 +58,19 @@ sealed interface PairProgress {
     class Phase(val phase: Int) : PairProgress
 
     /**
+     * The host has accepted us and we are confirming it over client-certificate TLS.
+     *
+     * Emitted only after phase 4 has returned `<paired>1</paired>`, which is the point of no
+     * return: the PC has recorded this device and nothing the user does from here will undo that.
+     * The UI needs to know, because this stretch can take tens of seconds on a host whose
+     * `pairchallenge` goes quiet, and a progress bar with no words behind it reads as a hang.
+     *
+     * @property attempt 1-based index of the confirmation attempt now running.
+     * @property totalAttempts how many will be tried before giving up.
+     */
+    class Verifying(val attempt: Int, val totalAttempts: Int) : PairProgress
+
+    /**
      * The attempt finished.
      *
      * @property result the outcome.
