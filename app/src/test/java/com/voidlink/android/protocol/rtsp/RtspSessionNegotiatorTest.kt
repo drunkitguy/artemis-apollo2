@@ -112,6 +112,7 @@ class RtspSessionNegotiatorTest {
         assertEquals(1392, session.packetSize)
         assertEquals(0, session.encryptionFlags)
         assertEquals(20_000, session.bitrateKbps)
+        assertEquals(20_000, session.configuredBitrateKbps)
         assertEquals(AudioChannelLayout.STEREO, session.audioLayout)
         assertFalse(session.audioLayoutDowngraded)
         assertArrayEquals(intArrayOf(0, 1), session.opusConfig.mapping)
@@ -131,6 +132,26 @@ class RtspSessionNegotiatorTest {
             headerOf(announce, RtspConstants.HEADER_CONTENT_LENGTH),
         )
         assertEquals(SdpGoldens.SDP_1080P60_H264_STEREO_SUNSHINE, session(result).announcedSdp)
+    }
+
+    @Test
+    fun `the ANNOUNCE that actually goes on the wire carries the raw configured bitrate`() {
+        // Belt and braces over the golden: omitting this attribute makes Apollo encode at ~0.64x,
+        // and the symptom is invisible (docs/05-DYNAMIC-BITRATE.md §1.3).
+        val transport = FakeRtspTransport(responder = successResponder())
+        val result = negotiate(
+            transport,
+            configuration = SdpGoldens.config1080p60H264Stereo()
+                .copy(bitrateKbps = 16_000, configuredBitrateKbps = 20_000),
+        )
+
+        val announce = transport.requests.first { it.method == RtspConstants.METHOD_ANNOUNCE }
+        val body = announce.body
+        assertNotNull(body)
+        assertTrue(body!!.contains("a=x-ml-video.configuredBitrateKbps:20000\r\n"))
+        assertTrue(body.contains("a=x-nv-vqos[0].bw.maximumBitrateKbps:16000\r\n"))
+        assertEquals(20_000, session(result).configuredBitrateKbps)
+        assertEquals(16_000, session(result).bitrateKbps)
     }
 
     @Test

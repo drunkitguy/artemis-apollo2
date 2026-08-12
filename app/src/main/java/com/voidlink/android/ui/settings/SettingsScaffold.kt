@@ -148,6 +148,8 @@ fun SettingsScaffold(
                             overrideHostName = overrideHostName,
                             onEditGlobal = onEditGlobal,
                             onToggleFavorite = onToggleFavorite,
+                            testTargetName = testTargetName,
+                            onTestConnection = onTestConnection,
                         )
                     }
                 }

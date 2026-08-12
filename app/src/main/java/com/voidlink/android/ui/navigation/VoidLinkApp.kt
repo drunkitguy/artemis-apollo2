@@ -19,8 +19,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.voidlink.android.data.HostApp
 import com.voidlink.android.data.KnownHost
+import com.voidlink.android.data.StreamSettings
 import com.voidlink.android.ui.apps.AppsScreen
 import com.voidlink.android.ui.apps.AppsViewModel
+import com.voidlink.android.ui.diagnostics.ConnectionTestRoute
 import com.voidlink.android.ui.hosts.HostAction
 import com.voidlink.android.ui.hosts.HostsScreen
 import com.voidlink.android.ui.hosts.HostsViewModel
@@ -54,6 +56,12 @@ fun VoidLinkApp(
     var overrideHostId by rememberSaveable { mutableStateOf<String?>(null) }
     val overrideHost = hosts.firstOrNull { it.uuid == overrideHostId }
 
+    // The host whose link is being measured, or null when the connection test is closed. Held here
+    // rather than inside a screen because the test is reachable from two places — a host card's
+    // menu and the Video settings section — and both should land on the same overlay.
+    var connectionTestHostId by rememberSaveable { mutableStateOf<String?>(null) }
+    val connectionTestHost = hosts.firstOrNull { it.uuid == connectionTestHostId }
+
     // A host with no override yet is shown the global values; the first edit seeds an override
     // from them, so the panel never lies about what the host will actually stream with.
     //
@@ -63,6 +71,18 @@ fun VoidLinkApp(
     val shownSettings = overrideHost?.settingsOverride
         ?.copy(favoriteRowIds = settings.favoriteRowIds)
         ?: settings
+
+    // One place that decides which settings scope an edit lands in, shared by the panel's rows and
+    // by the connection test's Apply button. Two copies of this decision would be two chances for
+    // Apply to write somewhere the user was not looking.
+    val applyUpdate: ((StreamSettings) -> StreamSettings) -> Unit = { transform ->
+        val host = overrideHost
+        if (host == null) {
+            settingsViewModel.update(transform)
+        } else {
+            settingsViewModel.updateHostOverride(host.uuid, transform)
+        }
+    }
 
     Box(
         modifier = modifier
@@ -74,14 +94,7 @@ fun VoidLinkApp(
             sidebarOpen = sidebarOpen,
             onDismissSidebar = { sidebarOpen = false },
             settings = shownSettings,
-            onUpdate = { transform ->
-                val host = overrideHost
-                if (host == null) {
-                    settingsViewModel.update(transform)
-                } else {
-                    settingsViewModel.updateHostOverride(host.uuid, transform)
-                }
-            },
+            onUpdate = applyUpdate,
             onResetDefaults = {
                 val host = overrideHost
                 if (host == null) {
@@ -93,6 +106,10 @@ fun VoidLinkApp(
             overrideHostName = overrideHost?.name,
             onEditGlobal = { overrideHostId = null },
             onToggleFavorite = settingsViewModel::toggleFavoriteRow,
+            // The test needs a specific PC. The panel knows one only while it is scoped to a host;
+            // in the global scope the row stays visible but disabled, and its info text says so.
+            testTargetName = overrideHost?.name,
+            onTestConnection = { connectionTestHostId = overrideHostId },
         ) {
             NavHost(
                 navController = navController,
@@ -114,6 +131,7 @@ fun VoidLinkApp(
                             overrideHostId = host.uuid
                             sidebarOpen = true
                         },
+                        onTestConnection = { host -> connectionTestHostId = host.uuid },
                     )
                 }
                 composable(

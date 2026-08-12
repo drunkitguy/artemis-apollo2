@@ -84,6 +84,7 @@ private val HostCardMinWidth = 320.dp
  * @param onUnpair unpair was chosen from a card's context menu.
  * @param onWake wake was chosen from a card's context menu.
  * @param onHostSettings per-host settings was chosen from a card's context menu.
+ * @param onTestConnection measure the link to this host was chosen from a card's context menu.
  * @param onDismissPairing abandons pairing; must cancel the handshake, not just hide the dialog.
  * @param onRetryPairing starts a fresh attempt after a failed one.
  * @param onMessageShown clears the transient message once displayed.
@@ -101,6 +102,7 @@ fun HostsScreen(
     onUnpair: (KnownHost) -> Unit,
     onWake: (KnownHost) -> Unit,
     onHostSettings: (KnownHost) -> Unit,
+    onTestConnection: (KnownHost) -> Unit,
     onDismissPairing: () -> Unit,
     onRetryPairing: () -> Unit,
     onMessageShown: () -> Unit,
@@ -186,6 +188,7 @@ fun HostsScreen(
                         onUnpair = { onUnpair(card.host) },
                         onWake = { onWake(card.host) },
                         onSettings = { onHostSettings(card.host) },
+                        onTestConnection = { onTestConnection(card.host) },
                     )
                 }
                 if (state.isEmpty) {
@@ -267,6 +270,7 @@ fun HostsScreen(
  * @param onUnpair context menu: unpair.
  * @param onWake context menu: wake.
  * @param onSettings context menu: per-host settings.
+ * @param onTestConnection context menu: measure the link to this host.
  * @param modifier layout modifier.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -279,6 +283,7 @@ fun HostCard(
     onUnpair: () -> Unit,
     onWake: () -> Unit,
     onSettings: () -> Unit,
+    onTestConnection: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VoidLinkTheme.colors
@@ -385,6 +390,10 @@ fun HostCard(
             expanded = menuOpen,
             onDismissRequest = { menuOpen = false },
         ) {
+            HostMenuItem("Test Connection", VoidLinkIcons.LinkTest) {
+                menuOpen = false
+                onTestConnection()
+            }
             HostMenuItem("Wake", VoidLinkIcons.Power) { menuOpen = false; onWake() }
             HostMenuItem("Unpair", VoidLinkIcons.Locked) { menuOpen = false; onUnpair() }
             HostMenuItem("Rename", VoidLinkIcons.Rename) { menuOpen = false; onRename() }
@@ -951,6 +960,7 @@ private fun HostsScreenPreviewContent() {
         onUnpair = {},
         onWake = {},
         onHostSettings = {},
+        onTestConnection = {},
         onDismissPairing = {},
         onRetryPairing = {},
         onMessageShown = {},
