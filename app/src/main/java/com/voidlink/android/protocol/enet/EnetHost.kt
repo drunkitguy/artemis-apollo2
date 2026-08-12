@@ -135,8 +135,11 @@ class EnetHost(
      * @param address the control endpoint — `server_port=` from `SETUP streamid=control`, or 47999.
      * @param connectData the 32-bit `X-SS-Connect-Data` value from the RTSP SETUP response
      *   (spec §6.3), or 0 when the host did not send one.
-     * @param timeoutMs how long to wait. Spec §9.1: `CONTROL_STREAM_TIMEOUT_SEC`, 10 s.
-     * @return true when the peer reached [EnetPeerState.CONNECTED].
+     * @param timeoutMs how long to wait. Spec §9.1: `CONTROL_STREAM_TIMEOUT_SEC`, 10 s. This is the
+     *   deadline that counts: when it expires the attempt is abandoned outright, rather than left
+     *   retransmitting into the dark behind a caller who has already given up.
+     * @return true when the peer reached [EnetPeerState.CONNECTED]. On false the host is back to
+     *   [EnetPeerState.DISCONNECTED] and ready for another attempt.
      */
     suspend fun connect(
         address: InetSocketAddress,
@@ -146,7 +149,12 @@ class EnetHost(
         EnetUnverifiedConstants.announce()
         val result = CompletableDeferred<Boolean>()
         if (requests.trySend(Request.Connect(address, connectData, result)).isFailure) return false
-        return withTimeoutOrNull(timeoutMs) { result.await() } ?: false
+        if (withTimeoutOrNull(timeoutMs) { result.await() } == true) return true
+        // The caller's deadline has passed, so the peer must go. Leaving it in CONNECTING would
+        // keep it retransmitting for the remainder of EnetConfig.connectTimeoutMs and — worse —
+        // make the next connect() bounce off a peer nobody is waiting on any more.
+        requests.trySend(Request.Abandon(result))
+        return false
     }
 
     /**
@@ -205,6 +213,7 @@ class EnetHost(
             val request = requests.tryReceive().getOrNull() ?: return
             when (request) {
                 is Request.Connect -> applyConnect(request)
+                is Request.Abandon -> applyAbandon(request)
                 is Request.Send -> applySend(request)
                 is Request.Disconnect -> applyDisconnect(request)
             }
