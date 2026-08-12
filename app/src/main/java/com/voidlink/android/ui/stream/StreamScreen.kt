@@ -19,6 +19,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,13 +31,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.voidlink.android.data.GestureAction
 
 /**
  * The in-stream screen: video underneath, chrome on top, and never a bare black window.
  *
- * Layer order follows UI spec §5.1 — the `SurfaceView` at the bottom, overlay chrome above it.
- * Touch input, on-screen controls and the settings drawer (z1–z4) are other tasks' work and slot
- * in between; this file owns z0 and z3.
+ * Layer order follows UI spec §5.1 — the `SurfaceView` at z0, the input surface at z1, overlay
+ * chrome at z3. On-screen controls (z2) and the settings drawer (z4) are other tasks' work and slot
+ * in between.
  *
  * The one rule the whole screen is built around: **every state draws something legible.** A
  * fullscreen black window with no text is indistinguishable from a crash, and shipping one is the
@@ -44,7 +49,7 @@ import androidx.compose.ui.unit.sp
  * @param onSurfaceAvailable forwarded to [VideoSurface].
  * @param onSurfaceDestroyed forwarded to [VideoSurface]; must release the decoder synchronously.
  * @param onDismissStats called when the stats chip is tapped.
- * @param onExit called by the failure state's button.
+ * @param onExit called by the failure state's button, and by a confirmed disconnect gesture.
  */
 @Composable
 fun StreamScreen(
@@ -55,6 +60,7 @@ fun StreamScreen(
     onExit: () -> Unit,
 ) {
     val format = state.surfaceFormat
+    var confirmDisconnect by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -69,6 +75,25 @@ fun StreamScreen(
                 streamHeight = format.height,
                 onSurfaceAvailable = onSurfaceAvailable,
                 onSurfaceDestroyed = onSurfaceDestroyed,
+            )
+        }
+
+        // z1 — the input surface. Mounted with the video rather than with the "streaming" phase:
+        // the session attaches its input transport as soon as the control stream is up, which is
+        // before the first frame has decoded, and a user who starts moving the mouse then should
+        // move the host's cursor.
+        val settings = state.settings
+        if (format != null && settings != null && state.phase !is StreamPhase.Failed) {
+            StreamInputSurface(
+                format = format,
+                settings = settings,
+                onGestureAction = { action ->
+                    // UI spec §5.4: leaving the stream "shows the disconnect confirmation rather
+                    // than acting immediately". The other actions belong to UI layers that are not
+                    // built yet; binding them to nothing is better than binding them to something
+                    // surprising.
+                    if (action == GestureAction.DISCONNECT) confirmDisconnect = true
+                },
             )
         }
 
@@ -108,6 +133,83 @@ fun StreamScreen(
                 appName = state.appName,
                 phase = phase,
                 onExit = onExit,
+            )
+        }
+
+        // z5 — the one modal this screen owns. A gesture that ended the session outright would be
+        // a session lost to a stray three-finger touch (UI spec §5.4).
+        if (confirmDisconnect) {
+            DisconnectConfirmation(
+                onDismiss = { confirmDisconnect = false },
+                onConfirm = {
+                    confirmDisconnect = false
+                    onExit()
+                },
+            )
+        }
+    }
+}
+
+/**
+ * The disconnect confirmation of UI spec §5.4.
+ *
+ * Deliberately plain: black, white and the two words that matter. Everything on this screen is
+ * fixed black and white (UI spec §5.1), and a themed dialog over a game reads as a rendering fault.
+ */
+@Composable
+private fun DisconnectConfirmation(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 380.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.Black.copy(alpha = 0.92f))
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Disconnect from the stream?",
+                color = Color.White,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = "The game keeps running on your PC.",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                text = "Disconnect",
+                color = Color.White,
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(top = 24.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.16f))
+                    .clickable(onClick = onConfirm)
+                    .padding(vertical = 12.dp),
+            )
+            Text(
+                text = "Keep streaming",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onDismiss)
+                    .padding(vertical = 12.dp),
             )
         }
     }

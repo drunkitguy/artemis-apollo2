@@ -1,5 +1,6 @@
 package com.voidlink.android.ui.stream
 
+import com.voidlink.android.data.StreamSettings
 import com.voidlink.android.media.CodecSupport
 import com.voidlink.android.media.DecoderStats
 import com.voidlink.android.media.VideoStreamFormat
@@ -78,6 +79,11 @@ sealed interface StreamPhase {
  * @property stats latest decode metrics, refreshed at 2 Hz per UI spec §5.2.
  * @property showStats whether the stats chip is drawn, mirroring
  *   [com.voidlink.android.data.StreamSettings.showStatsOverlay].
+ * @property settings the merged global + per-host settings this session is running with, or `null`
+ *   before they have been read. The input layer reads them live: UI spec §5.3 lists touch mode,
+ *   pointer velocity, gyro, rumble and Swap A/B X/Y as rows that "apply live", which they can only
+ *   do if the surface that synthesizes packets is looking at the current value rather than at one
+ *   captured when the session started.
  * @property codecSupport what this device reported for AV1, HEVC and H.264 — whether a decoder
  *   exists, whether it is hardware, its maximum resolution and frame rate, and whether it does
  *   10-bit. Populated as soon as the probe runs, so it is available whether the session succeeds
@@ -90,5 +96,6 @@ data class StreamUiState(
     val surfaceFormat: VideoStreamFormat? = null,
     val stats: DecoderStats = DecoderStats.EMPTY,
     val showStats: Boolean = false,
+    val settings: StreamSettings? = null,
     val codecSupport: List<CodecSupport> = emptyList(),
 )

@@ -406,7 +406,7 @@ class StreamController(
     private suspend fun loadSettings(hostId: String?): StreamSettings {
         val global = settingsRepository.settings.first()
         if (hostId == null) {
-            mutableState.update { it.copy(showStats = global.showStatsOverlay) }
+            mutableState.update { it.copy(showStats = global.showStatsOverlay, settings = global) }
             return global
         }
         val host = runCatching { hostRepository.snapshot() }
@@ -414,7 +414,7 @@ class StreamController(
             .firstOrNull { it.uuid == hostId }
         hostHasSettingsOverride = host?.settingsOverride != null
         val effective = host?.effectiveSettings(global) ?: global
-        mutableState.update { it.copy(showStats = effective.showStatsOverlay) }
+        mutableState.update { it.copy(showStats = effective.showStatsOverlay, settings = effective) }
         return effective
     }
 
@@ -428,7 +428,11 @@ class StreamController(
         scope.launch {
             settingsRepository.settings.collect { settings ->
                 if (!hostHasSettingsOverride) {
-                    mutableState.update { it.copy(showStats = settings.showStatsOverlay) }
+                    // The whole object, not just the chip: the input surface reads `settings` live
+                    // so that UI spec §5.3's "apply live" rows do.
+                    mutableState.update {
+                        it.copy(showStats = settings.showStatsOverlay, settings = settings)
+                    }
                 }
             }
         }
