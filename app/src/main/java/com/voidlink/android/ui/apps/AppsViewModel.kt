@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.voidlink.android.data.AppCatalogFailure
 import com.voidlink.android.data.AppCatalogProvider
+import com.voidlink.android.data.AppCatalogResult
 import com.voidlink.android.data.HostApp
 import com.voidlink.android.data.HostRepository
 import com.voidlink.android.data.HostStatus
@@ -30,8 +32,10 @@ import kotlinx.coroutines.launch
 /**
  * Why a library came back empty.
  *
- * The three causes need three different things from the user — switch the PC on, pair with it, or
- * add a game to it — so showing one grey "No apps to show yet." for all of them is a dead end.
+ * Each of these needs a different thing from the user — switch the PC on, pair with it, grant this
+ * device permission on the PC, or add a game to it — so showing one grey "Nothing to stream" for
+ * all of them is a dead end. It was also literally the bug: a `/applist` that failed and a PC with
+ * no games produced the same screen, so neither the user nor a bug report could tell them apart.
  */
 enum class EmptyLibraryReason {
     /** The host did not answer. */
@@ -39,6 +43,26 @@ enum class EmptyLibraryReason {
 
     /** The host answered but does not trust this device, so `/applist` is not available. */
     UNPAIRED,
+
+    /**
+     * The host is paired with this device but has not granted it permission to list applications.
+     *
+     * Apollo's model: a newly paired client gets default permissions, and the PC's own clients page
+     * is where they are widened. Nothing in this app can fix it, so the screen must say where to go.
+     */
+    PERMISSION_DENIED,
+
+    /** The host understood the request and refused it with a status code. */
+    HOST_REFUSED,
+
+    /** The request did not complete — timeout, refused connection, dropped socket. */
+    TRANSPORT_FAILURE,
+
+    /** The secure connection to the host could not be established. */
+    TLS_FAILURE,
+
+    /** The host answered with something we could not read. */
+    UNREADABLE_RESPONSE,
 
     /** The host answered and genuinely lists nothing. */
     NO_APPS,
@@ -51,6 +75,13 @@ data class AppsUiState(
     val isLoading: Boolean = false,
     val message: String? = null,
     val emptyReason: EmptyLibraryReason? = null,
+    /**
+     * The underlying cause behind [emptyReason], shown verbatim beneath the empty state.
+     *
+     * Same reasoning as the pairing dialog's `detail`: the generic sentence tells the user what to
+     * do, and this tells us what actually happened when they send a screenshot.
+     */
+    val emptyDetail: String? = null,
 ) {
     /** Title for the screen — the host's name, or a neutral fallback while it loads. */
     val title: String get() = host?.name ?: "Apps"
@@ -98,27 +129,50 @@ class AppsViewModel(
                 return@launch
             }
             val status: HostStatus = statusProvider.probe(host)
-            val apps = catalogProvider.listApps(host).sortedWith(HostApp.displayOrder)
+            val result = catalogProvider.listApps(host)
+            val apps = result.appsOrEmpty().sortedWith(HostApp.displayOrder)
             state.update { previous ->
                 AppsUiState(
                     host = host,
                     apps = apps,
                     runningAppId = status.runningAppId,
                     isLoading = false,
-                    // The probe already told us why an empty list is empty; the catalogue cannot,
-                    // because "unreachable", "unpaired" and "no games" all arrive as an empty list.
-                    emptyReason = when {
-                        apps.isNotEmpty() -> null
-                        !status.isOnline -> EmptyLibraryReason.UNREACHABLE
-                        !status.paired -> EmptyLibraryReason.UNPAIRED
-                        else -> EmptyLibraryReason.NO_APPS
-                    },
+                    emptyReason = emptyReasonFor(result, status, apps),
+                    emptyDetail = (result as? AppCatalogResult.Failure)?.detail,
                     // A notice set just before the refresh (e.g. "Stopped the running app.") has to
                     // survive it, or the user never gets to read the outcome of what they did.
                     message = previous.message,
                 )
             }
         }
+    }
+
+    /**
+     * Chooses what the empty state should say.
+     *
+     * The catalogue's own answer wins, because it is the one that actually made the request. The
+     * probe is consulted only to explain a *successful but empty* list: a host that is unreachable
+     * or unpaired at probe time cannot have answered `/applist` either, and saying "this PC lists
+     * no games" about a PC that is switched off is worse than saying nothing.
+     */
+    private fun emptyReasonFor(
+        result: AppCatalogResult,
+        status: HostStatus,
+        apps: List<HostApp>,
+    ): EmptyLibraryReason? = when {
+        apps.isNotEmpty() -> null
+        result is AppCatalogResult.Failure -> when (result.reason) {
+            AppCatalogFailure.UNREACHABLE -> EmptyLibraryReason.UNREACHABLE
+            AppCatalogFailure.NOT_PAIRED -> EmptyLibraryReason.UNPAIRED
+            AppCatalogFailure.PERMISSION_DENIED -> EmptyLibraryReason.PERMISSION_DENIED
+            AppCatalogFailure.HOST_REFUSED -> EmptyLibraryReason.HOST_REFUSED
+            AppCatalogFailure.TRANSPORT -> EmptyLibraryReason.TRANSPORT_FAILURE
+            AppCatalogFailure.TLS -> EmptyLibraryReason.TLS_FAILURE
+            AppCatalogFailure.UNREADABLE -> EmptyLibraryReason.UNREADABLE_RESPONSE
+        }
+        !status.isOnline -> EmptyLibraryReason.UNREACHABLE
+        !status.paired -> EmptyLibraryReason.UNPAIRED
+        else -> EmptyLibraryReason.NO_APPS
     }
 
     /**

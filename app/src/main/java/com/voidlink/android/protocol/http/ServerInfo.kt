@@ -257,10 +257,27 @@ class ServerInfo(
  * @property title the display name.
  * @property hdrSupported whether the host advertises HDR for this title.
  */
-class AppListEntry(val id: Long, val title: String, val hdrSupported: Boolean) {
+class AppListEntry(
+    val id: Long,
+    val title: String,
+    val hdrSupported: Boolean,
+    /**
+     * The title exactly as the host sent it, including any invisible ordering prefix.
+     *
+     * Apollo encodes the host's configured order into `<AppTitle>` using zero-width code points, so
+     * that a client sorting alphabetically reproduces that order. Sorting on this and displaying
+     * [title] is what honours the host's intent without showing the user invisible junk.
+     */
+    val sortKey: String = title,
+) {
 
     /** True for the host's Desktop entry, which sorts first (spec §3.4). */
     val isDesktop: Boolean get() = title.equals(ProtocolConstants.APP_TITLE_DESKTOP, ignoreCase = true)
+
+    /** True for the placeholder Apollo returns instead of a library the client may not list. */
+    val isPermissionDenied: Boolean
+        get() = title.equals(ProtocolConstants.APP_TITLE_PERMISSION_DENIED, ignoreCase = true) ||
+            id == ProtocolConstants.APP_ID_PERMISSION_DENIED
 
     override fun toString(): String = "AppListEntry($id, $title)"
 
@@ -268,21 +285,79 @@ class AppListEntry(val id: Long, val title: String, val hdrSupported: Boolean) {
         /**
          * Maps an `/applist` `<root>` onto its entries.
          *
-         * Entries missing either `<ID>` or `<AppTitle>` are discarded per spec §3.4. No `Desktop`
-         * entry is ever synthesised — on Sunshine it may genuinely be absent — but a real one is
-         * sorted to the front.
+         * Entries missing either `<ID>` or `<AppTitle>` are discarded per spec §3.4 — but now
+         * loudly. A silently dropped entry and a host with no games produced the identical empty
+         * grid, which is exactly the ambiguity that made "connects but shows nothing" impossible to
+         * diagnose from a bug report.
+         *
+         * No `Desktop` entry is ever synthesised — on Sunshine it may genuinely be absent — but a
+         * real one is sorted to the front.
          */
-        fun listFromXml(root: XmlNode): List<AppListEntry> =
-            root.childrenNamed("App")
-                .mapNotNull { node ->
-                    val id = node.longOf("ID") ?: return@mapNotNull null
-                    val title = node.textOf("AppTitle") ?: return@mapNotNull null
+        fun listFromXml(root: XmlNode): List<AppListEntry> {
+            val nodes = root.childrenNamed("App")
+            val entries = ArrayList<AppListEntry>(nodes.size)
+            var dropped = 0
+            for (node in nodes) {
+                val id = node.longOf("ID")
+                val rawTitle = node.textOf("AppTitle")
+                if (id == null || rawTitle == null) {
+                    dropped++
+                    ProtocolLog.w(
+                        ProtocolLog.TAG_HTTP,
+                        "/applist: dropping an <App> with " +
+                            "ID=${node.textOf("ID") ?: "<absent>"} and " +
+                            "AppTitle=${rawTitle ?: "<absent>"}; its children were " +
+                            node.children.map { it.name },
+                    )
+                    continue
+                }
+                entries.add(
                     AppListEntry(
                         id = id,
-                        title = title,
+                        title = displayTitle(rawTitle),
                         hdrSupported = node.textOf("IsHdrSupported") == "1",
-                    )
-                }
-                .sortedWith(compareByDescending<AppListEntry> { it.isDesktop }.thenBy { it.title.lowercase() })
+                        sortKey = rawTitle,
+                    ),
+                )
+            }
+            ProtocolLog.i(
+                ProtocolLog.TAG_HTTP,
+                "/applist parsed: ${nodes.size} <App> elements, ${entries.size} usable" +
+                    (if (dropped > 0) ", $dropped dropped" else ""),
+            )
+            if (nodes.isEmpty()) {
+                ProtocolLog.w(
+                    ProtocolLog.TAG_HTTP,
+                    "/applist contained no <App> elements at all; <root> children were " +
+                        root.children.map { it.name },
+                )
+            }
+            return entries.sortedWith(
+                compareByDescending<AppListEntry> { it.isDesktop }.thenBy { it.sortKey.lowercase() },
+            )
+        }
+
+        /**
+         * True when [entries] is Apollo's "you may not list applications" placeholder.
+         *
+         * Apollo answers `status_code=200` with exactly one entry rather than an error, so this is
+         * the only way to tell it apart from a real one-game library.
+         */
+        fun isPermissionDeniedPlaceholder(entries: List<AppListEntry>): Boolean =
+            entries.size == 1 && entries[0].isPermissionDenied
+
+        /**
+         * Strips Apollo's invisible ordering prefix for display.
+         *
+         * Falls back to the raw text when a title turns out to be *nothing but* padding: an empty
+         * name would then be dropped by the caller, turning a host quirk into a missing game.
+         */
+        fun displayTitle(raw: String): String {
+            val stripped = raw.trimStart(
+                ProtocolConstants.APP_TITLE_ORDER_PAD_ZERO,
+                ProtocolConstants.APP_TITLE_ORDER_PAD_ONE,
+            )
+            return if (stripped.isEmpty()) raw else stripped
+        }
     }
 }

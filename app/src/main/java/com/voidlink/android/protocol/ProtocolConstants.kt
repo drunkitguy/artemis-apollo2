@@ -210,6 +210,31 @@ object ProtocolConstants {
     /** Title that must sort first in the app list when the host offers it (spec §3.4). */
     const val APP_TITLE_DESKTOP: String = "Desktop"
 
+    /**
+     * The single placeholder entry Apollo returns from `/applist` when the client is paired but
+     * lacks the permission to list applications.
+     *
+     * Apollo answers `status_code=200` with one `<App>` named this, rather than an error — so
+     * without recognising it we would show it as a game called "Permission Denied", or, once it is
+     * filtered, as an empty library. Neither tells the user the one thing they need to know: the
+     * fix is on the PC's own clients page, not in this app.
+     */
+    const val APP_TITLE_PERMISSION_DENIED: String = "Permission Denied"
+
+    /** The id Apollo pairs with [APP_TITLE_PERMISSION_DENIED]. Matched as a secondary signal. */
+    const val APP_ID_PERMISSION_DENIED: Long = 114514L
+
+    /**
+     * Zero-width code points Apollo prefixes to `<AppTitle>` to force an ordering.
+     *
+     * `U+200B` encodes a 0 bit and `U+200C` a 1, most significant first, so that a client which
+     * sorts titles alphabetically ends up reproducing the order configured on the host. They are
+     * invisible, so they must be kept for sorting and stripped for display — and, critically, a
+     * title consisting *only* of them must not be mistaken for a blank one.
+     */
+    const val APP_TITLE_ORDER_PAD_ZERO: Char = '\u200B'
+    const val APP_TITLE_ORDER_PAD_ONE: Char = '\u200C'
+
     // ---- Identity (spec §2) ------------------------------------------------------------------
 
     /** Subject and issuer of our self-signed client certificate. Any CN works; keep it stable. */

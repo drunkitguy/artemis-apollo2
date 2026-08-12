@@ -18,6 +18,15 @@ data class HostApp(
     val name: String,
     val isDesktop: Boolean = false,
     val supportsHdr: Boolean = false,
+    /**
+     * What this app sorts by, which is not always what it is called.
+     *
+     * Apollo encodes the order configured on the PC into the title using invisible characters, so
+     * that a client sorting alphabetically ends up reproducing that order. Keeping the raw value
+     * here and the readable one in [name] honours the host's ordering without putting invisible
+     * characters in front of the user. Defaults to [name], which is the Sunshine/GFE case.
+     */
+    val sortKey: String = name,
 ) {
     companion object {
         /**
@@ -29,8 +38,66 @@ data class HostApp(
          */
         val displayOrder: Comparator<HostApp> =
             compareByDescending<HostApp> { it.isDesktop }
-                .thenBy { it.name.lowercase() }
+                .thenBy { it.sortKey.lowercase() }
                 .thenBy { it.id }
+    }
+}
+
+/**
+ * Why a library could not be listed.
+ *
+ * Each of these needs something different from the user, and the previous contract — "return an
+ * empty list on any failure" — collapsed all of them into the same grey "Nothing to stream". A user
+ * whose PC refused the request, whose TLS failed, and whose library is genuinely empty all saw the
+ * identical screen, and so did we in their bug report.
+ */
+enum class AppCatalogFailure {
+    /** No address for the host answered. */
+    UNREACHABLE,
+
+    /** We hold no pinned certificate, so the secure request was never attempted. */
+    NOT_PAIRED,
+
+    /** The host answered with a non-200 `status_code` — it understood us and said no. */
+    HOST_REFUSED,
+
+    /** The host is paired but has not granted this device permission to list its applications. */
+    PERMISSION_DENIED,
+
+    /** The request did not complete: timeout, refused connection, socket closed. */
+    TRANSPORT,
+
+    /** The TLS handshake failed — the host would not accept our client certificate. */
+    TLS,
+
+    /** The host answered, but the body was not a document we could read. */
+    UNREADABLE,
+}
+
+/**
+ * The outcome of asking a host for its library.
+ *
+ * Deliberately not `List<HostApp>`: an empty list is a legitimate answer ("this PC has no games
+ * configured") and must be distinguishable from every way the question can fail.
+ */
+sealed interface AppCatalogResult {
+
+    /** The host answered. [apps] may legitimately be empty. */
+    class Success(val apps: List<HostApp>) : AppCatalogResult
+
+    /**
+     * The library could not be listed.
+     *
+     * @property reason which kind of failure, for choosing what to tell the user.
+     * @property detail the specific underlying cause — HTTP status, exception type and message,
+     *   or what was wrong with the document. Shown verbatim under the empty state.
+     */
+    class Failure(val reason: AppCatalogFailure, val detail: String) : AppCatalogResult
+
+    /** The apps on success, or an empty list on failure. */
+    fun appsOrEmpty(): List<HostApp> = when (this) {
+        is Success -> apps
+        is Failure -> emptyList()
     }
 }
 
@@ -45,10 +112,14 @@ interface AppCatalogProvider {
      * Fetches the applications [host] offers.
      *
      * Must return as soon as the list itself is known, without waiting on artwork, so the grid can
-     * draw immediately. Must not throw for ordinary network failures — implementations return an
-     * empty list, and the caller renders the host's offline state instead.
+     * draw immediately. Must not throw for ordinary network failures — implementations report them
+     * as [AppCatalogResult.Failure] carrying the specific cause.
+     *
+     * Returning a bare list here was a real defect: it made "this PC lists no games" and "the
+     * request failed" the same value, so the screen showed the same dead end for both and a bug
+     * report could not tell them apart either.
      */
-    suspend fun listApps(host: KnownHost): List<HostApp>
+    suspend fun listApps(host: KnownHost): AppCatalogResult
 
     /**
      * Fetches one application's box art, or `null` when the host has none for it.
@@ -78,7 +149,8 @@ object StubAppCatalogProvider : AppCatalogProvider {
     /** The synthetic entry every host implicitly offers. */
     val desktopEntry: HostApp = HostApp(id = "desktop", name = "Desktop", isDesktop = true)
 
-    override suspend fun listApps(host: KnownHost): List<HostApp> = listOf(desktopEntry)
+    override suspend fun listApps(host: KnownHost): AppCatalogResult =
+        AppCatalogResult.Success(listOf(desktopEntry))
 
     override suspend fun boxArt(host: KnownHost, appId: String): ByteArray? = null
 

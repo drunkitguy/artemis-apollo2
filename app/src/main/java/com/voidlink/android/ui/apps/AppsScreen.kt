@@ -162,6 +162,7 @@ fun AppsScreen(
             EmptyLibraryState(
                 reason = state.emptyReason,
                 hostName = state.host?.name,
+                detail = state.emptyDetail,
                 onRetry = onRefresh,
                 onBack = onBack,
             )
@@ -324,42 +325,107 @@ private fun PlaceholderArt(app: HostApp) {
     }
 }
 
-/** The empty library, told apart by cause so the user knows what to do next. */
+/**
+ * The empty library, told apart by cause so the user knows what to do next.
+ *
+ * "Nothing to stream" used to be shown for every one of these, including outright request failures.
+ * That is why a PC serving a perfectly good library looked identical to one with no games on it —
+ * and why a bug report about it could not be acted on. Each cause now names itself, and [detail]
+ * carries the underlying reason verbatim for exactly that reason.
+ */
 @Composable
 private fun EmptyLibraryState(
     reason: EmptyLibraryReason?,
     hostName: String?,
+    detail: String?,
     onRetry: () -> Unit,
     onBack: () -> Unit,
 ) {
     val host = hostName ?: "this PC"
+    val colors = VoidLinkTheme.colors
+    val spacing = VoidLinkTheme.spacing
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        when (reason) {
-            EmptyLibraryReason.UNPAIRED -> EmptyState(
-                icon = VoidLinkIcons.Locked,
-                title = "Not paired yet",
-                body = "$host answered, but it does not trust this device. Pair with it from the " +
-                    "Hosts screen and its games will appear here.",
-                primaryActionLabel = "Back to hosts",
-                onPrimaryAction = onBack,
-            )
-            EmptyLibraryReason.NO_APPS -> EmptyState(
-                icon = VoidLinkIcons.Host,
-                title = "Nothing to stream",
-                body = "$host is paired and reachable but lists no applications. Add a game in " +
-                    "the host software, then refresh.",
-                primaryActionLabel = "Refresh",
-                onPrimaryAction = onRetry,
-            )
-            else -> EmptyState(
-                icon = VoidLinkIcons.Offline,
-                title = "Can't reach $host",
-                body = "It may be asleep, or on a different network from this device.",
-                primaryActionLabel = "Try again",
-                onPrimaryAction = onRetry,
-                secondaryActionLabel = "Back to hosts",
-                onSecondaryAction = onBack,
-            )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            when (reason) {
+                EmptyLibraryReason.UNPAIRED -> EmptyState(
+                    icon = VoidLinkIcons.Locked,
+                    title = "Not paired yet",
+                    body = "$host answered, but it does not trust this device. Pair with it from " +
+                        "the Hosts screen and its games will appear here.",
+                    primaryActionLabel = "Back to hosts",
+                    onPrimaryAction = onBack,
+                )
+                // The one case nothing in this app can fix. Apollo pairs new clients with default
+                // permissions, and widening them is done on the PC's own clients page — so send the
+                // user there instead of offering a Refresh that will keep saying the same thing.
+                EmptyLibraryReason.PERMISSION_DENIED -> EmptyState(
+                    icon = VoidLinkIcons.Locked,
+                    title = "Not allowed to list games",
+                    body = "$host is paired with this device but hasn't given it permission to " +
+                        "see the app list. Open the host software's Clients page on the PC, find " +
+                        "this device and allow it, then refresh.",
+                    primaryActionLabel = "Refresh",
+                    onPrimaryAction = onRetry,
+                    secondaryActionLabel = "Back to hosts",
+                    onSecondaryAction = onBack,
+                )
+                EmptyLibraryReason.HOST_REFUSED -> EmptyState(
+                    icon = VoidLinkIcons.Locked,
+                    title = "$host refused the request",
+                    body = "It understood the request for its app list and turned it down.",
+                    primaryActionLabel = "Try again",
+                    onPrimaryAction = onRetry,
+                    secondaryActionLabel = "Back to hosts",
+                    onSecondaryAction = onBack,
+                )
+                EmptyLibraryReason.TLS_FAILURE -> EmptyState(
+                    icon = VoidLinkIcons.Locked,
+                    title = "Can't connect securely to $host",
+                    body = "The secure connection this app needs was refused. If you re-installed " +
+                        "or reset the host software, pair with it again.",
+                    primaryActionLabel = "Back to hosts",
+                    onPrimaryAction = onBack,
+                    secondaryActionLabel = "Try again",
+                    onSecondaryAction = onRetry,
+                )
+                EmptyLibraryReason.UNREADABLE_RESPONSE -> EmptyState(
+                    icon = VoidLinkIcons.Host,
+                    title = "Couldn't read the app list",
+                    body = "$host answered, but not with something this app understands. This is " +
+                        "worth reporting — the details below say what arrived.",
+                    primaryActionLabel = "Try again",
+                    onPrimaryAction = onRetry,
+                )
+                EmptyLibraryReason.NO_APPS -> EmptyState(
+                    icon = VoidLinkIcons.Host,
+                    title = "Nothing to stream",
+                    body = "$host is paired and reachable but lists no applications. Add a game " +
+                        "in the host software, then refresh.",
+                    primaryActionLabel = "Refresh",
+                    onPrimaryAction = onRetry,
+                )
+                // UNREACHABLE, TRANSPORT_FAILURE and the not-yet-loaded null all mean the same
+                // thing to a user: the PC did not answer.
+                else -> EmptyState(
+                    icon = VoidLinkIcons.Offline,
+                    title = "Can't reach $host",
+                    body = "It may be asleep, or on a different network from this device.",
+                    primaryActionLabel = "Try again",
+                    onPrimaryAction = onRetry,
+                    secondaryActionLabel = "Back to hosts",
+                    onSecondaryAction = onBack,
+                )
+            }
+            detail?.takeIf { it.isNotBlank() }?.let { text ->
+                Spacer(modifier = Modifier.height(spacing.md))
+                Text(
+                    text = text,
+                    style = VoidLinkTheme.footnote,
+                    color = colors.tertiaryLabel,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = spacing.xl),
+                )
+            }
         }
     }
 }

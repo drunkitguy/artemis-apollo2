@@ -177,6 +177,11 @@ class NvHttpClient(
         endpointParams = emptyList(),
         connectTimeoutMs = ProtocolConstants.DEFAULT_REQUEST_TIMEOUT_MS,
         readTimeoutMs = ProtocolConstants.DEFAULT_REQUEST_TIMEOUT_MS,
+        // Traced like a pairing phase: an empty grid is as opaque as a failed handshake was, and
+        // the request URL, status and body are what separate "the host listed nothing" from
+        // "we could not read what it listed".
+        trace = APP_LIST_LABEL,
+        traceTag = ProtocolLog.TAG_HTTP,
     ).mapCatchingRoot(ProtocolConstants.PATH_APP_LIST) { root -> AppListEntry.listFromXml(root) }
 
     /**
@@ -442,6 +447,7 @@ class NvHttpClient(
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
         trace: String? = null,
+        traceTag: String = ProtocolLog.TAG_PAIR,
     ): NvHttpResult<XmlNode> {
         val identity = identityOrFail() ?: return identityUnavailable()
         val serverCertificate = trustStore.certificate(hostKey) ?: return NvHttpResult.NotPaired
@@ -459,6 +465,7 @@ class NvHttpClient(
             readTimeoutMs = readTimeoutMs,
             tls = TlsSetup(identity, serverCertificate, protocolsFor(hostKey)),
             trace = trace,
+            traceTag = traceTag,
         )
     }
 
@@ -469,8 +476,9 @@ class NvHttpClient(
         readTimeoutMs: Int,
         tls: TlsSetup?,
         trace: String? = null,
+        traceTag: String = ProtocolLog.TAG_PAIR,
     ): NvHttpResult<XmlNode> =
-        when (val raw = execute(url, endpoint, connectTimeoutMs, readTimeoutMs, tls, trace)) {
+        when (val raw = execute(url, endpoint, connectTimeoutMs, readTimeoutMs, tls, trace, traceTag)) {
             is NvHttpResult.Success -> {
                 val text = raw.value.body.toString(Charsets.UTF_8)
                 when (val parsed = NvXml.parseResponse(text, endpoint)) {
@@ -478,7 +486,7 @@ class NvHttpClient(
                     is XmlResponse.HostError -> {
                         if (trace != null) {
                             ProtocolLog.w(
-                                ProtocolLog.TAG_PAIR,
+                                traceTag,
                                 "$trace: the host reported status_code=${parsed.statusCode} " +
                                     "\"${parsed.statusMessage.orEmpty()}\"",
                             )
@@ -488,7 +496,7 @@ class NvHttpClient(
                     is XmlResponse.Malformed -> {
                         if (trace != null) {
                             ProtocolLog.w(
-                                ProtocolLog.TAG_PAIR,
+                                traceTag,
                                 "$trace: unusable body (HTTP ${raw.value.code}): ${parsed.reason}",
                             )
                         }
@@ -525,12 +533,13 @@ class NvHttpClient(
         readTimeoutMs: Int,
         tls: TlsSetup?,
         trace: String? = null,
+        traceTag: String = ProtocolLog.TAG_PAIR,
     ): NvHttpResult<RawResponse> = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         var cancellationHandle: DisposableHandle? = null
         val startedAt = System.currentTimeMillis()
         if (trace != null) {
-            ProtocolLog.i(ProtocolLog.TAG_PAIR, "$trace -> GET ${redactUrl(url)}")
+            ProtocolLog.i(traceTag, "$trace -> GET ${redactUrl(url)}")
         }
         try {
             val opened = URL(url).openConnection() as HttpURLConnection
@@ -574,7 +583,7 @@ class NvHttpClient(
             ProtocolLog.d(ProtocolLog.TAG_HTTP, "$endpoint -> HTTP $code, ${body.size} bytes")
             if (trace != null) {
                 ProtocolLog.i(
-                    ProtocolLog.TAG_PAIR,
+                    traceTag,
                     "$trace <- HTTP $code, ${body.size} bytes in " +
                         "${System.currentTimeMillis() - startedAt}ms: ${bodyPreview(body)}",
                 )
@@ -590,7 +599,7 @@ class NvHttpClient(
             val message = describeFailure(t)
             if (trace != null) {
                 ProtocolLog.w(
-                    ProtocolLog.TAG_PAIR,
+                    traceTag,
                     "$trace <- FAILED after ${System.currentTimeMillis() - startedAt}ms: $message",
                     t,
                 )
@@ -659,6 +668,9 @@ class NvHttpClient(
 
         /** Trace label of the confirmation `/serverinfo` that settles an inconclusive phase 5. */
         const val PHASE_5_CONFIRM_LABEL: String = "phase 5 confirm (pinned HTTPS /serverinfo)"
+
+        /** Trace label of `/applist`; the log prefix to grep for an empty-library report. */
+        const val APP_LIST_LABEL: String = "applist (pinned HTTPS)"
 
         /** Box art is the largest legitimate body; 8 MB is far above any real one. */
         private const val MAX_RESPONSE_BYTES = 8 * 1024 * 1024
