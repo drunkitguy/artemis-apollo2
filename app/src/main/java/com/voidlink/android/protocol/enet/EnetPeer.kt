@@ -359,8 +359,7 @@ class EnetPeer(
             )
 
             is EnetCommand.BandwidthLimit,
-            is EnetCommand.ThrottleConfigure,
-            -> ProtocolLog.d(
+            is EnetCommand.ThrottleConfigure -> ProtocolLog.d(
                 EnetControlConstants.TAG,
                 "ignoring ENet command ${command.header.commandId} (no throttling in this subset)",
             )

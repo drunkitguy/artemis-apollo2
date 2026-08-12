@@ -44,15 +44,15 @@ object MediaCodecProbe : DecoderProbe {
             }
             if (isEncoder) continue
 
-            val supportedTypes = try {
-                info.supportedTypes
+            val supportedTypes: List<String> = try {
+                info.supportedTypes?.toList() ?: emptyList()
             } catch (error: Throwable) {
                 ProtocolLog.w(TAG, "Codec ${info.name} would not report its types", error)
-                continue
-            } ?: continue
+                emptyList()
+            }
 
             for (mimeType in supportedTypes) {
-                val codec = VideoCodecType.fromMimeType(mimeType ?: continue) ?: continue
+                val codec = VideoCodecType.fromMimeType(mimeType) ?: continue
                 val candidate = evaluate(info, mimeType, codec, request) ?: continue
                 candidates += candidate
             }

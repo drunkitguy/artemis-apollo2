@@ -6,26 +6,23 @@ package com.voidlink.android.protocol.rtp
  *
  * **Lifetime:** a [VideoPacket] borrows the receive buffer it was parsed from. The receive thread
  * recycles that buffer (architecture §3, rule 2), so a packet must not outlive the call it was
- * handed to. Anything that needs to keep bytes calls [copyShard] or [copyPayload].
+ * handed to. Anything that needs to keep bytes calls [copyPayload].
  *
  * @property rtp the RTP header (spec §7.3).
  * @property nv the NV video packet header (spec §7.4).
- * @property shardOffset index of the first NV-header byte within [datagram].
- * @property shardLength NV header plus payload bytes actually present in this datagram. This is
- *   the FEC shard as we model it — see
- *   [UnverifiedRtpVideoConstants.FEC_SHARD_INCLUDES_NV_HEADER].
+ * @property payloadOffset index of the first payload byte within the datagram, i.e. just past the
+ *   RTP header, any RTP extension, and the NV header.
+ * @property payloadLength payload bytes actually present. This is the FEC shard as we model it —
+ *   see [UnverifiedRtpVideoConstants.FEC_SHARD_IS_PAYLOAD_ONLY]. For a parity packet the payload
+ *   *is* the parity bytes; for a data packet it is the frame bytes.
  */
 class VideoPacket(
     val rtp: RtpHeader,
     val nv: NvVideoPacketHeader,
     private val datagram: ByteArray,
-    val shardOffset: Int,
-    val shardLength: Int,
+    val payloadOffset: Int,
+    val payloadLength: Int,
 ) {
-
-    /** Bytes of encoded picture data in this packet; zero for a header-only shard. */
-    val payloadLength: Int
-        get() = shardLength - RtpVideoConstants.NV_VIDEO_HEADER_SIZE
 
     /**
      * Sequence number of shard 0 of this packet's FEC block (spec §7.4).
@@ -36,15 +33,9 @@ class VideoPacket(
     val blockBaseSequenceNumber: Int
         get() = SequenceNumbers.advance(rtp.sequenceNumber, -nv.fecIndex)
 
-    /** Copies the whole shard — NV header included — out of the borrowed receive buffer. */
-    fun copyShard(): ByteArray =
-        datagram.copyOfRange(shardOffset, shardOffset + shardLength)
-
-    /** Copies only the encoded picture bytes out of the borrowed receive buffer. */
-    fun copyPayload(): ByteArray {
-        val start = shardOffset + RtpVideoConstants.NV_VIDEO_HEADER_SIZE
-        return datagram.copyOfRange(start, start + payloadLength)
-    }
+    /** Copies the payload — the FEC shard — out of the borrowed receive buffer. */
+    fun copyPayload(): ByteArray =
+        datagram.copyOfRange(payloadOffset, payloadOffset + payloadLength)
 }
 
 /** Why a datagram could not be turned into a [VideoPacket]. */
@@ -148,8 +139,8 @@ class VideoPacketParser(
                 rtp = rtp,
                 nv = nv,
                 datagram = datagram,
-                shardOffset = nvOffset,
-                shardLength = nvAvailable,
+                payloadOffset = nvOffset + RtpVideoConstants.NV_VIDEO_HEADER_SIZE,
+                payloadLength = nvAvailable - RtpVideoConstants.NV_VIDEO_HEADER_SIZE,
             ),
         )
     }

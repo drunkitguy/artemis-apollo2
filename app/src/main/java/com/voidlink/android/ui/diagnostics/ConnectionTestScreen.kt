@@ -27,6 +27,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +86,20 @@ fun ConnectionTestRoute(
     val viewModel: ConnectionTestViewModel =
         viewModel(factory = ConnectionTestViewModel.factory(hostId), key = "connection-test-$hostId")
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // The view model outlives this overlay — it is owned by the Activity, not by a navigation entry
+    // — so leaving the screen has to stop the work explicitly. Without this, closing the test would
+    // leave an iperf3 transfer running and its sockets open for the rest of its duration.
+    DisposableEffect(hostId) {
+        onDispose { viewModel.cancel() }
+    }
+
+    // Re-opening a test that was cancelled starts measuring again, so the screen is never showing a
+    // "press this to begin" state the user did not ask for. A view model that is still mid-burst is
+    // left alone.
+    LaunchedEffect(hostId) {
+        if (viewModel.uiState.value.linkPhase == LinkPhase.IDLE) viewModel.measureLink()
+    }
 
     ConnectionTestScreen(
         state = state,
@@ -305,13 +321,14 @@ private fun LinkSection(state: ConnectionTestUiState, onRetry: () -> Unit) {
         }
 
         LinkPhase.DONE -> {
-            if (link == null) return
-            MetricRow("Latency (median)", millis(link.medianMs))
-            MetricRow("Best / slowest 5%", "${millis(link.minMs)} / ${millis(link.p95Ms)}")
-            MetricRow("Jitter", millis(link.jitterMs))
-            MetricRow("Requests that failed", percent(link.lossPercent))
-            MetricRow("Over the window", link.stabilityLabel)
-            Spacer(modifier = Modifier.height(spacing.md))
+            if (link != null) {
+                MetricRow("Latency (median)", millis(link.medianMs))
+                MetricRow("Best / slowest 5%", "${millis(link.minMs)} / ${millis(link.p95Ms)}")
+                MetricRow("Jitter", millis(link.jitterMs))
+                MetricRow("Requests that failed", percent(link.lossPercent))
+                MetricRow("Over the window", link.stabilityLabel)
+                Spacer(modifier = Modifier.height(spacing.md))
+            }
             InlineButton(label = "Measure again", prominent = false, onClick = onRetry)
         }
     }
@@ -461,8 +478,9 @@ private fun ThroughputSection(
 
 @Composable
 private fun ThroughputResult(evidence: ThroughputEvidence?) {
-    if (evidence == null) return
     when (evidence) {
+        null -> Unit
+
         is ThroughputEvidence.Sustained -> {
             MetricRow("Sustained throughput", mbps(evidence.megabitsPerSecond))
             MetricRow("Transferred", String.format(Locale.US, "%.1f MB", evidence.bytes / MB))

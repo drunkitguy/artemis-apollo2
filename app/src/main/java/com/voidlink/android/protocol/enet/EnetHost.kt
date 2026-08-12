@@ -247,6 +247,7 @@ class EnetHost(
         if (current.state == EnetPeerState.DISCONNECTED) {
             // Nothing was established, so there is nothing to wait for an acknowledgement of.
             peer = null
+            _state.value = EnetPeerState.DISCONNECTED
             disconnectResult = null
             request.result.complete(true)
         }
@@ -339,10 +340,19 @@ class EnetHost(
         _state.value = created.state
     }
 
+    /**
+     * Turns peer events into public state.
+     *
+     * The order inside each branch matters: [_state] and [peer] are settled **before** any deferred
+     * is completed. Completing a deferred resumes the caller, possibly on another thread and
+     * immediately, so a caller that does the obvious thing — `connect()` then read `state` — would
+     * otherwise be racing this loop for the answer it was just given.
+     */
     private fun dispatch(pending: List<EnetEvent>) {
         for (event in pending) {
             when (event) {
                 is EnetEvent.Connected -> {
+                    _state.value = EnetPeerState.CONNECTED
                     ProtocolLog.i(
                         EnetControlConstants.TAG,
                         "ENet connected: mtu=${event.peer.mtu} channels=${event.peer.channelCount}",
@@ -352,18 +362,20 @@ class EnetHost(
                 }
 
                 is EnetEvent.ConnectFailed -> {
-                    ProtocolLog.w(EnetControlConstants.TAG, "ENet connect failed: ${event.reason}")
                     peer = null
+                    _state.value = EnetPeerState.DISCONNECTED
+                    ProtocolLog.w(EnetControlConstants.TAG, "ENet connect failed: ${event.reason}")
                     connectResult?.complete(false)
                     connectResult = null
                 }
 
                 is EnetEvent.Disconnected -> {
+                    peer = null
+                    _state.value = EnetPeerState.DISCONNECTED
                     ProtocolLog.i(
                         EnetControlConstants.TAG,
                         "ENet disconnected (timedOut=${event.timedOut}, data=${event.data})",
                     )
-                    peer = null
                     connectResult?.complete(false)
                     connectResult = null
                     disconnectResult?.complete(!event.timedOut)
@@ -374,9 +386,6 @@ class EnetHost(
                     EnetInboundPacket(event.channelId, event.payload),
                 )
             }
-        }
-        if (pending.isNotEmpty()) {
-            _state.value = peer?.state ?: EnetPeerState.DISCONNECTED
         }
     }
 

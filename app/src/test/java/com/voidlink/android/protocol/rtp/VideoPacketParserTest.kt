@@ -63,19 +63,16 @@ class VideoPacketParserTest {
     }
 
     @Test
-    fun `the shard spans the NV header and the payload together`() {
-        // Spec §7.7 leaves the shard boundary unstated; we assume it starts at the NV header
-        // (UnverifiedRtpVideoConstants.FEC_SHARD_INCLUDES_NV_HEADER) so a recovered shard carries
-        // its own flags byte. This pins that decision.
-        assertTrue(UnverifiedRtpVideoConstants.FEC_SHARD_INCLUDES_NV_HEADER)
+    fun `the FEC shard is the payload, excluding the NV header`() {
+        // Spec §7.7 leaves the shard boundary unstated. It must be payload-only, because §7.4 and
+        // §7.7 step 5 both require a *parity* packet to carry a readable NV header — which it could
+        // not, if that header were itself parity bytes. This pins the decision.
+        assertTrue(UnverifiedRtpVideoConstants.FEC_SHARD_IS_PAYLOAD_ONLY)
 
         val packet = parse(plainDatagram)
-        assertEquals(12, packet.shardOffset)
-        assertEquals(24, packet.shardLength)
-        assertArrayEquals(
-            decode("000100002a000000050100014011c0000000000165aabbcc"),
-            packet.copyShard(),
-        )
+        assertEquals(28, packet.payloadOffset)
+        assertEquals(8, packet.payloadLength)
+        assertArrayEquals(decode("0000000165aabbcc"), packet.copyPayload())
     }
 
     @Test

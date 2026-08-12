@@ -94,8 +94,7 @@ class ReedSolomon private constructor(
             "expected $totalShards shards, got ${shards.size}"
         }
         for (index in 0 until dataShards) {
-            val shard = shards[index]
-            requireNotNull(shard) { "data shard $index is missing" }
+            val shard = requireNotNull(shards[index]) { "data shard $index is missing" }
             require(shard.size == shardSize) {
                 "data shard $index is ${shard.size} bytes, expected $shardSize"
             }
@@ -206,13 +205,13 @@ class ReedSolomon private constructor(
                     "${dataShards + parityShards}"
             }
             val total = dataShards + parityShards
-            val vandermonde = vandermonde(total, dataShards, variant)
-            val top = Array(dataShards) { vandermonde[it] }
+            val raw = vandermonde(total, dataShards, variant)
+            val top = Array(dataShards) { raw[it] }
             val topInverse = invert(top)
                 ?: throw IllegalArgumentException(
                     "the top $dataShards x $dataShards block of the $variant matrix is singular",
                 )
-            val encodeMatrix = multiply(vandermonde, topInverse)
+            val encodeMatrix = multiply(raw, topInverse)
             return ReedSolomon(dataShards, parityShards, variant, encodeMatrix)
         }
 

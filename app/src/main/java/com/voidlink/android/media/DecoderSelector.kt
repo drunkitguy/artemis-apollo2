@@ -97,28 +97,26 @@ object DecoderSelector {
             chosen = ladder.firstNotNullOfOrNull { codec -> best(software, codec, wantTenBit) }
             usedSoftwareFallback = chosen != null
         }
-        if (chosen == null) {
-            return DecoderSelectionResult.NoDecoder(
-                summary = noDecoderSummary(request, usable, inventory),
-                inspected = candidates,
-                inventory = inventory,
-            )
-        }
+        val decoder = chosen ?: return DecoderSelectionResult.NoDecoder(
+            summary = noDecoderSummary(request, usable, inventory),
+            inspected = candidates,
+            inventory = inventory,
+        )
 
         val notes = buildNotes(
             request = request,
-            chosen = chosen,
+            chosen = decoder,
             usable = usable,
             usedSoftwareFallback = usedSoftwareFallback,
         )
 
-        val hdr = request.hdr && chosen.codec.tenBitCapable && chosen.supportsTenBit
+        val hdr = request.hdr && decoder.codec.tenBitCapable && decoder.supportsTenBit
 
         return DecoderSelectionResult.Selected(
             DecoderChoice(
-                candidate = chosen,
+                candidate = decoder,
                 format = VideoStreamFormat(
-                    codec = chosen.codec,
+                    codec = decoder.codec,
                     width = request.width,
                     height = request.height,
                     frameRate = request.frameRate,
@@ -191,18 +189,26 @@ object DecoderSelector {
             usable.none { it.codec == VideoCodecType.AV1 && it.hardwareAccelerated }
         val noAv1AtAll = usable.none { it.codec == VideoCodecType.AV1 }
 
+        var explainedAv1 = false
         if (chosen.codec != VideoCodecType.AV1) {
-            when {
-                softwareAv1Only -> notes += "This device has no hardware AV1 decoder — only a " +
-                    "software one, which cannot keep up with a live stream. Using " +
-                    "${chosen.codec.label} instead."
-                preferred == VideoCodecType.AV1 && noAv1AtAll ->
-                    notes += "This device has no AV1 decoder at all. Using ${chosen.codec.label} instead."
+            if (softwareAv1Only) {
+                notes += "This device has no hardware AV1 decoder — only a software one, which " +
+                    "cannot keep up with a live stream. Using ${chosen.codec.label} instead."
+                explainedAv1 = true
+            } else if (preferred == VideoCodecType.AV1 && noAv1AtAll) {
+                notes += "This device has no AV1 decoder at all. Using ${chosen.codec.label} instead."
+                explainedAv1 = true
             }
         }
 
-        if (preferred != null && preferred != chosen.codec && preferred != VideoCodecType.AV1) {
-            notes += "${preferred.label} is not available on this device; using ${chosen.codec.label}."
+        if (preferred != null && preferred != chosen.codec && !explainedAv1) {
+            val hardwarePreferredExists = usable.any { it.codec == preferred && it.hardwareAccelerated }
+            notes += if (hardwarePreferredExists) {
+                "${preferred.label} is available on this device but was not the best fit for this " +
+                    "stream; using ${chosen.codec.label} instead."
+            } else {
+                "${preferred.label} is not available on this device; using ${chosen.codec.label}."
+            }
         }
 
         if (usedSoftwareFallback) {

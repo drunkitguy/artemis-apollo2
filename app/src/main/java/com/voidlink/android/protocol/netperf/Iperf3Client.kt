@@ -489,12 +489,15 @@ class Iperf3Client {
                 var attempts = 0
                 while (attempts < UDP_HANDSHAKE_ATTEMPTS && !acknowledged) {
                     attempts++
+                    var arrived = false
                     try {
                         packet.setLength(buffer.size)
                         socket.receive(packet)
+                        arrived = true
                     } catch (timeout: SocketTimeoutException) {
-                        continue
+                        arrived = false
                     }
+                    if (!arrived) continue
                     val length = packet.length
                     acknowledged =
                         Iperf3Protocol.startsWith(buffer, length, Iperf3Protocol.UDP_CONNECT_REPLY) ||
@@ -527,15 +530,18 @@ class Iperf3Client {
                 return
             }
             while (!stopped) {
-                val read = try {
-                    input.read(buffer)
+                // A read that hits the poll timeout is the normal idle case, not an error; it just
+                // gives the loop a chance to notice that the test has ended.
+                var read = 0
+                try {
+                    read = input.read(buffer)
                 } catch (timeout: SocketTimeoutException) {
-                    continue
+                    read = 0
                 } catch (failure: IOException) {
                     return
                 }
                 if (read < 0) return
-                if (counting) bytes += read.toLong()
+                if (read > 0 && counting) bytes += read.toLong()
             }
         }
 
@@ -547,15 +553,17 @@ class Iperf3Client {
             val buffer = ByteArray(RECEIVE_BUFFER_BYTES)
             val packet = DatagramPacket(buffer, buffer.size)
             while (!stopped) {
+                var arrived = false
                 try {
                     packet.setLength(buffer.size)
                     socket.receive(packet)
+                    arrived = true
                 } catch (timeout: SocketTimeoutException) {
-                    continue
+                    arrived = false
                 } catch (failure: IOException) {
                     return
                 }
-                if (!counting) continue
+                if (!arrived || !counting) continue
                 val length = packet.length
                 bytes += length.toLong()
                 val sequence = Iperf3Protocol.sequenceNumber(buffer, length) ?: continue
@@ -620,10 +628,11 @@ class Iperf3Client {
             while (filled < count) {
                 coroutineContext.ensureActive()
                 if (System.nanoTime() > deadlineNanos) return false
-                val read = try {
-                    input.read(buffer, filled, count - filled)
+                var read = 0
+                try {
+                    read = input.read(buffer, filled, count - filled)
                 } catch (timeout: SocketTimeoutException) {
-                    continue
+                    read = 0
                 } catch (failure: IOException) {
                     return false
                 }

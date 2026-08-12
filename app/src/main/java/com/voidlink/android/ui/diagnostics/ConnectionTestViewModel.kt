@@ -271,11 +271,9 @@ class ConnectionTestViewModel(
         throughputJob = null
         state.update {
             it.copy(
-                linkPhase = if (it.linkPhase == LinkPhase.RUNNING) {
-                    if (it.samplesDone > 0) LinkPhase.DONE else LinkPhase.IDLE
-                } else {
-                    it.linkPhase
-                },
+                // A half-finished burst is not a measurement, so it goes back to "not run" rather
+                // than presenting a median of four samples as though it meant something.
+                linkPhase = if (it.linkPhase == LinkPhase.RUNNING) LinkPhase.IDLE else it.linkPhase,
                 throughputPhase = if (
                     it.throughputPhase == ThroughputPhase.RUNNING ||
                     it.throughputPhase == ThroughputPhase.CONNECTING

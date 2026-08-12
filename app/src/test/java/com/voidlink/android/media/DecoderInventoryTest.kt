@@ -2,6 +2,7 @@ package com.voidlink.android.media
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -139,6 +140,6 @@ class DecoderInventoryTest {
 
         val av1 = inventory.single { it.codec == VideoCodecType.AV1 }
         assertTrue(av1.describe().contains("no decoder"))
-        assertEquals(null, av1.decoderName)
+        assertNull(av1.decoderName)
     }
 }

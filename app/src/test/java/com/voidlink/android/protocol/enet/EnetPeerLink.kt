@@ -261,15 +261,20 @@ class EnetPeerLink(
 
         /**
          * A config tuned for tests: a short retransmission timeout so loss recovery takes tens of
-         * milliseconds of virtual time, and dead-peer timeouts far enough out that no amount of
-         * injected loss can make a test fail by declaring the link dead.
+         * milliseconds of virtual time, and every give-up deadline pushed far enough out that no
+         * amount of injected loss can make a test fail by declaring the link dead.
+         *
+         * The connect timeout in particular is *not* spec §9.1's ten seconds. That number is a
+         * product decision about how long a user stares at a spinner; a test that inherits it is
+         * really measuring how a seeded coin came up, and the tests that care about the deadline
+         * itself set their own.
          */
         fun testConfig(acceptIncomingConnections: Boolean = false): EnetConfig = EnetConfig(
             channelCount = EnetControlConstants.CHANNEL_COUNT,
             serviceIntervalMs = 5,
             pingIntervalMs = 500,
             initialRoundTripTimeMs = 40,
-            connectTimeoutMs = 10_000,
+            connectTimeoutMs = 60_000,
             timeoutLimit = 32,
             timeoutMinimumMs = 60_000,
             timeoutMaximumMs = 120_000,

@@ -193,18 +193,35 @@ object UnverifiedRtpVideoConstants {
     val FEC_MATRIX_VARIANT: ReedSolomonMatrix = ReedSolomonMatrix.ALPHA_POWER_ROWS
 
     /**
-     * Whether an FEC shard covers the NV video packet header as well as the payload.
+     * Whether an FEC shard is the packet's **payload only**, excluding the NV video packet header.
      *
      * UNVERIFIED(spec 01 §7.7): the spec states only that "all shards in a block are the same size
-     * (`blockSize`), zero-padded as needed" and does not say where a shard begins. We assume it
-     * begins at the NV header, because that is what makes a *recovered* data shard carry its own
-     * `flags` byte — without which we could not tell whether the recovered shard contains picture
-     * data (spec §7.8) and would have to guess.
+     * (`blockSize`), zero-padded as needed" and never says where a shard begins.
+     *
+     * Payload-only is the reading the rest of the spec forces. Spec §7.4 defines `fecIndex` as
+     * living in the NV header and describes it as identifying which shards are parity ("data shards
+     * come first, then parity shards"), and §7.7 step 5 keys a block on
+     * `rtpSequenceNumber - fecIndex`. Both require a **parity** packet to carry a readable NV
+     * header — which it could not, if that header were itself parity bytes.
      *
      * Risk if wrong: recovery produces misaligned shards, i.e. corrupt frames. Same blast radius
-     * as the matrix variant, and gated by the same flag.
+     * as the matrix variant, and gated behind the same flag.
      */
-    const val FEC_SHARD_INCLUDES_NV_HEADER: Boolean = true
+    const val FEC_SHARD_IS_PAYLOAD_ONLY: Boolean = true
+
+    /**
+     * Whether a data shard rebuilt by Reed-Solomon is assumed to carry picture data.
+     *
+     * UNVERIFIED(spec 01 §7.7, §7.8), and a direct consequence of [FEC_SHARD_IS_PAYLOAD_ONLY]: a
+     * recovered shard has no NV header, so its `FLAG_CONTAINS_PIC_DATA` bit cannot be read and must
+     * be assumed. `true` is the safe assumption — every data shard of a frame carries frame bytes;
+     * a shard without them would be padding, which no observed host emits mid-frame.
+     *
+     * Risk if wrong: a recovered frame gains a few bytes of padding. In Annex-B those decode as the
+     * `trailing_zero_8bits` the standard already permits, so the practical blast radius is small
+     * even relative to the flag that gates it.
+     */
+    const val FEC_RECOVERED_SHARD_CARRIES_PICTURE_DATA: Boolean = true
 
     /**
      * Where the current FEC block index lives inside `multiFecFlags`.

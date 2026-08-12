@@ -137,7 +137,11 @@ class VideoDecoderCoreTest {
 
         val releases = IntArray(4)
         val frames = (0 until 4).map { index ->
-            frame(number = index, keyFrame = index == 0) { releases[index]++ }
+            frame(
+                number = index,
+                keyFrame = index == 0,
+                onReleased = { releases[index]++ },
+            )
         }
 
         driver.offerInputBuffer(0)
@@ -222,20 +226,18 @@ class VideoDecoderCoreTest {
 
     @Test
     fun `presentation timestamps strictly increase even inside one microsecond`() {
+        // The clock never moves, so both frames are submitted in the same microsecond.
         val clock = FakeClock(micros = 42L)
         val driver = FakeCodecDriver()
-        val decoder = core(driver)
-        val decoderWithClock = VideoDecoderCore(driver, format, clock, onEvent = {})
-        decoderWithClock.start()
+        val decoder = core(driver, clock = clock)
+        decoder.start()
         driver.offerInputBuffer(0)
         driver.offerInputBuffer(1)
-        decoderWithClock.submit(frame(number = 1, keyFrame = true))
-        decoderWithClock.submit(frame(number = 2, keyFrame = false))
+        decoder.submit(frame(number = 1, keyFrame = true))
+        decoder.submit(frame(number = 2, keyFrame = false))
 
         assertEquals(2, driver.submissions.size)
         assertTrue(driver.submissions[1].presentationTimeUs > driver.submissions[0].presentationTimeUs)
-        // Silences the unused-variable warning while documenting that the default clock is fine.
-        assertEquals(DecoderPhase.IDLE, decoder.phase)
     }
 
     @Test

@@ -323,7 +323,13 @@ class ReedSolomonTest {
             codec.encodeParity(shards, shardSize)
 
             val erasures = random.nextInt(parityShards + 1)
-            val order = (0 until codec.totalShards).shuffled(kotlin.random.Random(random.nextLong()))
+            val order = IntArray(codec.totalShards) { it }
+            for (index in order.size - 1 downTo 1) {
+                val swap = random.nextInt(index + 1)
+                val held = order[index]
+                order[index] = order[swap]
+                order[swap] = held
+            }
             for (index in 0 until erasures) shards[order[index]] = null
 
             assertTrue("trial $trial", codec.decodeMissing(shards, shardSize))

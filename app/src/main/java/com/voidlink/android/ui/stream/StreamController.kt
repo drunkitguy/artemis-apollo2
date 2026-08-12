@@ -251,7 +251,7 @@ class StreamController(
             val reprobed = withContext(Dispatchers.Default) { probe.probe(negotiated) }
             val reselected = DecoderSelector.select(reprobed, negotiated)
             if (reselected is DecoderSelectionResult.NoDecoder) {
-                runCatching { ready.close() }
+                runCatching { ready.onClose.invoke() }
                 fail(
                     title = "This device cannot decode the stream",
                     message = "The host negotiated ${ready.format.describe()}, which no decoder " +
@@ -272,7 +272,7 @@ class StreamController(
         } finally {
             firstFrameWatchdog?.cancel()
             firstFrameWatchdog = null
-            runCatching { ready.close() }
+            runCatching { ready.onClose.invoke() }
         }
 
         if (streamEnded && mutableState.value.phase !is StreamPhase.Failed) {
@@ -323,6 +323,9 @@ class StreamController(
                     }
                 }
                 try {
+                    // Codec creation runs on the main thread deliberately: it is tens of
+                    // milliseconds once per surface, and moving it off would open a window in which
+                    // the surface could be destroyed while a codec was being configured against it.
                     if (decoder.start()) {
                         decoder.consume(frames)
                         // consume() only returns normally when the producer closed the channel.
@@ -470,9 +473,10 @@ class StreamController(
             inventory.joinToString(separator = "\n") { "• " + it.describe() }
     }
 
-    private fun decoderSummary(choice: DecoderChoice): String =
-        "${choice.candidate.name} · ${choice.format.describe()}" +
-            if (choice.candidate.hardwareAccelerated) " · hardware" else " · SOFTWARE"
+    private fun decoderSummary(choice: DecoderChoice): String {
+        val acceleration = if (choice.candidate.hardwareAccelerated) "hardware" else "SOFTWARE"
+        return "${choice.candidate.name} · ${choice.format.describe()} · $acceleration"
+    }
 
     /** The small print for a failure once a decoder had already been chosen. */
     private fun failureDetail(choice: DecoderChoice): String = listOfNotNull(

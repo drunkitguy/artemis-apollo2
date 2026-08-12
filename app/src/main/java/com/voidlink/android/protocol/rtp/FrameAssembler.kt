@@ -138,10 +138,13 @@ class FrameAssembler(
             ProtocolLog.unverified(
                 RtpVideoConstants.LOG_TAG_VIDEO,
                 "video-fec-shard-framing",
-                "assuming an FEC shard spans the NV video packet header plus the payload " +
-                    "(spec 01 §7.7 does not say where a shard begins); " +
-                    "UnverifiedRtpVideoConstants.FEC_SHARD_INCLUDES_NV_HEADER=" +
-                    "${UnverifiedRtpVideoConstants.FEC_SHARD_INCLUDES_NV_HEADER}",
+                "assuming an FEC shard is the packet payload only, excluding the NV video packet " +
+                    "header (spec 01 §7.7 does not say where a shard begins), and that a " +
+                    "recovered data shard carries picture data; " +
+                    "FEC_SHARD_IS_PAYLOAD_ONLY=" +
+                    "${UnverifiedRtpVideoConstants.FEC_SHARD_IS_PAYLOAD_ONLY}, " +
+                    "FEC_RECOVERED_SHARD_CARRIES_PICTURE_DATA=" +
+                    "${UnverifiedRtpVideoConstants.FEC_RECOVERED_SHARD_CARRIES_PICTURE_DATA}",
             )
         }
     }
@@ -336,8 +339,9 @@ class FrameAssembler(
         }
         if (block.shards[fecIndex] != null) return false
 
-        val shard = packet.copyShard()
+        val shard = packet.copyPayload()
         block.shards[fecIndex] = shard
+        block.carriesPictureData[fecIndex] = nv.containsPictureData
         if (shard.size > block.shardSize) block.shardSize = shard.size
         if (fecIndex < block.dataShards) block.receivedDataShards++ else block.receivedParityShards++
 
@@ -360,7 +364,7 @@ class FrameAssembler(
         val cache = fecCache ?: return
         if (block.receivedDataShards == block.dataShards) return
         if (block.receivedDataShards + block.receivedParityShards < block.dataShards) return
-        if (block.shardSize < RtpVideoConstants.NV_VIDEO_HEADER_SIZE) return
+        if (block.shardSize <= 0) return
 
         val codec = cache.get(block.dataShards, block.parityShards) ?: return
         val shardSize = block.shardSize
@@ -378,6 +382,10 @@ class FrameAssembler(
             if (block.shards[index] != null) continue
             val rebuilt = work[index] ?: continue
             block.shards[index] = rebuilt
+            // A rebuilt shard has no NV header of its own, so its FLAG_CONTAINS_PIC_DATA bit is
+            // assumed rather than read — see FEC_RECOVERED_SHARD_CARRIES_PICTURE_DATA.
+            block.carriesPictureData[index] =
+                UnverifiedRtpVideoConstants.FEC_RECOVERED_SHARD_CARRIES_PICTURE_DATA
             block.receivedDataShards++
             recovered++
         }
@@ -401,8 +409,8 @@ class FrameAssembler(
             val block = pending.blocks[blockIndex] ?: return malformed(pending, events)
             for (shardIndex in 0 until block.dataShards) {
                 val shard = block.shards[shardIndex] ?: return malformed(pending, events)
-                if (!carriesPictureData(shard)) continue
-                total += (shard.size - RtpVideoConstants.NV_VIDEO_HEADER_SIZE).toLong()
+                if (!block.carriesPictureData[shardIndex]) continue
+                total += shard.size.toLong()
             }
         }
 
@@ -429,17 +437,10 @@ class FrameAssembler(
             val block = pending.blocks[blockIndex] ?: return malformed(pending, events)
             for (shardIndex in 0 until block.dataShards) {
                 val shard = block.shards[shardIndex] ?: return malformed(pending, events)
-                if (!carriesPictureData(shard)) continue
-                val payload = shard.size - RtpVideoConstants.NV_VIDEO_HEADER_SIZE
-                if (payload <= 0) continue
-                System.arraycopy(
-                    shard,
-                    RtpVideoConstants.NV_VIDEO_HEADER_SIZE,
-                    output,
-                    cursor,
-                    payload,
-                )
-                cursor += payload
+                if (!block.carriesPictureData[shardIndex]) continue
+                if (shard.isEmpty()) continue
+                System.arraycopy(shard, 0, output, cursor, shard.size)
+                cursor += shard.size
             }
         }
 
@@ -472,11 +473,6 @@ class FrameAssembler(
             isLongTermReferenceFrame = pending.longTermReference,
             recoveredShardCount = pending.recoveredShards,
         )
-    }
-
-    private fun carriesPictureData(shard: ByteArray): Boolean {
-        val flags = shard[RtpVideoConstants.NV_OFFSET_FLAGS].toInt() and 0xFF
-        return (flags and RtpVideoConstants.FLAG_CONTAINS_PIC_DATA) != 0
     }
 
     private fun malformed(
@@ -539,9 +535,10 @@ class FrameAssembler(
      * One FEC block of one frame, keyed in its frame by block index and identified on the wire by
      * `(frameIndex, blockBaseSequenceNumber)` (spec §7.7 step 5).
      *
-     * A shard is stored whole — NV header included — because a *recovered* shard must carry its
-     * own `flags` byte for spec §7.8's "exclude shards without `FLAG_CONTAINS_PIC_DATA`" rule to
-     * be applicable to it. See [UnverifiedRtpVideoConstants.FEC_SHARD_INCLUDES_NV_HEADER].
+     * A shard is the packet **payload** — see
+     * [UnverifiedRtpVideoConstants.FEC_SHARD_IS_PAYLOAD_ONLY] — so spec §7.8's "exclude shards
+     * without `FLAG_CONTAINS_PIC_DATA`" rule is applied from [carriesPictureData], recorded when
+     * the shard arrives, rather than re-read from bytes the shard no longer contains.
      */
     private class PendingBlock(
         val baseSequenceNumber: Int,
@@ -550,10 +547,18 @@ class FrameAssembler(
     ) {
         val totalShards: Int = dataShards + parityShards
         val shards = arrayOfNulls<ByteArray>(totalShards)
+        val carriesPictureData = BooleanArray(totalShards)
         var receivedDataShards: Int = 0
         var receivedParityShards: Int = 0
 
-        /** The common shard length for FEC, i.e. the longest shard seen in this block. */
+        /**
+         * The common shard length for FEC — the longest shard seen in this block.
+         *
+         * Spec §7.7 says all shards in a block are the same size, zero-padded as needed; a short
+         * trailing datagram is therefore padded up to this length before the RS maths sees it.
+         * Parity shards are always full length, and recovery is impossible without at least one of
+         * them, so by the time this value is used it is the real block size.
+         */
         var shardSize: Int = 0
     }
 }

@@ -33,13 +33,13 @@ sealed interface VideoSourceResult {
      * @property format what was actually negotiated, which may differ from what was requested if
      *   the host clamped it. The stream screen re-runs decoder selection against this before
      *   configuring anything.
-     * @property close tears the session down. Called exactly once, when the stream screen is
+     * @property onClose tears the session down. Called exactly once, when the stream screen is
      *   finished — including when the user backs out mid-connect.
      */
     class Ready(
         val frames: ReceiveChannel<VideoFrame>,
         val format: VideoStreamFormat,
-        val close: suspend () -> Unit,
+        val onClose: suspend () -> Unit,
     ) : VideoSourceResult
 
     /**
@@ -106,7 +106,7 @@ object VideoPipeline {
      * Where frames come from. Assign the real implementation during application start-up:
      *
      * ```kotlin
-     * VideoPipeline.videoSourceFactory = StreamSessionVideoSource(/* … */)
+     * VideoPipeline.videoSourceFactory = StreamSessionVideoSource(serviceLocator)
      * ```
      */
     @Volatile

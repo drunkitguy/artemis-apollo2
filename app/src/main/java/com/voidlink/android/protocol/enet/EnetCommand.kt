@@ -431,8 +431,7 @@ sealed class EnetCommand {
                 }
 
                 EnetProtocol.COMMAND_SEND_FRAGMENT,
-                EnetProtocol.COMMAND_SEND_UNRELIABLE_FRAGMENT,
-                -> {
+                EnetProtocol.COMMAND_SEND_UNRELIABLE_FRAGMENT -> {
                     val payload = readPayload(src, offset + structSize, end, EnetBytes.getU16Be(src, offset + 6))
                         ?: return null
                     SendFragment(
