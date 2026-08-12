@@ -94,8 +94,8 @@ class NvHttpClient(
         if (previous != protocols) {
             ProtocolLog.i(
                 ProtocolLog.TAG_TLS,
-                "Using $protocols for every HTTPS call to $hostKey from now on " +
-                    "(default is ${UnverifiedProtocolConstants.TLS_PROTOCOLS})",
+                "Using $protocols for every HTTPS call to $hostKey from now on, instead of the " +
+                    "platform's own default list",
             )
         }
     }
@@ -105,7 +105,10 @@ class NvHttpClient(
      */
     private suspend fun protocolsFor(hostKey: String): List<String> {
         tlsProtocolOverrides[hostKey]?.let { return it }
-        val stored = trustStore.tlsProtocols(hostKey) ?: return UnverifiedProtocolConstants.TLS_PROTOCOLS
+        // Empty means "leave the platform default alone", which is what the reference client does
+        // and therefore our default too. A non-empty list only ever comes from a self-test that
+        // found this particular host needs one.
+        val stored = trustStore.tlsProtocols(hostKey) ?: return emptyList()
         tlsProtocolOverrides[hostKey] = stored
         ProtocolLog.i(
             ProtocolLog.TAG_TLS,
@@ -145,7 +148,9 @@ class NvHttpClient(
         val identity = identityOrFail() ?: return null
         val serverCertificate = trustStore.certificate(hostKey) ?: return null
         val report = TlsProbe.diagnose(address, httpsPort, identity, serverCertificate)
-        if (report.tlsWorks && report.workingProtocols != UnverifiedProtocolConstants.TLS_PROTOCOLS) {
+        // Only worth remembering when it is actually narrower than the platform default; an empty
+        // working list means the default was fine and there is nothing to override.
+        if (report.tlsWorks && !report.workingProtocols.isNullOrEmpty()) {
             rememberTlsProtocols(hostKey, report.workingProtocols)
         }
         return report
@@ -664,12 +669,12 @@ class NvHttpClient(
             opened.useCaches = false
             opened.instanceFollowRedirects = false
             opened.doInput = true
-            // Never pool a connection to one of these hosts. `useCaches = false` does not stop the
-            // platform's connection pool from keeping the socket alive after `disconnect()`, and a
-            // pooled socket to a host that has already closed its side is a request that fails for
-            // no visible reason. The host closes after every response anyway, so keep-alive buys
-            // nothing and costs determinism.
-            opened.setRequestProperty("Connection", "close")
+            // No `Connection: close`. The reference client — moonlight-android, which Artemis
+            // forks and which Apollo is developed against — does not send it, and matching what
+            // demonstrably works matters more than what looks tidy. It reaches the same end by
+            // configuring OkHttp with `ConnectionPool(0, 1ms)`: connections are never *reused*, but
+            // the server is never *told* to close either. Our `disconnect()` below is the exact
+            // equivalent, so the bytes on the wire now match the working client's.
 
             cancellationHandle = coroutineContext[Job]?.invokeOnCompletion { cause ->
                 if (cause != null) runCatching { opened.disconnect() }

@@ -2,7 +2,6 @@ package com.voidlink.android.protocol.http
 
 import com.voidlink.android.protocol.HostAddress
 import com.voidlink.android.protocol.ProtocolLog
-import com.voidlink.android.protocol.UnverifiedProtocolConstants
 import com.voidlink.android.protocol.crypto.ClientIdentity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -180,7 +179,7 @@ object TlsProbe {
         if (behaviour == PortBehaviour.TLS_SPEAKING || behaviour == PortBehaviour.UNRECOGNISED) {
             for (candidate in PROTOCOL_LADDER) {
                 val attempt = handshake(
-                    label = "handshake with client certificate over $candidate",
+                    label = "handshake with client certificate over ${describe(candidate)}",
                     host = address.host,
                     port = port,
                     protocols = candidate,
@@ -201,7 +200,7 @@ object TlsProbe {
                     label = "handshake WITHOUT a client certificate",
                     host = address.host,
                     port = port,
-                    protocols = UnverifiedProtocolConstants.TLS_PROTOCOLS,
+                    protocols = emptyList(),
                     identity = null,
                     serverCertificate = serverCertificate,
                 )
@@ -373,6 +372,10 @@ object TlsProbe {
         }
     }
 
+    /** Names a protocol list for a log line; an empty list is the platform's own choice. */
+    private fun describe(protocols: List<String>): String =
+        if (protocols.isEmpty()) "the platform default" else protocols.toString()
+
     /**
      * Handshake configurations, narrowest-useful last.
      *
@@ -381,7 +384,7 @@ object TlsProbe {
      * socket and a few seconds.
      */
     private val PROTOCOL_LADDER: List<List<String>> = listOf(
-        UnverifiedProtocolConstants.TLS_PROTOCOLS,
+        emptyList(),
         listOf("TLSv1.2"),
     )
 }

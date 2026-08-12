@@ -275,19 +275,17 @@ object PinnedTls {
     }
 
     /**
-     * A socket factory that additionally constrains the enabled TLS versions.
+     * A socket factory for an NVHTTP connection.
      *
-     * UNVERIFIED(spec 01 §3.1): whether any still-in-use host requires a version below TLSv1.2.
-     * The default list lives in [UnverifiedProtocolConstants.TLS_PROTOCOLS] so that a failing
-     * handshake against an ancient GFE is a one-line experiment rather than a code change.
-     *
-     * @param protocols overrides that default. [TlsProbe] uses it to try one version at a time, and
-     *   a host that only completes a handshake under one of them keeps that narrower list for the
-     *   rest of the session.
+     * @param protocols TLS versions to enable. **Empty means "leave the platform default alone"**,
+     *   which is the default and what the reference client does — moonlight-android never calls
+     *   `setEnabledProtocols`, and it is the client this host family is actually tested against.
+     *   Narrowing the list is reserved for a host [TlsProbe] has shown needs it; imposing a list on
+     *   every host is a divergence from the thing that demonstrably works, for no evidence.
      */
     fun socketFactory(
         context: SSLContext,
-        protocols: List<String> = UnverifiedProtocolConstants.TLS_PROTOCOLS,
+        protocols: List<String> = emptyList(),
     ): SSLSocketFactory =
         ProtocolConstrainingSocketFactory(
             delegate = context.socketFactory,
@@ -459,21 +457,26 @@ private class ProtocolConstrainingSocketFactory(
     private fun configure(socket: Socket): Socket {
         if (socket is SSLSocket) {
             runCatching {
-                val supported = socket.supportedProtocols.toSet()
-                val enabled = desiredProtocols.filter { it in supported }
-                if (enabled.isNotEmpty()) {
-                    socket.enabledProtocols = enabled.toTypedArray()
-                } else {
-                    // The degrade path: never let a too-aggressive pin be the reason a host is
-                    // unreachable. Logged because it silently changes what we offer, and a host
-                    // that then negotiates something unexpected is otherwise impossible to explain
-                    // from a bug report.
-                    ProtocolLog.w(
-                        ProtocolLog.TAG_TLS,
-                        "None of $desiredProtocols is supported here " +
-                            "(platform offers ${socket.supportedProtocols.toList()}); " +
-                            "leaving the socket at its default ${socket.enabledProtocols.toList()}",
-                    )
+                // An empty list is the normal path, and the one the reference client takes: touch
+                // nothing. The platform's own list is better informed than ours about what this
+                // device and this Android version can actually negotiate.
+                if (desiredProtocols.isNotEmpty()) {
+                    val supported = socket.supportedProtocols.toSet()
+                    val enabled = desiredProtocols.filter { it in supported }
+                    if (enabled.isNotEmpty()) {
+                        socket.enabledProtocols = enabled.toTypedArray()
+                    } else {
+                        // The degrade path: never let a too-aggressive pin be the reason a host is
+                        // unreachable. Logged because it silently changes what we offer, and a host
+                        // that then negotiates something unexpected is otherwise impossible to
+                        // explain from a bug report.
+                        ProtocolLog.w(
+                            ProtocolLog.TAG_TLS,
+                            "None of $desiredProtocols is supported here " +
+                                "(platform offers ${socket.supportedProtocols.toList()}); " +
+                                "leaving the socket at its default ${socket.enabledProtocols.toList()}",
+                        )
+                    }
                 }
                 ProtocolLog.d(
                     ProtocolLog.TAG_TLS,

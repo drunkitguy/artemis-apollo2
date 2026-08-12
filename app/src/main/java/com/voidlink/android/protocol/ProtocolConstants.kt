@@ -301,11 +301,18 @@ object UnverifiedProtocolConstants {
     const val UNIQUE_ID_HEX_CHARS: Int = 16
 
     /**
-     * TLS protocol versions offered to a host.
+     * TLS protocol versions, kept only as a documented reference point.
      *
-     * UNVERIFIED(spec 01 §3.1): whether any still-in-use host requires < TLSv1.2. We enable
-     * TLSv1.2 explicitly and let the platform add newer versions.
-     * Risk if wrong: `no cipher suites in common` on an ancient GFE; surfaced verbatim.
+     * **Not applied by default any more.** We used to impose this list on every socket; the
+     * reference client (moonlight-android, which Artemis forks and which the Sunshine/Apollo family
+     * is actually tested against) never calls `setEnabledProtocols` at all, and diverging from the
+     * thing that demonstrably works — on no evidence that any host needs it — is not a trade worth
+     * making. `PinnedTls.socketFactory` now defaults to an empty list, meaning "leave the platform
+     * default alone".
+     *
+     * A narrower list is applied per host only when `TlsProbe` has shown that host needs one.
+     *
+     * UNVERIFIED(spec 01 §3.1): whether any still-in-use host requires < TLSv1.2.
      */
     val TLS_PROTOCOLS: List<String> = listOf("TLSv1.2", "TLSv1.3")
 
