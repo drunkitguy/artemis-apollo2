@@ -6,7 +6,8 @@ package com.voidlink.android.protocol.rtsp
  *
  * This is the RTSP counterpart of [com.voidlink.android.protocol.ProtocolConstants]: that object
  * documents itself as the single home for protocol constants, and these values belong there in
- * spirit. They live here only because `protocol/rtsp/**` is the tree this work is allowed to touch;
+ * spirit. They live here only because the `protocol/rtsp` package is the tree this work is allowed
+ * to touch;
  * folding them into `ProtocolConstants` later is a pure move with no behaviour change. Values that
  * `ProtocolConstants` already carries — notably
  * [com.voidlink.android.protocol.ProtocolConstants.DEFAULT_RTSP_PORT] — are *referenced*, never

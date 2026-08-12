@@ -246,14 +246,19 @@ object MediaCodecProbe : DecoderProbe {
      * [LowLatencyKeys.vendorKeysFor]: below API 31 "we do not know" must not become "supports
      * none", or low-latency mode quietly switches itself off on most devices in use.
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun supportedVendorParameters(
         capabilities: MediaCodecInfo.CodecCapabilities,
     ): List<String>? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
-        return try {
-            capabilities.supportedVendorParameters?.toList()
-        } catch (error: Throwable) {
-            null
-        }
+        // The vendor-parameter list is exposed by MediaCodec.getSupportedVendorParameters() on
+        // API 31+, not by CodecCapabilities, so it cannot be read from a static probe without
+        // instantiating the codec — which is far too expensive to do for every decoder on the
+        // device just to enumerate capabilities.
+        //
+        // Returning null is the correct answer rather than a limitation to work around: it means
+        // "not asked", which [LowLatencyKeys.vendorKeysFor] treats as "try the keys and let the
+        // codec reject what it does not know". Returning an empty list would mean "supports none"
+        // and would quietly disable low-latency mode on most devices.
+        return null
     }
 }
