@@ -288,6 +288,16 @@ private class PinnedTrustManager(private val pinned: X509Certificate) : X509Trus
         val presented = chain?.firstOrNull()
             ?: throw CertificateException("host presented no certificate")
         if (!MessageDigest.isEqual(presented.encoded, pinnedEncoded)) {
+            // Logged as well as thrown: the exception is wrapped in an SSLHandshakeException by the
+            // time anything sees it, and "which certificate did we actually get" is the question a
+            // pinning failure always raises.
+            ProtocolLog.w(
+                ProtocolLog.TAG_TLS,
+                "Pinned certificate mismatch: host presented " +
+                    "subject=${presented.subjectX500Principal.name} " +
+                    "serial=${presented.serialNumber}, pinned subject=${pinned.subjectX500Principal.name} " +
+                    "serial=${pinned.serialNumber}",
+            )
             throw CertificateException(
                 "host certificate does not match the one pinned during pairing; re-pair this host",
             )
@@ -337,7 +347,35 @@ private class ProtocolConstrainingSocketFactory(
             runCatching {
                 val supported = socket.supportedProtocols.toSet()
                 val enabled = desiredProtocols.filter { it in supported }
-                if (enabled.isNotEmpty()) socket.enabledProtocols = enabled.toTypedArray()
+                if (enabled.isNotEmpty()) {
+                    socket.enabledProtocols = enabled.toTypedArray()
+                } else {
+                    // The degrade path: never let a too-aggressive pin be the reason a host is
+                    // unreachable. Logged because it silently changes what we offer, and a host
+                    // that then negotiates something unexpected is otherwise impossible to explain
+                    // from a bug report.
+                    ProtocolLog.w(
+                        ProtocolLog.TAG_TLS,
+                        "None of $desiredProtocols is supported here " +
+                            "(platform offers ${socket.supportedProtocols.toList()}); " +
+                            "leaving the socket at its default ${socket.enabledProtocols.toList()}",
+                    )
+                }
+                ProtocolLog.d(
+                    ProtocolLog.TAG_TLS,
+                    "TLS offering ${socket.enabledProtocols.toList()} to " +
+                        "${socket.inetAddress?.hostAddress}:${socket.port}",
+                )
+                // What was actually negotiated is the single most useful line in a TLS bug report,
+                // and there is no way to read it back from `HttpsURLConnection` afterwards.
+                socket.addHandshakeCompletedListener { event ->
+                    ProtocolLog.i(
+                        ProtocolLog.TAG_TLS,
+                        "TLS handshake complete: ${event.session.protocol} / " +
+                            "${event.session.cipherSuite} with " +
+                            "${event.session.peerHost}:${event.session.peerPort}",
+                    )
+                }
             }.onFailure {
                 ProtocolLog.w(ProtocolLog.TAG_TLS, "Could not constrain TLS versions", it)
             }

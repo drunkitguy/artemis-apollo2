@@ -473,7 +473,35 @@ class HostsViewModel(
                 // makes Wake-on-LAN possible later, once the PC is asleep and cannot be asked.
                 stored.markSeen(System.currentTimeMillis()).withLearnedMac(status.macAddress)
             }
+            adoptPairingTheHostConfirms(host, uuid, status)
         }
+    }
+
+    /**
+     * Repairs the case where the PC trusts us but our own record says it does not.
+     *
+     * `status.paired` is only ever true because a client-certificate HTTPS request to the host
+     * actually succeeded, and nothing but a paired client can do that — so the host's answer is
+     * strictly better evidence than the stored flag. The disagreement is reachable whenever a
+     * pairing completes on the PC but its final confirmation is lost on the way back (a
+     * `pairchallenge` that times out is the known way), and without this the user is asked to pair
+     * a PC that has already paired with them, over and over.
+     *
+     * Only ever promotes. A host that has genuinely forgotten us is demoted by the probe itself,
+     * which is a different and already-handled path.
+     */
+    private suspend fun adoptPairingTheHostConfirms(
+        host: KnownHost,
+        uuid: String,
+        status: HostStatus,
+    ) {
+        if (!status.paired || host.paired) return
+        ProtocolLog.i(
+            ProtocolLog.TAG_PAIR,
+            "${host.name} accepts our client certificate but was stored as unpaired; " +
+                "adopting the host's answer and marking it paired",
+        )
+        hostRepository.markPaired(uuid)
     }
 
     /**

@@ -15,6 +15,7 @@ import com.voidlink.android.protocol.http.ServerInfo
 import com.voidlink.android.protocol.http.XmlNode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
@@ -80,11 +81,17 @@ sealed interface PairProgress {
  *    must verify against the certificate from phase 1 (anti-MITM), and the phase-2 hash must
  *    match one we recompute from the now-revealed secret (this is the PIN check).
  * 4. `clientpairingsecret` — we reveal our own secret, signed with our private key.
- * 5. An HTTPS `pairchallenge` using our client certificate — the host does not actually consider
- *    us paired until one client-certificate TLS request succeeds.
+ * 5. An HTTPS `pairchallenge` using our client certificate — our own confirmation that
+ *    client-certificate TLS to this host works.
  *
- * Every failure and cancellation path calls `/unpair`, without exception: a half-finished pairing
- * left on the host wedges every subsequent attempt (spec §4.0).
+ * **Where the rollback boundary sits.** A failure or cancellation in phases 1–4 calls `/unpair` and
+ * drops the pinned certificate: a half-finished pairing left on the host wedges every subsequent
+ * attempt (spec §4.0). From phase 5 onwards it does not, and must not. Phase 4 answering
+ * `<paired>1</paired>` is the instant a Sunshine-family host adds our certificate to its client
+ * list and writes it to disk; after that the host considers us paired regardless of what phase 5
+ * does. Rolling back there discards a pairing that genuinely exists — which is precisely what a
+ * `pairchallenge` read timeout used to do, leaving the host listing a client this app believed it
+ * had never paired with. An inconclusive phase 5 is instead settled by [confirmPairing].
  *
  * @param httpClient the NVHTTP transport.
  * @param identityStore supplies our certificate and key.
@@ -103,7 +110,9 @@ class PairingEngine(
      *
      * The returned flow is cold: collecting it starts the attempt, and cancelling the collection
      * cancels it — which closes the phase-1 socket and calls `/unpair` so the host dismisses its
-     * PIN prompt (spec §4.8).
+     * PIN prompt (spec §4.8). Cancellation always rolls back, because it is an explicit "I do not
+     * want this PC" from the user; a *failure* only rolls back while the host has not yet accepted
+     * us, which is the boundary described on the class.
      *
      * `channelFlow` rather than `flow` because the cleanup paths need to report an outcome after
      * catching a failure, and emitting from inside a `catch` would violate a plain flow's
@@ -118,10 +127,17 @@ class PairingEngine(
         address: HostAddress,
         serverInfo: ServerInfo,
     ): Flow<PairProgress> = channelFlow {
+        val tracker = PhaseTracker()
         try {
-            val outcome = runHandshake(hostKey, address, serverInfo) { send(it) }
-            if (outcome.result != PairResult.PAIRED) {
+            val outcome = runHandshake(hostKey, address, serverInfo, tracker) { send(it) }
+            if (outcome.result != PairResult.PAIRED && outcome.rollBack) {
                 withContext(NonCancellable) { cleanUp(hostKey, address, "outcome=${outcome.result}") }
+            } else if (outcome.result != PairResult.PAIRED) {
+                ProtocolLog.w(
+                    ProtocolLog.TAG_PAIR,
+                    "Not rolling back: the host accepted our certificate in phase 4, so /unpair " +
+                        "would destroy a pairing that exists. Keeping the pinned certificate.",
+                )
             }
             send(PairProgress.Done(outcome.result, outcome.detail))
         } catch (cancellation: CancellationException) {
@@ -130,9 +146,22 @@ class PairingEngine(
             withContext(NonCancellable) { cleanUp(hostKey, address, "cancelled") }
             throw cancellation
         } catch (t: Throwable) {
-            ProtocolLog.e(ProtocolLog.TAG_PAIR, "Pairing threw", t)
-            withContext(NonCancellable) { cleanUp(hostKey, address, "exception") }
-            send(PairProgress.Done(PairResult.FAILED, t.message ?: t.javaClass.simpleName))
+            val phase = tracker.phase
+            val where = if (phase == 0) "before phase 1" else "phase $phase"
+            val description = NvHttpClient.describeFailure(t)
+            ProtocolLog.e(ProtocolLog.TAG_PAIR, "Pairing threw in $where: $description", t)
+            // Same rule as an ordinary failure: once phase 4 has returned <paired>1</paired> the
+            // host has already filed our certificate, and tearing that down is worse than reporting
+            // an unclear failure.
+            if (phase < HOST_HAS_ACCEPTED_US_FROM_PHASE) {
+                withContext(NonCancellable) { cleanUp(hostKey, address, "exception in $where") }
+            } else {
+                ProtocolLog.w(
+                    ProtocolLog.TAG_PAIR,
+                    "Not rolling back: the host accepted our certificate in phase 4.",
+                )
+            }
+            send(PairProgress.Done(PairResult.FAILED, "$where threw: $description"))
         }
     }
 
@@ -147,6 +176,7 @@ class PairingEngine(
         hostKey: String,
         address: HostAddress,
         serverInfo: ServerInfo,
+        tracker: PhaseTracker,
         emit: suspend (PairProgress) -> Unit,
     ): Outcome {
         val identity = try {
@@ -154,14 +184,19 @@ class PairingEngine(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (t: Throwable) {
-            return Outcome(PairResult.FAILED, "no client identity: ${t.message}")
+            return Outcome(
+                PairResult.FAILED,
+                "no client identity: ${NvHttpClient.describeFailure(t)}",
+            )
         }
 
         val hash = PairingHash.forGeneration(serverInfo.appVersion.generation)
         ProtocolLog.i(
             ProtocolLog.TAG_PAIR,
-            "Pairing with ${serverInfo.hostname ?: hostKey}: appversion=${serverInfo.appVersion}, " +
-                "hash=${hash.jcaName}",
+            "Pairing with ${serverInfo.hostname ?: hostKey} at ${address.canonical()}: " +
+                "appversion=${serverInfo.appVersion}, kind=${serverInfo.serverKind}, " +
+                "hash=${hash.jcaName}, httpsPort=${serverInfo.httpsPort}, " +
+                "uniqueid=${identity.uniqueId}",
         )
 
         val salt = randomBytes(ProtocolConstants.PAIRING_SALT_BYTES)
@@ -172,19 +207,44 @@ class PairingEngine(
         emit(PairProgress.PinReady(pin))
 
         // ---- Phase 1: getservercert (spec §4.3) ----------------------------------------------
+        tracker.phase = 1
         emit(PairProgress.Phase(1))
-        val phase1 = httpClient.pairPlain(
+        val phase1Params = listOf(
+            "phrase" to "getservercert",
+            "salt" to Hex.encode(salt),
+            "clientcert" to identity.certificatePemHex,
+        )
+        var phase1 = httpClient.pairPlain(
             address = address,
-            phaseParams = listOf(
-                "phrase" to "getservercert",
-                "salt" to Hex.encode(salt),
-                "clientcert" to identity.certificatePemHex,
-            ),
+            phaseLabel = PHASE_1_LABEL,
+            phaseParams = phase1Params,
             readTimeoutMs = ProtocolConstants.PAIRING_PHASE1_READ_TIMEOUT_MS,
         )
-        val phase1Root = phase1.valueOrNull() ?: return transportFailure(phase1, "phase 1")
+        if (isStalePairingSession(phase1)) {
+            // Sunshine and Apollo key their in-flight pairing state by `uniqueid` and refuse a
+            // second `getservercert` for a session that is still open ("Out of order call to
+            // getservercert"). Refusing it is also what *clears* it, so the immediate retry is the
+            // one that works — otherwise every other attempt by this device fails for a reason the
+            // user cannot act on.
+            ProtocolLog.w(
+                ProtocolLog.TAG_PAIR,
+                "phase 1 hit a stale pairing session on the host (${phase1.errorDescription()}); " +
+                    "the host has now cleared it, retrying once",
+            )
+            phase1 = httpClient.pairPlain(
+                address = address,
+                phaseLabel = "$PHASE_1_LABEL retry",
+                phaseParams = phase1Params,
+                readTimeoutMs = ProtocolConstants.PAIRING_PHASE1_READ_TIMEOUT_MS,
+            )
+        }
+        val phase1Root = phase1.valueOrNull() ?: return transportFailure(phase1, PHASE_1_LABEL)
         if (!isPaired(phase1Root)) {
-            return Outcome(PairResult.FAILED, "phase 1: the host rejected the pairing request")
+            return Outcome(
+                PairResult.FAILED,
+                "$PHASE_1_LABEL: the host rejected the pairing request " +
+                    "(${pairedValue(phase1Root)})",
+            )
         }
         val plainCertHex = phase1Root.textOf("plaincert")
         if (plainCertHex.isNullOrBlank()) {
@@ -194,29 +254,47 @@ class PairingEngine(
             return Outcome(PairResult.ALREADY_IN_PROGRESS, null)
         }
         val serverCertificate = CertificateCodec.parseOrNull(Hex.decodeOrNull(plainCertHex))
-            ?: return Outcome(PairResult.FAILED, "phase 1: the host certificate could not be parsed")
+            ?: return Outcome(
+                PairResult.FAILED,
+                "$PHASE_1_LABEL: the host certificate could not be parsed " +
+                    "(plaincert was ${plainCertHex.length} hex chars)",
+            )
 
         // ---- Phase 2: clientchallenge (spec §4.4) --------------------------------------------
+        tracker.phase = 2
         emit(PairProgress.Phase(2))
         val clientChallenge = randomBytes(ProtocolConstants.PAIRING_CHALLENGE_BYTES)
         val phase2 = httpClient.pairPlain(
             address = address,
+            phaseLabel = PHASE_2_LABEL,
             phaseParams = listOf(
                 "clientchallenge" to Hex.encode(PairingCrypto.encrypt(clientChallenge, aesKey)),
             ),
+            readTimeoutMs = ProtocolConstants.PAIRING_PHASE2_READ_TIMEOUT_MS,
         )
-        val phase2Root = phase2.valueOrNull() ?: return transportFailure(phase2, "phase 2")
+        val phase2Root = phase2.valueOrNull() ?: return transportFailure(phase2, PHASE_2_LABEL)
         if (!isPaired(phase2Root)) {
-            return Outcome(PairResult.FAILED, "phase 2: the host rejected the client challenge")
+            return Outcome(
+                PairResult.FAILED,
+                "$PHASE_2_LABEL: the host rejected the client challenge (${pairedValue(phase2Root)})",
+            )
         }
         val encryptedChallengeResponse = Hex.decodeOrNull(phase2Root.textOf("challengeresponse"))
-            ?: return Outcome(PairResult.FAILED, "phase 2: challengeresponse was missing or not hex")
+            ?: return Outcome(
+                PairResult.FAILED,
+                "$PHASE_2_LABEL: challengeresponse was missing or not hex",
+            )
         val serverChallenge = PairingCrypto.splitChallengeResponse(
             PairingCrypto.decrypt(encryptedChallengeResponse, aesKey),
             hash,
-        ) ?: return Outcome(PairResult.FAILED, "phase 2: challengeresponse was too short")
+        ) ?: return Outcome(
+            PairResult.FAILED,
+            "$PHASE_2_LABEL: challengeresponse was too short " +
+                "(${encryptedChallengeResponse.size} bytes for ${hash.jcaName})",
+        )
 
         // ---- Phase 3: serverchallengeresp (spec §4.5) ----------------------------------------
+        tracker.phase = 3
         emit(PairProgress.Phase(3))
         val clientSecret = randomBytes(ProtocolConstants.PAIRING_CHALLENGE_BYTES)
         val challengeRespHash = PairingCrypto.clientChallengeResponseHash(
@@ -227,18 +305,30 @@ class PairingEngine(
         )
         val phase3 = httpClient.pairPlain(
             address = address,
+            phaseLabel = PHASE_3_LABEL,
             phaseParams = listOf(
                 "serverchallengeresp" to Hex.encode(PairingCrypto.encrypt(challengeRespHash, aesKey)),
             ),
+            readTimeoutMs = ProtocolConstants.PAIRING_PHASE3_READ_TIMEOUT_MS,
         )
-        val phase3Root = phase3.valueOrNull() ?: return transportFailure(phase3, "phase 3")
+        val phase3Root = phase3.valueOrNull() ?: return transportFailure(phase3, PHASE_3_LABEL)
         if (!isPaired(phase3Root)) {
-            return Outcome(PairResult.FAILED, "phase 3: the host rejected the challenge response")
+            return Outcome(
+                PairResult.FAILED,
+                "$PHASE_3_LABEL: the host rejected the challenge response " +
+                    "(${pairedValue(phase3Root)})",
+            )
         }
         val pairingSecretRaw = Hex.decodeOrNull(phase3Root.textOf("pairingsecret"))
-            ?: return Outcome(PairResult.FAILED, "phase 3: pairingsecret was missing or not hex")
+            ?: return Outcome(
+                PairResult.FAILED,
+                "$PHASE_3_LABEL: pairingsecret was missing or not hex",
+            )
         val serverPairingSecret = PairingCrypto.splitPairingSecret(pairingSecretRaw)
-            ?: return Outcome(PairResult.FAILED, "phase 3: pairingsecret was too short")
+            ?: return Outcome(
+                PairResult.FAILED,
+                "$PHASE_3_LABEL: pairingsecret was too short (${pairingSecretRaw.size} bytes)",
+            )
 
         // Check 1 — authenticity. The host must be able to sign with the key in the certificate it
         // handed us in phase 1. A failure here means something is sitting between us and the PC.
@@ -266,34 +356,120 @@ class PairingEngine(
         }
 
         // ---- Phase 4: clientpairingsecret (spec §4.6) ----------------------------------------
+        tracker.phase = 4
         emit(PairProgress.Phase(4))
         val clientPairingSecret = PairingCrypto.clientPairingSecret(clientSecret, identity.privateKey)
         val phase4 = httpClient.pairPlain(
             address = address,
+            phaseLabel = PHASE_4_LABEL,
             phaseParams = listOf("clientpairingsecret" to Hex.encode(clientPairingSecret)),
+            readTimeoutMs = ProtocolConstants.PAIRING_PHASE4_READ_TIMEOUT_MS,
         )
-        val phase4Root = phase4.valueOrNull() ?: return transportFailure(phase4, "phase 4")
+        val phase4Root = phase4.valueOrNull() ?: return transportFailure(phase4, PHASE_4_LABEL)
         if (!isPaired(phase4Root)) {
-            return Outcome(PairResult.FAILED, "phase 4: the host rejected the client pairing secret")
+            return Outcome(
+                PairResult.FAILED,
+                "$PHASE_4_LABEL: the host rejected the client pairing secret " +
+                    "(${pairedValue(phase4Root)})",
+            )
         }
 
         // ---- Phase 5: HTTPS pairchallenge (spec §4.7) ----------------------------------------
-        // The certificate has to be pinned before this call, because the call is what uses it.
+        //
+        // Everything below runs with `rollBack = false`, and that is the whole point of this
+        // section. Phase 4 answering `<paired>1</paired>` is the moment a Sunshine-family host adds
+        // our certificate to its client list and persists it — from here the host considers us
+        // paired whatever we do next. Phase 5 is our *confirmation* that client-certificate TLS
+        // works, not a step the host is waiting for. Treating a phase-5 timeout as a failure and
+        // calling `/unpair` therefore threw away a pairing that already existed, and left the host
+        // listing a client the app believed it had never paired with.
+        tracker.phase = 5
         emit(PairProgress.Phase(5))
+
+        // The certificate has to be pinned before the call, because the call is what uses it — and
+        // under the same key `pairChallengeSecure` reads it back from.
         trustStore.store(hostKey, serverCertificate)
-        val phase5 = httpClient.pairChallengeSecure(hostKey, address, serverInfo.httpsPort)
-        val phase5Root = phase5.valueOrNull()
-        if (phase5Root == null) {
-            trustStore.remove(hostKey)
-            return transportFailure(phase5, "phase 5 (HTTPS pairchallenge)")
-        }
-        if (!isPaired(phase5Root)) {
-            trustStore.remove(hostKey)
-            return Outcome(PairResult.FAILED, "phase 5: the host did not confirm pairing over TLS")
+        if (trustStore.certificate(hostKey) == null) {
+            return Outcome(
+                PairResult.FAILED,
+                "$PHASE_5_LABEL: the host's certificate could not be stored on this device, so no " +
+                    "HTTPS call can be made to it",
+                rollBack = false,
+            )
         }
 
-        ProtocolLog.i(ProtocolLog.TAG_PAIR, "Paired with ${serverInfo.hostname ?: hostKey}")
-        return Outcome(PairResult.PAIRED, null)
+        val phase5 = httpClient.pairChallengeSecure(hostKey, address, serverInfo.httpsPort)
+        val phase5Root = phase5.valueOrNull()
+        if (phase5Root != null && isPaired(phase5Root)) {
+            ProtocolLog.i(ProtocolLog.TAG_PAIR, "Paired with ${serverInfo.hostname ?: hostKey}")
+            return Outcome(PairResult.PAIRED, null, rollBack = false)
+        }
+
+        val reason = when {
+            phase5Root != null -> "the host answered without <paired>1</paired> " +
+                "(${pairedValue(phase5Root)})"
+            else -> phase5.errorDescription() ?: "unknown error"
+        }
+        ProtocolLog.w(
+            ProtocolLog.TAG_PAIR,
+            "$PHASE_5_LABEL did not confirm ($reason). This does not mean the host refused us — " +
+                "it already accepted our certificate in phase 4 — so confirming with a pinned " +
+                "HTTPS /serverinfo instead.",
+        )
+        return confirmPairing(hostKey, address, serverInfo, reason)
+    }
+
+    /**
+     * Settles an inconclusive phase 5 by asking the definitive question directly.
+     *
+     * Spec §3.3: a `/serverinfo` that succeeds over client-certificate TLS *is* the definition of
+     * being paired — it proves the host accepts this certificate. So when `pairchallenge` times out
+     * or answers oddly, this is a better answer than guessing, and a far better answer than
+     * discarding a pairing the host has already recorded.
+     *
+     * Retried a few times because the host may still be reloading the client database it rewrote
+     * during phase 4, which is the most likely reason the first HTTPS connection stalled.
+     */
+    private suspend fun confirmPairing(
+        hostKey: String,
+        address: HostAddress,
+        serverInfo: ServerInfo,
+        reason: String,
+    ): Outcome {
+        var lastError = "not attempted"
+        repeat(ProtocolConstants.PAIRING_CONFIRM_ATTEMPTS) { attempt ->
+            if (attempt > 0) delay(ProtocolConstants.PAIRING_CONFIRM_RETRY_DELAY_MS)
+            val confirmation = httpClient.serverInfoSecure(
+                hostKey = hostKey,
+                address = address,
+                httpsPort = serverInfo.httpsPort,
+                timeoutMs = ProtocolConstants.PAIRING_CONFIRM_TIMEOUT_MS,
+                trace = "${NvHttpClient.PHASE_5_CONFIRM_LABEL} ${attempt + 1}/" +
+                    "${ProtocolConstants.PAIRING_CONFIRM_ATTEMPTS}",
+            )
+            if (confirmation.isSuccess) {
+                ProtocolLog.i(
+                    ProtocolLog.TAG_PAIR,
+                    "Paired with ${serverInfo.hostname ?: hostKey}: pinned HTTPS /serverinfo " +
+                        "succeeded on attempt ${attempt + 1}, which only a client the host trusts " +
+                        "can do. The pairchallenge leg is unreliable on this host ($reason).",
+                )
+                return Outcome(PairResult.PAIRED, null, rollBack = false)
+            }
+            lastError = confirmation.errorDescription() ?: "unknown error"
+            ProtocolLog.w(
+                ProtocolLog.TAG_PAIR,
+                "Pairing confirmation attempt ${attempt + 1} of " +
+                    "${ProtocolConstants.PAIRING_CONFIRM_ATTEMPTS} failed: $lastError",
+            )
+        }
+        return Outcome(
+            PairResult.FAILED,
+            "$PHASE_5_LABEL: $reason; the follow-up pinned-HTTPS /serverinfo also failed " +
+                "($lastError). The host may still consider this device paired — check its client " +
+                "list before pairing again.",
+            rollBack = false,
+        )
     }
 
     /**
@@ -333,5 +509,62 @@ class PairingEngine(
         return Outcome(PairResult.FAILED, "$phase: $detail")
     }
 
-    private class Outcome(val result: PairResult, val detail: String?)
+    /** Tracks which phase is running, so a thrown exception can name it and decide about rollback. */
+    private class PhaseTracker {
+        @Volatile
+        var phase: Int = 0
+    }
+
+    /**
+     * A terminal outcome.
+     *
+     * @property result what to tell the user.
+     * @property detail a specific, human-readable explanation for the failure paths.
+     * @property rollBack whether to call `/unpair` and drop the pinned certificate. **False from
+     *   phase 5 onwards**: by then the host has already accepted and persisted our certificate, so
+     *   rolling back destroys a real pairing and leaves the two sides disagreeing.
+     */
+    private class Outcome(
+        val result: PairResult,
+        val detail: String?,
+        val rollBack: Boolean = true,
+    )
+
+    private companion object {
+        const val PHASE_1_LABEL = "phase 1 (getservercert)"
+        const val PHASE_2_LABEL = "phase 2 (clientchallenge)"
+        const val PHASE_3_LABEL = "phase 3 (serverchallengeresp)"
+        const val PHASE_4_LABEL = "phase 4 (clientpairingsecret)"
+        val PHASE_5_LABEL: String = NvHttpClient.PHASE_5_LABEL
+
+        /**
+         * The phase from which the host already holds our certificate.
+         *
+         * Phase 4 returning `<paired>1</paired>` is the point at which a Sunshine-family host adds
+         * the client to its list and writes it to disk; nothing after that may roll it back.
+         */
+        const val HOST_HAS_ACCEPTED_US_FROM_PHASE = 5
+
+        /** The status code a Sunshine-family host uses for every `/pair` refusal. */
+        const val STATUS_BAD_REQUEST = 400
+
+        /**
+         * True when phase 1 was refused because the host still holds an in-flight pairing session
+         * for this `uniqueid`.
+         *
+         * The host clears the session as it refuses, so the refusal is self-healing and an
+         * immediate retry succeeds. Matched on the host's own wording as well as the status code,
+         * because a 400 alone has other causes.
+         */
+        fun isStalePairingSession(result: NvHttpResult<XmlNode>): Boolean {
+            if (result !is NvHttpResult.HostError) return false
+            if (result.statusCode != STATUS_BAD_REQUEST) return false
+            val message = result.statusMessage?.lowercase() ?: return false
+            return message.contains("out of order") || message.contains("invalid uniqueid")
+        }
+
+        /** Renders what a response actually said in `<paired>`, for a failure detail. */
+        fun pairedValue(root: XmlNode): String =
+            "paired=${root.textOf("paired") ?: "<absent>"}"
+    }
 }

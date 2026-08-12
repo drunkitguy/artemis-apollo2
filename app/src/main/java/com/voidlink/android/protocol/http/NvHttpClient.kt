@@ -87,6 +87,7 @@ class NvHttpClient(
         address: HostAddress,
         httpsPort: Int = ProtocolConstants.DEFAULT_HTTPS_PORT,
         timeoutMs: Int = ProtocolConstants.PROBE_TIMEOUT_ONLINE_MS,
+        trace: String? = null,
     ): NvHttpResult<ServerInfo> = secureRequest(
         hostKey = hostKey,
         address = address,
@@ -95,6 +96,7 @@ class NvHttpClient(
         endpointParams = emptyList(),
         connectTimeoutMs = timeoutMs,
         readTimeoutMs = timeoutMs,
+        trace = trace,
     ).mapCatchingRoot(ProtocolConstants.PATH_SERVER_INFO) { root -> ServerInfo.fromXml(root) }
 
     // -- /applist, /appasset, /cancel ----------------------------------------------------------
@@ -255,13 +257,17 @@ class NvHttpClient(
      * The `devicename` / `updateState` prefix and the universal parameters are added here so no
      * caller can forget them; [phaseParams] carries only the phase-specific values.
      *
+     * @param phaseLabel human-readable phase name; it prefixes every log line and every failure
+     *   detail for this call, so a `VL.Pair` logcat filter reads as a transcript.
      * @param readTimeoutMs `0` for phase 1, where the host blocks until the user types the PIN.
      * @return the response `<root>` element on success, for the caller to pull phase values from.
      */
     suspend fun pairPlain(
         address: HostAddress,
+        phaseLabel: String,
         phaseParams: List<Pair<String, String>>,
         readTimeoutMs: Int = ProtocolConstants.PAIRING_PHASE_TIMEOUT_MS,
+        connectTimeoutMs: Int = ProtocolConstants.PAIRING_CONNECT_TIMEOUT_MS,
     ): NvHttpResult<XmlNode> {
         val identity = identityOrFail() ?: return identityUnavailable()
         val url = buildUrl(
@@ -273,10 +279,11 @@ class NvHttpClient(
         )
         return requestXml(
             url = url,
-            endpoint = ProtocolConstants.PATH_PAIR,
-            connectTimeoutMs = ProtocolConstants.PAIRING_CONNECT_TIMEOUT_MS,
+            endpoint = phaseLabel,
+            connectTimeoutMs = connectTimeoutMs,
             readTimeoutMs = readTimeoutMs,
             tls = null,
+            trace = phaseLabel,
         )
     }
 
@@ -285,11 +292,17 @@ class NvHttpClient(
      *
      * The host does not consider us paired until one client-certificate HTTPS request succeeds, so
      * this call is what actually completes pairing rather than merely confirming it.
+     *
+     * Its timeouts are deliberately much longer than the plaintext phases': this is the first TLS
+     * connection ever made to the host, and on `HttpURLConnection` the read timeout also covers the
+     * handshake — during which the host walks its entire client list to verify our certificate.
      */
     suspend fun pairChallengeSecure(
         hostKey: String,
         address: HostAddress,
         httpsPort: Int,
+        connectTimeoutMs: Int = ProtocolConstants.PAIRING_PHASE5_CONNECT_TIMEOUT_MS,
+        readTimeoutMs: Int = ProtocolConstants.PAIRING_PHASE5_READ_TIMEOUT_MS,
     ): NvHttpResult<XmlNode> {
         val identity = identityOrFail() ?: return identityUnavailable()
         val serverCertificate = trustStore.certificate(hostKey) ?: return NvHttpResult.NotPaired
@@ -302,20 +315,33 @@ class NvHttpClient(
                 listOf("phrase" to "pairchallenge") +
                 universalParams(identity),
         )
+        ProtocolLog.i(
+            ProtocolLog.TAG_PAIR,
+            "phase 5 (pairchallenge): presenting client cert " +
+                "subject=${identity.certificate.subjectX500Principal.name}, " +
+                "pinned host cert subject=${serverCertificate.subjectX500Principal.name}, " +
+                "connectTimeout=${connectTimeoutMs}ms readTimeout=${readTimeoutMs}ms",
+        )
         return requestXml(
             url = url,
-            endpoint = "pairchallenge",
-            connectTimeoutMs = ProtocolConstants.PAIRING_CONNECT_TIMEOUT_MS,
-            readTimeoutMs = ProtocolConstants.PAIRING_PHASE_TIMEOUT_MS,
+            endpoint = PHASE_5_LABEL,
+            connectTimeoutMs = connectTimeoutMs,
+            readTimeoutMs = readTimeoutMs,
             tls = TlsSetup(identity, serverCertificate),
+            trace = PHASE_5_LABEL,
         )
     }
 
     /**
      * `/unpair` over plaintext HTTP (spec §3.9).
      *
-     * Also the mandatory cleanup after any failed or cancelled pairing attempt — leaving a
-     * half-finished pairing on the host wedges every subsequent try.
+     * Also the cleanup after a pairing attempt that failed *before the host accepted us* — leaving a
+     * half-finished pairing on the host wedges every subsequent try. It is deliberately **not**
+     * called once the handshake has reached its final phase; see `PairingEngine`.
+     *
+     * Note that the Sunshine family serves only `/serverinfo` and `/pair` on the plaintext port, so
+     * this answers 404 there and the call is a no-op. It still matters for GFE, and the 404 is
+     * harmless, so it is left in place rather than being made host-kind-dependent.
      */
     suspend fun unpairPlain(address: HostAddress): NvHttpResult<Unit> {
         val identity = identityOrFail() ?: return identityUnavailable()
@@ -357,6 +383,7 @@ class NvHttpClient(
         endpointParams: List<Pair<String, String>>,
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
+        trace: String? = null,
     ): NvHttpResult<XmlNode> {
         val identity = identityOrFail() ?: return identityUnavailable()
         val serverCertificate = trustStore.certificate(hostKey) ?: return NvHttpResult.NotPaired
@@ -373,6 +400,7 @@ class NvHttpClient(
             connectTimeoutMs = connectTimeoutMs,
             readTimeoutMs = readTimeoutMs,
             tls = TlsSetup(identity, serverCertificate),
+            trace = trace,
         )
     }
 
@@ -382,18 +410,34 @@ class NvHttpClient(
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
         tls: TlsSetup?,
+        trace: String? = null,
     ): NvHttpResult<XmlNode> =
-        when (val raw = execute(url, endpoint, connectTimeoutMs, readTimeoutMs, tls)) {
+        when (val raw = execute(url, endpoint, connectTimeoutMs, readTimeoutMs, tls, trace)) {
             is NvHttpResult.Success -> {
                 val text = raw.value.body.toString(Charsets.UTF_8)
                 when (val parsed = NvXml.parseResponse(text, endpoint)) {
                     is XmlResponse.Ok -> NvHttpResult.Success(parsed.root)
-                    is XmlResponse.HostError ->
+                    is XmlResponse.HostError -> {
+                        if (trace != null) {
+                            ProtocolLog.w(
+                                ProtocolLog.TAG_PAIR,
+                                "$trace: the host reported status_code=${parsed.statusCode} " +
+                                    "\"${parsed.statusMessage.orEmpty()}\"",
+                            )
+                        }
                         NvHttpResult.HostError(parsed.statusCode, parsed.statusMessage)
+                    }
                     is XmlResponse.Malformed -> {
+                        if (trace != null) {
+                            ProtocolLog.w(
+                                ProtocolLog.TAG_PAIR,
+                                "$trace: unusable body (HTTP ${raw.value.code}): ${parsed.reason}",
+                            )
+                        }
                         if (raw.value.code != HTTP_OK) {
                             NvHttpResult.TransportError(
-                                "$endpoint: HTTP ${raw.value.code} with an unusable body",
+                                "$endpoint: HTTP ${raw.value.code} with an unusable body " +
+                                    "(${parsed.reason})",
                             )
                         } else {
                             NvHttpResult.Malformed(parsed.reason)
@@ -422,9 +466,14 @@ class NvHttpClient(
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
         tls: TlsSetup?,
+        trace: String? = null,
     ): NvHttpResult<RawResponse> = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         var cancellationHandle: DisposableHandle? = null
+        val startedAt = System.currentTimeMillis()
+        if (trace != null) {
+            ProtocolLog.i(ProtocolLog.TAG_PAIR, "$trace -> GET ${redactUrl(url)}")
+        }
         try {
             val opened = URL(url).openConnection() as HttpURLConnection
             connection = opened
@@ -458,12 +507,29 @@ class NvHttpClient(
             val body = stream?.use { readBounded(it, MAX_RESPONSE_BYTES) } ?: ByteArray(0)
             ensureActive()
             ProtocolLog.d(ProtocolLog.TAG_HTTP, "$endpoint -> HTTP $code, ${body.size} bytes")
+            if (trace != null) {
+                ProtocolLog.i(
+                    ProtocolLog.TAG_PAIR,
+                    "$trace <- HTTP $code, ${body.size} bytes in " +
+                        "${System.currentTimeMillis() - startedAt}ms: ${bodyPreview(body)}",
+                )
+            }
             NvHttpResult.Success(RawResponse(code, body))
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (t: Throwable) {
             ProtocolLog.d(ProtocolLog.TAG_HTTP, "$endpoint failed: ${t.javaClass.simpleName}: ${t.message}")
-            val message = t.message ?: t.javaClass.simpleName
+            // Both the exception type and its message: "Read timed out" alone does not say whether
+            // a socket read or a TLS handshake gave up, and that distinction is the difference
+            // between "the host is refusing us" and "we did not wait long enough".
+            val message = describeFailure(t)
+            if (trace != null) {
+                ProtocolLog.w(
+                    ProtocolLog.TAG_PAIR,
+                    "$trace <- FAILED after ${System.currentTimeMillis() - startedAt}ms: $message",
+                    t,
+                )
+            }
             // A failed handshake is reported separately from a failed connection. Only the former
             // is evidence about pairing: a host that has forgotten our certificate aborts the
             // handshake, whereas a timeout means the answer is simply unknown this time.
@@ -522,8 +588,103 @@ class NvHttpClient(
         private const val SCHEME_HTTPS = "https"
         private const val HTTP_OK = 200
 
+        /** Trace label of the HTTPS `pairchallenge` leg; also the log prefix a bug report is grepped for. */
+        const val PHASE_5_LABEL: String = "phase 5 (HTTPS pairchallenge)"
+
+        /** Trace label of the confirmation `/serverinfo` that settles an inconclusive phase 5. */
+        const val PHASE_5_CONFIRM_LABEL: String = "phase 5 confirm (pinned HTTPS /serverinfo)"
+
         /** Box art is the largest legitimate body; 8 MB is far above any real one. */
         private const val MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+        /** How much of a response body a trace line quotes. Every NVHTTP document fits easily. */
+        const val BODY_PREVIEW_CHARS: Int = 512
+
+        /** How much of a long query value a trace line quotes before eliding the rest. */
+        const val TRACE_VALUE_CHARS: Int = 24
+
+        /**
+         * Query parameters whose values are derived from the PIN and must never reach a log.
+         *
+         * Everything else in a `/pair` URL is either public (`devicename`, `phrase`) or a random
+         * nonce that is useless on its own, and seeing it is the whole point of the transcript.
+         */
+        private val PIN_DERIVED_PARAMS = setOf(
+            "clientchallenge",
+            "serverchallengeresp",
+            "clientpairingsecret",
+        )
+
+        /**
+         * Renders [url] for a log line.
+         *
+         * PIN-derived values are replaced outright; merely long ones (the hex certificate) are
+         * truncated so the line stays readable, while still showing enough to spot an empty or
+         * obviously wrong value.
+         */
+        fun redactUrl(url: String): String {
+            val split = url.indexOf('?')
+            if (split < 0) return url
+            val base = url.substring(0, split)
+            val query = url.substring(split + 1)
+            if (query.isEmpty()) return url
+            val rendered = query.split('&').joinToString("&") { pair ->
+                val eq = pair.indexOf('=')
+                if (eq < 0) return@joinToString pair
+                val key = pair.substring(0, eq)
+                val value = pair.substring(eq + 1)
+                when {
+                    key in PIN_DERIVED_PARAMS -> "$key=<redacted:${value.length} chars>"
+                    value.length > TRACE_VALUE_CHARS ->
+                        "$key=${value.take(TRACE_VALUE_CHARS)}…<${value.length} chars>"
+                    else -> "$key=$value"
+                }
+            }
+            return "$base?$rendered"
+        }
+
+        /**
+         * A one-line, bounded rendering of a response body for a log.
+         *
+         * Newlines are collapsed so one response is one logcat line, which is what makes the
+         * transcript greppable.
+         */
+        fun bodyPreview(body: ByteArray): String {
+            if (body.isEmpty()) return "<empty body>"
+            val text = body.toString(Charsets.UTF_8)
+                .replace('\n', ' ')
+                .replace('\r', ' ')
+                .trim()
+            if (text.isEmpty()) return "<${body.size} bytes, no printable text>"
+            return if (text.length <= BODY_PREVIEW_CHARS) {
+                text
+            } else {
+                text.take(BODY_PREVIEW_CHARS) + "…<truncated, ${body.size} bytes total>"
+            }
+        }
+
+        /**
+         * Names a thrown failure in a way a user can paste into a bug report.
+         *
+         * The type matters as much as the message: `SocketTimeoutException: Read timed out` and
+         * `SSLHandshakeException: Read timed out` mean completely different things about whether
+         * the host is refusing us, and a bare message loses that.
+         */
+        fun describeFailure(t: Throwable): String {
+            val head = nameAndMessage(t)
+            val cause = t.cause
+            return if (cause == null || cause === t) {
+                head
+            } else {
+                "$head (caused by ${nameAndMessage(cause)})"
+            }
+        }
+
+        private fun nameAndMessage(t: Throwable): String {
+            val type = t.javaClass.simpleName.ifEmpty { t.javaClass.name }
+            val message = t.message
+            return if (message.isNullOrBlank()) type else "$type: $message"
+        }
 
         private val PNG_MAGIC = byteArrayOf(
             0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(),

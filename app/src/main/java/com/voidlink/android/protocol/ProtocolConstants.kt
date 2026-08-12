@@ -85,7 +85,14 @@ object ProtocolConstants {
     /** `/launch` and `/resume` may legitimately take tens of seconds (spec §3.6). */
     const val LAUNCH_TIMEOUT_MS: Int = 60_000
 
-    /** Pairing phases 2–5 (architecture §4.2). */
+    /**
+     * Default read timeout for a `/pair` phase (architecture §4.2).
+     *
+     * Every phase names its own constant below rather than sharing this one, because the phases are
+     * not equivalent: phase 1 blocks on a human, phase 4 makes the host write and reload its client
+     * database, and phase 5 opens a fresh TLS connection. A single shared number hid that, and a
+     * phase-5 read timeout is exactly how a completed pairing got thrown away.
+     */
     const val PAIRING_PHASE_TIMEOUT_MS: Int = 10_000
 
     /**
@@ -96,8 +103,45 @@ object ProtocolConstants {
      */
     const val PAIRING_PHASE1_READ_TIMEOUT_MS: Int = 0
 
+    /** Phase 2 — `clientchallenge`; the host only does a little AES here. */
+    const val PAIRING_PHASE2_READ_TIMEOUT_MS: Int = 10_000
+
+    /** Phase 3 — `serverchallengeresp`; one RSA signature on the host. */
+    const val PAIRING_PHASE3_READ_TIMEOUT_MS: Int = 10_000
+
+    /**
+     * Phase 4 — `clientpairingsecret`.
+     *
+     * The host verifies a signature *and* rewrites and reloads its persisted client list before it
+     * answers, so this is measurably slower than phases 2 and 3.
+     */
+    const val PAIRING_PHASE4_READ_TIMEOUT_MS: Int = 20_000
+
     /** Connect timeout even for the blocking phase-1 call — reaching the host must still be quick. */
     const val PAIRING_CONNECT_TIMEOUT_MS: Int = 10_000
+
+    /**
+     * Phase 5 — the HTTPS `pairchallenge` (spec §4.7).
+     *
+     * Generous on purpose. This leg opens a brand-new TLS connection on a port nothing has touched
+     * yet, and the host verifies our client certificate against its whole client list during the
+     * handshake. On `HttpURLConnection` the read timeout also covers the handshake, so a value
+     * tuned for a plaintext round trip aborts mid-handshake and reports "Read timed out".
+     */
+    const val PAIRING_PHASE5_CONNECT_TIMEOUT_MS: Int = 15_000
+    const val PAIRING_PHASE5_READ_TIMEOUT_MS: Int = 45_000
+
+    /**
+     * The confirmation `/serverinfo` over pinned HTTPS used when phase 5 is inconclusive (spec §4.7).
+     *
+     * A phase-5 timeout says nothing about whether the host accepted us — by then it already has
+     * our certificate. A client-certificate HTTPS request that *succeeds* is the definition of
+     * "genuinely paired" (spec §3.3), so it is the right way to settle the question rather than
+     * discarding a pairing that exists.
+     */
+    const val PAIRING_CONFIRM_TIMEOUT_MS: Int = 15_000
+    const val PAIRING_CONFIRM_ATTEMPTS: Int = 3
+    const val PAIRING_CONFIRM_RETRY_DELAY_MS: Long = 1_500L
 
     // ---- Pairing (spec §4) -------------------------------------------------------------------
 
