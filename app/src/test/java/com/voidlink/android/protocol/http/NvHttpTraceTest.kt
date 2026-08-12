@@ -135,4 +135,36 @@ class NvHttpTraceTest {
     fun `a message-less failure still names its type`() {
         assertEquals("SocketTimeoutException", NvHttpClient.describeFailure(SocketTimeoutException()))
     }
+
+    // ---- The per-listener serialisation key ---------------------------------------------------
+
+    @Test
+    fun `the gate key is the host and port, so each listener is serialised separately`() {
+        // A host serves its plaintext and secure listeners on separate single threads. Keying the
+        // lock by host alone would make a slow secure request block plaintext probes for no reason;
+        // keying it by the whole URL would not serialise anything at all.
+        assertEquals("192.168.0.3:47984", NvHttpClient.authorityOf("https://192.168.0.3:47984/applist?a=b"))
+        assertEquals("192.168.0.3:47989", NvHttpClient.authorityOf("http://192.168.0.3:47989/serverinfo?a=b"))
+    }
+
+    @Test
+    fun `two requests to the same listener share a key`() {
+        val applist = NvHttpClient.authorityOf("https://h:47984/applist?uniqueid=1")
+        val serverinfo = NvHttpClient.authorityOf("https://h:47984/serverinfo?uniqueid=2")
+
+        assertEquals(applist, serverinfo)
+    }
+
+    @Test
+    fun `an IPv6 literal keeps its brackets in the key`() {
+        assertEquals("[fe80::1]:47984", NvHttpClient.authorityOf("https://[fe80::1]:47984/applist?a=b"))
+    }
+
+    @Test
+    fun `a URL with no path or query still yields a key`() {
+        // Must never throw: this runs on the failure path, where a second exception would bury the
+        // first.
+        assertEquals("h:1", NvHttpClient.authorityOf("https://h:1"))
+        assertEquals("nonsense", NvHttpClient.authorityOf("nonsense"))
+    }
 }

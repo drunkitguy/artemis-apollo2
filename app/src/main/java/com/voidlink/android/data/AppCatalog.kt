@@ -92,8 +92,15 @@ enum class AppCatalogFailure {
  */
 sealed interface AppCatalogResult {
 
-    /** The host answered. [apps] may legitimately be empty. */
-    class Success(val apps: List<HostApp>) : AppCatalogResult
+    /**
+     * The host answered. [apps] may legitimately be empty.
+     *
+     * @property runningAppId the app currently streaming, read from the same `/serverinfo` the
+     *   lookup already needed. Carried here so the Apps screen does not have to make a second,
+     *   separate request for it — every avoided request is a socket a Sunshine-family host does not
+     *   have to leak.
+     */
+    class Success(val apps: List<HostApp>, val runningAppId: String? = null) : AppCatalogResult
 
     /**
      * The library could not be listed.

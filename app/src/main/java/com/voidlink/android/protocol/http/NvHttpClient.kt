@@ -71,6 +71,9 @@ class NvHttpClient(
     /** Distinguishes one request from another in the log, so an unclosed connection is visible. */
     private val exchangeCounter = AtomicLong(0)
 
+    /** Hosts the TLS self-test has already run against; see [diagnoseTls] for why it runs once. */
+    private val diagnosedHosts = ConcurrentHashMap<String, Boolean>()
+
     private fun httpsGateFor(url: String): Mutex =
         httpsGates.getOrPut(authorityOf(url)) { Mutex() }
 
@@ -127,6 +130,18 @@ class NvHttpClient(
         address: HostAddress,
         httpsPort: Int,
     ): TlsProbeReport? {
+        // Strictly last resort, and at most once per host per process. The self-test opens several
+        // connections — including deliberately failing ones — and a Sunshine-family host leaks a
+        // socket per connection (they pile up in CLOSE_WAIT until its process restarts). Running it
+        // on every failure would make the self-test a cause of the problem it exists to explain.
+        if (diagnosedHosts.putIfAbsent(hostKey, true) != null) {
+            ProtocolLog.i(
+                ProtocolLog.TAG_TLS,
+                "Skipping the TLS self-test for $hostKey: already run once this session, and each " +
+                    "run costs the host several connections it does not reclaim",
+            )
+            return null
+        }
         val identity = identityOrFail() ?: return null
         val serverCertificate = trustStore.certificate(hostKey) ?: return null
         val report = TlsProbe.diagnose(address, httpsPort, identity, serverCertificate)

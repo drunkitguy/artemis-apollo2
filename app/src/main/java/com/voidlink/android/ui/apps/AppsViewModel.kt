@@ -10,7 +10,6 @@ import com.voidlink.android.data.AppCatalogProvider
 import com.voidlink.android.data.AppCatalogResult
 import com.voidlink.android.data.HostApp
 import com.voidlink.android.data.HostRepository
-import com.voidlink.android.data.HostStatus
 import com.voidlink.android.data.HostStatusProvider
 import com.voidlink.android.data.KnownHost
 import com.voidlink.android.di.ServiceLocator
@@ -109,6 +108,14 @@ class AppsViewModel(
     private val hostId: String,
     private val hostRepository: HostRepository,
     private val catalogProvider: AppCatalogProvider,
+    /**
+     * Retained but unused by [refresh].
+     *
+     * Kept because the Apps screen will need a live status feed for the running-app indicator, and
+     * because removing it from the factory is churn for no benefit — but nothing on this screen may
+     * probe on open again. Every extra secure request is a socket the host does not give back.
+     */
+    @Suppress("unused")
     private val statusProvider: HostStatusProvider,
 ) : ViewModel() {
 
@@ -136,16 +143,21 @@ class AppsViewModel(
                 }
                 return@launch
             }
-            val status: HostStatus = statusProvider.probe(host)
+            // Deliberately *not* probing the host first. That probe cost a second secure request
+            // per screen-open, and a Sunshine-family host does not reclaim the socket each one
+            // costs — they accumulate until its process restarts. Everything the probe told us is
+            // available from the catalogue: which app is running comes back on the same
+            // `/serverinfo` the lookup already needs, and whether we are paired is answered
+            // definitively by whether `/applist` itself succeeded.
             val result = catalogProvider.listApps(host)
             val apps = result.appsOrEmpty().sortedWith(HostApp.displayOrder)
             state.update { previous ->
                 AppsUiState(
                     host = host,
                     apps = apps,
-                    runningAppId = status.runningAppId,
+                    runningAppId = (result as? AppCatalogResult.Success)?.runningAppId,
                     isLoading = false,
-                    emptyReason = emptyReasonFor(result, status, apps),
+                    emptyReason = emptyReasonFor(result, apps),
                     emptyDetail = (result as? AppCatalogResult.Failure)?.detail,
                     // A notice set just before the refresh (e.g. "Stopped the running app.") has to
                     // survive it, or the user never gets to read the outcome of what they did.
@@ -158,14 +170,13 @@ class AppsViewModel(
     /**
      * Chooses what the empty state should say.
      *
-     * The catalogue's own answer wins, because it is the one that actually made the request. The
-     * probe is consulted only to explain a *successful but empty* list: a host that is unreachable
-     * or unpaired at probe time cannot have answered `/applist` either, and saying "this PC lists
-     * no games" about a PC that is switched off is worse than saying nothing.
+     * The catalogue's own answer is the only input, because it is the only thing that actually made
+     * the request. A separate status probe used to be consulted here, and asking twice cost a
+     * second secure connection per screen-open against a host that never reclaims them — for an
+     * answer the catalogue already had.
      */
     private fun emptyReasonFor(
         result: AppCatalogResult,
-        status: HostStatus,
         apps: List<HostApp>,
     ): EmptyLibraryReason? = when {
         apps.isNotEmpty() -> null
@@ -179,8 +190,8 @@ class AppsViewModel(
             AppCatalogFailure.TLS -> EmptyLibraryReason.TLS_FAILURE
             AppCatalogFailure.UNREADABLE -> EmptyLibraryReason.UNREADABLE_RESPONSE
         }
-        !status.isOnline -> EmptyLibraryReason.UNREACHABLE
-        !status.paired -> EmptyLibraryReason.UNPAIRED
+        // A Success with nothing in it is the one case that really is an empty library: the request
+        // reached the host and it listed nothing.
         else -> EmptyLibraryReason.NO_APPS
     }
 

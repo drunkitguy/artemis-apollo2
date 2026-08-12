@@ -622,8 +622,13 @@ class HostsViewModel(
          *
          * Long enough that a phone is not waking its radio constantly, short enough that a PC the
          * user has just switched on turns green before they give up and press refresh.
+         *
+         * Lengthened from twenty seconds after a host's `netstat` showed our requests accumulating
+         * on it as sockets it never reclaims. The probe itself is plaintext and cheap, but every
+         * cycle used to carry a secure request too, and a timer is the last place to be spending
+         * something the other end does not give back.
          */
-        private const val AUTO_PROBE_INTERVAL_MILLIS = 20_000L
+        private const val AUTO_PROBE_INTERVAL_MILLIS = 60_000L
 
         /** How many hosts are probed at once; each probe is a socket and a timeout. */
         private const val PROBE_PARALLELISM = 4

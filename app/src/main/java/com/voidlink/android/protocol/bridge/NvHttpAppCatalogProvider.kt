@@ -99,7 +99,7 @@ class NvHttpAppCatalogProvider(
             "/applist for ${host.name}: ${apps.size} applications" +
                 (if (apps.isEmpty()) " — the host answered 200 but listed nothing" else ""),
         )
-        return AppCatalogResult.Success(apps)
+        return AppCatalogResult.Success(apps, resolved.serverInfo.currentGameId)
     }
 
     /**
