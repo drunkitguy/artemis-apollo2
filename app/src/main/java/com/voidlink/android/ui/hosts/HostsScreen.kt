@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,9 +44,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.voidlink.android.data.HostReachability
 import com.voidlink.android.data.HostStatus
 import com.voidlink.android.data.KnownHost
@@ -81,7 +82,8 @@ private val HostCardMinWidth = 320.dp
  * @param onUnpair unpair was chosen from a card's context menu.
  * @param onWake wake was chosen from a card's context menu.
  * @param onHostSettings per-host settings was chosen from a card's context menu.
- * @param onDismissPairing closes the PIN sheet.
+ * @param onDismissPairing abandons pairing; must cancel the handshake, not just hide the dialog.
+ * @param onRetryPairing starts a fresh attempt after a failed one.
  * @param onMessageShown clears the transient message once displayed.
  * @param modifier layout modifier.
  */
@@ -98,6 +100,7 @@ fun HostsScreen(
     onWake: (KnownHost) -> Unit,
     onHostSettings: (KnownHost) -> Unit,
     onDismissPairing: () -> Unit,
+    onRetryPairing: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -221,11 +224,11 @@ fun HostsScreen(
         )
     }
 
-    if (state.pairingHost != null && state.pairingPin != null) {
+    state.pairing?.let { pairing ->
         PairingDialog(
-            hostName = state.pairingHost.name,
-            pin = state.pairingPin,
-            onDismiss = onDismissPairing,
+            state = pairing,
+            onCancel = onDismissPairing,
+            onRetry = onRetryPairing,
         )
     }
 }
@@ -458,13 +461,6 @@ private fun HostFooterButton(
                 modifier = Modifier.size(20.dp),
             )
             Spacer(modifier = Modifier.width(spacing.sm))
-        } else {
-            CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                color = contentColor,
-                strokeWidth = 2.dp,
-            )
-            Spacer(modifier = Modifier.width(spacing.sm))
         }
         Text(
             text = label,
@@ -609,34 +605,177 @@ private fun RenameHostDialog(
     )
 }
 
-/** Shows the PIN the user must type on the host to complete pairing. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The pairing dialog, which swaps its content as the handshake progresses.
+ *
+ * Three states, per spec §2.5: the PIN to type on the PC, the working phases, and the outcome.
+ * While the attempt is live the dialog **cannot** be dismissed by tapping outside or by the back
+ * gesture — only the explicit Cancel button — because dismissing has to run the protocol's
+ * `/unpair` cleanup, and a stray outside-tap that skipped it would leave the host stuck showing a
+ * PIN prompt and refusing every later attempt.
+ *
+ * @param state the live pairing state.
+ * @param onCancel abandon the attempt; cancels the handshake and runs its cleanup.
+ * @param onRetry start a fresh attempt with the same host.
+ */
 @Composable
 private fun PairingDialog(
-    hostName: String,
-    pin: String,
-    onDismiss: () -> Unit,
+    state: PairingUiState,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
 ) {
+    val colors = VoidLinkTheme.colors
+    val outcome = state.outcome
+
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = "Pair with $hostName", style = VoidLinkTheme.cardTitle) },
+        onDismissRequest = { if (state.isFinished) onCancel() },
+        properties = DialogProperties(
+            dismissOnBackPress = state.isFinished,
+            dismissOnClickOutside = state.isFinished,
+        ),
+        title = {
+            Text(
+                text = when (outcome) {
+                    null -> if (state.isAwaitingPin) {
+                        "Enter this PIN on your PC"
+                    } else {
+                        "Pairing…"
+                    }
+                    PairingOutcome.PAIRED -> "Paired"
+                    PairingOutcome.PIN_WRONG -> "Wrong PIN"
+                    PairingOutcome.ALREADY_IN_PROGRESS -> "Another device is pairing"
+                    PairingOutcome.FAILED -> "Pairing failed"
+                    PairingOutcome.CANCELLED -> "Pairing cancelled"
+                },
+                style = VoidLinkTheme.cardTitle,
+                color = colors.label,
+            )
+        },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "Enter this PIN on the host to finish pairing.",
-                    style = VoidLinkTheme.body,
-                    color = VoidLinkTheme.colors.secondaryLabel,
-                )
-                Spacer(modifier = Modifier.height(VoidLinkTheme.spacing.lg))
-                Text(
-                    text = pin,
-                    style = VoidLinkTheme.largeTitle,
-                    color = VoidLinkTheme.colors.accent,
-                )
+                when {
+                    outcome != null -> PairingResultBody(state = state)
+                    state.isAwaitingPin -> PairingPinBody(hostName = state.host.name, pin = state.pin.orEmpty())
+                    else -> PairingWorkingBody(phase = state.phase)
+                }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        confirmButton = {
+            when (outcome) {
+                null -> TextButton(onClick = onCancel) {
+                    Text(text = "Cancel", color = colors.secondaryLabel)
+                }
+                PairingOutcome.PAIRED -> TextButton(onClick = onCancel) { Text("Done") }
+                else -> TextButton(onClick = onRetry) {
+                    Text(text = "Try again", color = colors.accent)
+                }
+            }
+        },
+        // A plain slot that emits nothing when there is no second action, rather than a nullable
+        // composable lambda — same result, none of the inference sharp edges.
+        dismissButton = {
+            if (outcome != null && outcome != PairingOutcome.PAIRED) {
+                TextButton(onClick = onCancel) {
+                    Text(text = "Cancel", color = colors.secondaryLabel)
+                }
+            }
+        },
     )
+}
+
+/** Phase 1: the PIN, one digit per box, with the instruction underneath. */
+@Composable
+private fun PairingPinBody(hostName: String, pin: String) {
+    val colors = VoidLinkTheme.colors
+    val spacing = VoidLinkTheme.spacing
+
+    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        pin.forEach { digit ->
+            Box(
+                modifier = Modifier
+                    .size(width = 48.dp, height = 60.dp)
+                    .clip(RoundedCornerShape(VoidLinkShapeTokens.ButtonRadius))
+                    .background(colors.fill),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = digit.toString(),
+                    style = VoidLinkTheme.largeTitle,
+                    color = colors.accent,
+                )
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(spacing.lg))
+    Text(
+        text = "A prompt should have appeared on $hostName. Type this PIN there to finish pairing.",
+        style = VoidLinkTheme.footnote,
+        color = colors.secondaryLabel,
+        textAlign = TextAlign.Center,
+    )
+}
+
+/** Phases 2 onward: the handshake is running and needs nothing from the user. */
+@Composable
+private fun PairingWorkingBody(phase: Int) {
+    val colors = VoidLinkTheme.colors
+    val spacing = VoidLinkTheme.spacing
+
+    // The same indeterminate bar the rest of the app uses to mean "something is happening", rather
+    // than a second, differently-shaped progress idiom in a dialog.
+    LinearProgressIndicator(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .clip(RoundedCornerShape(2.dp)),
+        color = colors.accent,
+        trackColor = colors.fill,
+    )
+    Spacer(modifier = Modifier.height(spacing.md))
+    Text(
+        text = "Step ${phase.coerceIn(1, PAIRING_PHASE_COUNT)} of $PAIRING_PHASE_COUNT",
+        style = VoidLinkTheme.footnote,
+        color = colors.secondaryLabel,
+    )
+}
+
+/** The terminal state: what happened, and what the user can do about it. */
+@Composable
+private fun PairingResultBody(state: PairingUiState) {
+    val colors = VoidLinkTheme.colors
+    val spacing = VoidLinkTheme.spacing
+    val paired = state.outcome == PairingOutcome.PAIRED
+
+    Icon(
+        imageVector = if (paired) VoidLinkIcons.Paired else VoidLinkIcons.Alert,
+        contentDescription = null,
+        tint = if (paired) colors.online else colors.destructive,
+        modifier = Modifier.size(44.dp),
+    )
+    Spacer(modifier = Modifier.height(spacing.md))
+    Text(
+        text = when (state.outcome) {
+            PairingOutcome.PAIRED -> "${state.host.name} now trusts this device."
+            PairingOutcome.PIN_WRONG -> "The PIN didn't match. Try again."
+            PairingOutcome.ALREADY_IN_PROGRESS ->
+                "Wait for the other device to finish, then try again."
+            PairingOutcome.CANCELLED -> "The attempt was stopped."
+            else -> "The handshake did not complete."
+        },
+        style = VoidLinkTheme.body,
+        color = colors.secondaryLabel,
+        textAlign = TextAlign.Center,
+    )
+    // The protocol's own reason, when it supplied one — far more use than a generic apology.
+    state.detail?.takeIf { it.isNotBlank() && !paired }?.let { detail ->
+        Spacer(modifier = Modifier.height(spacing.sm))
+        Text(
+            text = detail,
+            style = VoidLinkTheme.footnote,
+            color = colors.tertiaryLabel,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 /** A transient one-line notice pinned to the bottom of the screen. */
@@ -752,6 +891,7 @@ private fun HostsScreenPreviewContent() {
         onWake = {},
         onHostSettings = {},
         onDismissPairing = {},
+        onRetryPairing = {},
         onMessageShown = {},
     )
 }

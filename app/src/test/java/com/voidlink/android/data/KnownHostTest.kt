@@ -120,6 +120,59 @@ class KnownHostTest {
     }
 
     @Test
+    fun `a probe that learns a MAC records it`() {
+        // The case that makes Wake-on-LAN reachable at all for a manually added host: Sunshine
+        // hands the real MAC back only over HTTPS, once we are paired.
+        val updated = host(macAddress = null).withLearnedMac("aa:bb:cc:dd:ee:ff")
+
+        assertEquals("aa:bb:cc:dd:ee:ff", updated.macAddress)
+        assertTrue(updated.canWakeOnLan)
+    }
+
+    @Test
+    fun `a probe that learns no MAC never erases the one already stored`() {
+        // Every plaintext probe returns no MAC. Treating that as a correction would delete a MAC
+        // learned earlier and silently break waking for exactly the hosts that had it working.
+        val known = host(macAddress = "aa:bb:cc:dd:ee:ff")
+
+        assertEquals(known, known.withLearnedMac(null))
+        assertEquals(known, known.withLearnedMac(""))
+        assertEquals(known, known.withLearnedMac("   "))
+    }
+
+    @Test
+    fun `a MAC read over HTTPS replaces one advertised by discovery`() {
+        val discovered = host(macAddress = "00:00:00:00:00:00")
+
+        assertEquals(
+            "aa:bb:cc:dd:ee:ff",
+            discovered.withLearnedMac("aa:bb:cc:dd:ee:ff").macAddress,
+        )
+    }
+
+    @Test
+    fun `learning a MAC changes nothing else about the host`() {
+        val original = host(paired = true, lastSeenEpochMillis = 42L)
+
+        val updated = original.withLearnedMac("aa:bb:cc:dd:ee:ff")
+
+        assertEquals(original.copy(macAddress = "aa:bb:cc:dd:ee:ff"), updated)
+    }
+
+    @Test
+    fun `a status carries no MAC until a probe supplies one`() {
+        assertNull(HostStatus.Unknown.macAddress)
+        assertNull(HostStatus.Offline.macAddress)
+        assertEquals(
+            "aa:bb:cc:dd:ee:ff",
+            HostStatus(
+                reachability = HostReachability.ONLINE,
+                macAddress = "aa:bb:cc:dd:ee:ff",
+            ).macAddress,
+        )
+    }
+
+    @Test
     fun `preferring an address moves it to the front without duplicating it`() {
         val updated = host(addresses = listOf("192.168.1.24", "10.0.0.5"))
             .withPreferredAddress("10.0.0.5")

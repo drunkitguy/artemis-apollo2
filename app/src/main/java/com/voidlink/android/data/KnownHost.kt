@@ -95,6 +95,17 @@ data class KnownHost(
     }
 
     /**
+     * Returns a copy carrying [macAddress] when the probe actually learned one.
+     *
+     * A MAC read back over HTTPS from a paired host is authoritative and replaces whatever
+     * discovery advertised, but a probe that returns nothing must never erase a MAC we already
+     * have — Sunshine withholds it over plaintext, so "no MAC in this answer" is the normal case,
+     * not a correction.
+     */
+    fun withLearnedMac(macAddress: String?): KnownHost =
+        if (macAddress.isNullOrBlank()) this else copy(macAddress = macAddress)
+
+    /**
      * Returns a copy that records a successful sighting at [nowEpochMillis], optionally promoting
      * the address that answered.
      */
@@ -113,6 +124,12 @@ data class KnownHost(
  * @property runningAppId id of the app currently streaming on the host, or `null` when idle.
  * @property runningAppName human-readable name of [runningAppId], when the host supplied one.
  * @property hostName the host's self-reported name, used to keep a renamed PC in sync.
+ * @property macAddress the host's MAC, when this probe learned one.
+ *
+ *   Sunshine returns the real MAC only over HTTPS to a client it already trusts, so this is
+ *   populated on exactly the probes that can see it and null on the rest. It is the only route by
+ *   which a manually added host — one discovery never advertised — can ever become wakeable, which
+ *   is precisely the host a user most wants to wake.
  */
 data class HostStatus(
     val reachability: HostReachability = HostReachability.UNKNOWN,
@@ -120,6 +137,7 @@ data class HostStatus(
     val runningAppId: String? = null,
     val runningAppName: String? = null,
     val hostName: String? = null,
+    val macAddress: String? = null,
 ) {
     /** Convenience predicate matching the green "Online" state in the UI. */
     val isOnline: Boolean get() = reachability == HostReachability.ONLINE

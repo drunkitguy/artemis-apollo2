@@ -2,6 +2,7 @@ package com.voidlink.android.ui.components
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DesktopWindows
@@ -105,4 +106,10 @@ object VoidLinkIcons {
 
     /** Starred settings rows. */
     val Favorite: ImageVector = Icons.Filled.Star
+
+    /** A completed, successful operation — pairing in particular. */
+    val Paired: ImageVector = Icons.Filled.CheckCircle
+
+    /** Something went wrong. Same glyph as [Offline], but never the same meaning. */
+    val Alert: ImageVector = Icons.Filled.Warning
 }

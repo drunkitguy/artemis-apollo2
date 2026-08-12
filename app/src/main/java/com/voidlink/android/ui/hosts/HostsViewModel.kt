@@ -12,11 +12,17 @@ import com.voidlink.android.data.HostStatusProvider
 import com.voidlink.android.data.HostWaker
 import com.voidlink.android.data.KnownHost
 import com.voidlink.android.di.ServiceLocator
+import com.voidlink.android.protocol.bridge.HostPairingCoordinator
+import com.voidlink.android.protocol.pairing.PairProgress
+import com.voidlink.android.protocol.pairing.PairResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -98,20 +104,73 @@ enum class HostAction {
 }
 
 /**
+ * How a pairing attempt ended, in the UI's own vocabulary.
+ *
+ * Mirrors the protocol's `PairResult` so the screen never has to import the protocol layer, and so
+ * that the mapping between the two is one exhaustive, reviewable `when`.
+ */
+enum class PairingOutcome {
+    /** The host now trusts this client. */
+    PAIRED,
+
+    /** The PIN typed on the host did not match. */
+    PIN_WRONG,
+
+    /** Another device is already pairing with this host. */
+    ALREADY_IN_PROGRESS,
+
+    /** The handshake failed for some other reason. */
+    FAILED,
+
+    /** The user backed out. */
+    CANCELLED,
+}
+
+/**
+ * What the pairing dialog is showing.
+ *
+ * @property host the host being paired with.
+ * @property pin the PIN the user must type on the host, once the handshake has generated it.
+ *   Null only in the moment between opening the dialog and the engine producing it.
+ * @property phase the handshake phase last reported, 1..[PAIRING_PHASE_COUNT]; 0 before the first.
+ * @property outcome the terminal result, or `null` while the attempt is still running.
+ * @property detail a short explanation for a failure, when the protocol supplied one.
+ */
+data class PairingUiState(
+    val host: KnownHost,
+    val pin: String? = null,
+    val phase: Int = 0,
+    val outcome: PairingOutcome? = null,
+    val detail: String? = null,
+) {
+    /** True once the attempt has finished, whichever way it went. */
+    val isFinished: Boolean get() = outcome != null
+
+    /**
+     * True while the host is waiting for the user to type the PIN.
+     *
+     * Phase 1 blocks on the host's own prompt for as long as the user takes, so this is the state
+     * the dialog spends most of its life in.
+     */
+    val isAwaitingPin: Boolean get() = !isFinished && pin != null && phase <= 1
+}
+
+/** How many phases the pairing handshake reports, used for the "Step 3 of 5" counter. */
+const val PAIRING_PHASE_COUNT: Int = 5
+
+/**
  * UI state of the Hosts screen.
  *
  * @property hosts every known host, already ordered for display.
  * @property isDiscovering true while a discovery/probe sweep is running.
  * @property message a transient one-line notice to surface to the user, or `null`.
- * @property pairingHost the host a PIN dialog is currently open for, or `null`.
- * @property pairingPin the PIN the user should type on the host, when pairing is in progress.
+ * @property pairing the state of the pairing dialog, or `null` when it is closed.
  */
 data class HostsUiState(
     val hosts: List<HostCardState> = emptyList(),
     val isDiscovering: Boolean = false,
     val message: String? = null,
-    val pairingHost: KnownHost? = null,
-    val pairingPin: String? = null,
+    val pairing: PairingUiState? = null,
 ) {
     /** True when there is nothing at all to draw in the grid. */
     val isEmpty: Boolean get() = hosts.isEmpty()
@@ -128,14 +187,16 @@ class HostsViewModel(
     private val hostRepository: HostRepository,
     private val statusProvider: HostStatusProvider,
     private val hostWaker: HostWaker,
+    private val pairingCoordinator: HostPairingCoordinator,
 ) : ViewModel() {
 
     private val statuses = MutableStateFlow<Map<String, HostStatus>>(emptyMap())
     private val discovering = MutableStateFlow(false)
     private val messages = MutableStateFlow<String?>(null)
-    private val pairing = MutableStateFlow<Pair<KnownHost, String>?>(null)
+    private val pairing = MutableStateFlow<PairingUiState?>(null)
 
     private var refreshJob: Job? = null
+    private var pairingJob: Job? = null
 
     /** The state the screen renders. */
     val uiState: StateFlow<HostsUiState> = combine(
@@ -151,8 +212,7 @@ class HostsViewModel(
             },
             isDiscovering = isDiscovering,
             message = message,
-            pairingHost = pairingState?.first,
-            pairingPin = pairingState?.second,
+            pairing = pairingState,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -239,18 +299,75 @@ class HostsViewModel(
     }
 
     /**
-     * Opens the PIN pairing sheet for [host].
+     * Runs the real five-phase pairing handshake against [host].
      *
-     * The PIN is generated locally and displayed for the user to type on the host; the handshake
-     * that consumes it belongs to the protocol layer, which will drive this state later.
+     * The PIN comes from the handshake, never from here: the host commits to a PIN derived from
+     * the salt sent in phase 1, so a PIN invented by the UI would simply never match.
      */
     fun beginPairing(host: KnownHost) {
-        pairing.value = host to generatePin()
+        pairingJob?.cancel()
+        pairing.value = PairingUiState(host = host)
+        pairingJob = viewModelScope.launch {
+            // The HTTP calls already switch to Dispatchers.IO themselves, but the handshake also
+            // does RSA and AES work between them; running the producer off the main thread keeps
+            // that off the frame budget. Collection stays on main, so state updates do not hop.
+            val progressFlow = pairingCoordinator.pair(host).flowOn(Dispatchers.Default)
+            progressFlow.collect { progress ->
+                when (progress) {
+                    is PairProgress.PinReady -> pairing.update { it?.copy(pin = progress.pin) }
+                    is PairProgress.Phase -> pairing.update { it?.copy(phase = progress.phase) }
+                    is PairProgress.Done -> onPairingFinished(host, progress)
+                }
+            }
+        }
     }
 
-    /** Closes the PIN pairing sheet without pairing. */
+    /**
+     * Abandons a pairing attempt.
+     *
+     * Cancelling the job is what makes the host stop showing its PIN prompt: the engine catches the
+     * cancellation and runs `/unpair` under [kotlinx.coroutines.NonCancellable]. Simply hiding the
+     * dialog would leave the PC waiting, and a half-finished pairing wedges every later attempt.
+     */
     fun cancelPairing() {
+        pairingJob?.cancel()
+        pairingJob = null
         pairing.value = null
+    }
+
+    /** Retries after a failed attempt, from the same dialog. */
+    fun retryPairing() {
+        val host = pairing.value?.host ?: return
+        beginPairing(host)
+    }
+
+    private suspend fun onPairingFinished(host: KnownHost, done: PairProgress.Done) {
+        val outcome = done.result.toOutcome()
+        pairing.update { it?.copy(outcome = outcome, detail = done.detail) }
+        if (outcome != PairingOutcome.PAIRED) return
+
+        // Record the pairing and re-probe, so the card's footer becomes "Connect" and the app list
+        // is reachable the moment the dialog closes rather than after the next manual refresh.
+        hostRepository.markPaired(host.uuid)
+        probe(host)
+        messages.value = "Paired with ${host.name}."
+        delay(PAIRED_DISMISS_MILLIS)
+        // Only close the dialog if it is still showing this attempt's success; the user may have
+        // dismissed it, or started pairing with a different host, while we were re-probing.
+        pairing.update { current ->
+            val showingThisSuccess = current != null &&
+                current.host.uuid == host.uuid &&
+                current.outcome == PairingOutcome.PAIRED
+            if (showingThisSuccess) null else current
+        }
+    }
+
+    private fun PairResult.toOutcome(): PairingOutcome = when (this) {
+        PairResult.PAIRED -> PairingOutcome.PAIRED
+        PairResult.PIN_WRONG -> PairingOutcome.PIN_WRONG
+        PairResult.ALREADY_IN_PROGRESS -> PairingOutcome.ALREADY_IN_PROGRESS
+        PairResult.FAILED -> PairingOutcome.FAILED
+        PairResult.CANCELLED -> PairingOutcome.CANCELLED
     }
 
     /** Clears the transient message after the screen has shown it. */
@@ -269,20 +386,19 @@ class HostsViewModel(
         statuses.update { it + (host.uuid to status) }
         if (status.isOnline) {
             hostRepository.updateHost(host.uuid) { stored ->
-                stored.markSeen(System.currentTimeMillis())
+                // A paired host answers over HTTPS with its real MAC; persisting it here is what
+                // makes Wake-on-LAN possible later, once the PC is asleep and cannot be asked.
+                stored.markSeen(System.currentTimeMillis()).withLearnedMac(status.macAddress)
             }
         }
     }
 
-    private fun generatePin(): String = (0 until PIN_LENGTH)
-        .map { PIN_ALPHABET.random() }
-        .joinToString(separator = "")
-
     companion object {
         private const val STOP_TIMEOUT_MILLIS = 5_000L
         private const val DISCOVERY_WINDOW_MILLIS = 4_000L
-        private const val PIN_LENGTH = 4
-        private const val PIN_ALPHABET = "0123456789"
+
+        /** How long "Paired" stays on screen before the dialog closes itself. */
+        private const val PAIRED_DISMISS_MILLIS = 900L
 
         /** Builds the production view model from [ServiceLocator]. */
         val Factory: ViewModelProvider.Factory = viewModelFactory {
@@ -291,6 +407,7 @@ class HostsViewModel(
                     hostRepository = ServiceLocator.hostRepository,
                     statusProvider = ServiceLocator.hostStatusProvider,
                     hostWaker = ServiceLocator.hostWaker,
+                    pairingCoordinator = ServiceLocator.pairingCoordinator,
                 )
             }
         }

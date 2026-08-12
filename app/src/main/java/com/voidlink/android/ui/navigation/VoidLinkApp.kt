@@ -181,6 +181,7 @@ private fun HostsRoute(
         onWake = viewModel::wake,
         onHostSettings = onHostSettings,
         onDismissPairing = viewModel::cancelPairing,
+        onRetryPairing = viewModel::retryPairing,
         onMessageShown = viewModel::consumeMessage,
     )
 }

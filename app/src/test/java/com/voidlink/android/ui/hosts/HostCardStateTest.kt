@@ -3,6 +3,7 @@ package com.voidlink.android.ui.hosts
 import com.voidlink.android.data.HostReachability
 import com.voidlink.android.data.HostStatus
 import com.voidlink.android.data.KnownHost
+import com.voidlink.android.protocol.pairing.PairResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -156,5 +157,55 @@ class HostCardStateTest {
     fun `the empty grid is reported as empty`() {
         assertTrue(HostsUiState().isEmpty)
         assertFalse(HostsUiState(hosts = listOf(HostCardState(host = host()))).isEmpty)
+    }
+
+    @Test
+    fun `pairing waits for the engine to produce the PIN before showing anything to type`() {
+        // The dialog opens before the handshake has generated a PIN; showing an empty PIN box in
+        // that gap would invite the user to type nothing into their PC.
+        val opening = PairingUiState(host = host())
+
+        assertFalse(opening.isAwaitingPin)
+        assertFalse(opening.isFinished)
+    }
+
+    @Test
+    fun `the PIN stays on screen for the whole of the blocking first phase`() {
+        val showing = PairingUiState(host = host(), pin = "0420", phase = 1)
+
+        assertTrue(showing.isAwaitingPin)
+        assertFalse(showing.isFinished)
+    }
+
+    @Test
+    fun `once the handshake moves past phase one the dialog stops asking for the PIN`() {
+        val working = PairingUiState(host = host(), pin = "0420", phase = 3)
+
+        assertFalse(working.isAwaitingPin)
+        assertFalse(working.isFinished)
+    }
+
+    @Test
+    fun `a terminal outcome finishes the dialog whichever way it went`() {
+        PairingOutcome.entries.forEach { outcome ->
+            val state = PairingUiState(host = host(), pin = "0420", phase = 5, outcome = outcome)
+
+            assertTrue(state.isFinished)
+            // A finished attempt never re-offers the PIN, not even a cancelled one.
+            assertFalse(state.isAwaitingPin)
+        }
+    }
+
+    @Test
+    fun `every protocol pairing result maps to a distinct UI outcome`() {
+        // The mapping itself is an exhaustive `when`, so the compiler catches a new protocol
+        // result. This pins the other direction: no UI outcome without a protocol counterpart.
+        assertEquals(PairResult.entries.size, PairingOutcome.entries.size)
+        PairResult.entries.forEach { result ->
+            assertTrue(
+                "no UI outcome named after $result",
+                PairingOutcome.entries.any { it.name == result.name },
+            )
+        }
     }
 }

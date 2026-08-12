@@ -82,6 +82,10 @@ class NvHttpHostStatusProvider(
             // host; the Apps screen already resolves the name from the list it has loaded.
             runningAppName = null,
             hostName = best.hostname,
+            // Only the HTTPS response carries the real MAC, so this is null until the host
+            // is paired. The repository treats null as "not seen this time" rather than as
+            // a correction, so a later plaintext probe cannot erase a MAC we already learned.
+            macAddress = best.macAddress,
         )
     }
 

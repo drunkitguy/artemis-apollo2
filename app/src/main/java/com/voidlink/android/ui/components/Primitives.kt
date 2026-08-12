@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -158,15 +157,17 @@ fun StatusLine(
 }
 
 /**
- * The [StatusLine] variant used while a probe is still in flight: a small spinner instead of a
- * status glyph.
+ * The [StatusLine] variant used while a probe is still in flight.
  *
  * A host whose reachability is simply not known yet must not be drawn as offline — that is the
  * first thing a user sees on launch, and a grid of "Offline" cards that turn green a second later
  * reads as a broken app rather than a working one.
  *
+ * Marked with a neutral dot rather than a spinner: the dot is drawn from primitives whose API is
+ * beyond question, and in a line of 13sp text a 14dp spinner is barely legible motion anyway.
+ *
  * @param text status text, e.g. "Checking…".
- * @param tint colour applied to both spinner and text.
+ * @param tint colour applied to both dot and text.
  * @param modifier layout modifier.
  */
 @Composable
@@ -181,10 +182,11 @@ fun PendingStatusLine(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.xs + 2.dp),
     ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(14.dp),
-            color = tint,
-            strokeWidth = 2.dp,
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(tint),
         )
         Text(
             text = text,
