@@ -119,6 +119,32 @@ class CertificateCodecTest {
     }
 
     @Test
+    fun `the fingerprint is the SHA-256 of the DER, in openssl's own terms`() {
+        val expected = Hex.encode(
+            java.security.MessageDigest.getInstance("SHA-256").digest(certificate.encoded),
+        )
+
+        // Deliberately the DER, not the PEM: this is the number `openssl x509 -fingerprint -sha256`
+        // prints and the one a host's client list can be compared against, so it has to be
+        // reproducible outside this codebase or the diagnostic it exists for is worthless.
+        assertEquals(expected, CertificateCodec.fingerprint(certificate))
+        assertEquals(64, CertificateCodec.fingerprint(certificate).length)
+        assertEquals(
+            CertificateCodec.fingerprint(certificate),
+            CertificateCodec.fingerprintOf(certificate.encoded),
+        )
+    }
+
+    @Test
+    fun `describe carries the three values a mismatch is diagnosed from`() {
+        val described = CertificateCodec.describe(certificate)
+
+        assertTrue(described.contains(CertificateFixture.SUBJECT_DN))
+        assertTrue(described.contains(certificate.serialNumber.toString(16)))
+        assertTrue(described.contains(CertificateCodec.fingerprint(certificate)))
+    }
+
+    @Test
     fun `the certificate signature is a stable non-empty value`() {
         // The phase-3 hash of spec §4.5 mixes in exactly these bytes, so an accidental change of
         // encoding here would silently break pairing.

@@ -4,6 +4,7 @@ import com.voidlink.android.protocol.HostAddress
 import com.voidlink.android.protocol.ProtocolConstants
 import com.voidlink.android.protocol.ProtocolLog
 import com.voidlink.android.protocol.UnverifiedProtocolConstants
+import com.voidlink.android.protocol.crypto.CertificateCodec
 import com.voidlink.android.protocol.crypto.ClientIdentity
 import com.voidlink.android.protocol.crypto.IdentityStore
 import kotlinx.coroutines.CancellationException
@@ -21,6 +22,7 @@ import java.net.URLEncoder
 import java.security.cert.X509Certificate
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLHandshakeException
@@ -442,9 +444,8 @@ class NvHttpClient(
         )
         ProtocolLog.i(
             ProtocolLog.TAG_PAIR,
-            "phase 5 (pairchallenge): presenting client cert " +
-                "subject=${identity.certificate.subjectX500Principal.name}, " +
-                "pinned host cert subject=${serverCertificate.subjectX500Principal.name}, " +
+            "phase 5 (pairchallenge): presenting client cert ${identity.describe()}; " +
+                "pinned host cert ${CertificateCodec.describe(serverCertificate)}; " +
                 "connectTimeout=${connectTimeoutMs}ms readTimeout=${readTimeoutMs}ms",
         )
         return requestXml(
@@ -641,6 +642,12 @@ class NvHttpClient(
         var cancellationHandle: DisposableHandle? = null
         val startedAt = System.currentTimeMillis()
         val exchange = exchangeCounter.incrementAndGet()
+        // Flipped by the key manager the moment the server's `CertificateRequest` arrives. On a
+        // stalled handshake this is the difference between "the host looked at our certificate and
+        // did not like it" and "the host never got far enough to ask for one" — and only the first
+        // of those is a pairing problem. Without it, both are `SocketTimeoutException: Read timed
+        // out` and the investigation starts by suspecting the wrong half of the system.
+        val certificateRequested = AtomicBoolean(false)
         if (trace != null) {
             ProtocolLog.i(traceTag, "$trace [#$exchange] -> GET ${redactUrl(url)}")
         }
@@ -658,16 +665,23 @@ class NvHttpClient(
                         "$endpoint: expected an HTTPS connection",
                     )
                 }
-                val sslContext = PinnedTls.context(tls.identity, tls.serverCertificate)
+                val sslContext =
+                    PinnedTls.context(tls.identity, tls.serverCertificate, certificateRequested)
                 opened.sslSocketFactory = PinnedTls.socketFactory(sslContext, tls.protocols)
                 opened.hostnameVerifier = PinnedTls.AnyHostnameVerifier
-                if (trace != null) {
-                    ProtocolLog.i(
-                        ProtocolLog.TAG_TLS,
-                        "$trace [#$exchange]: opening TLS to ${opened.url.host}:${opened.url.port} " +
-                            "offering ${tls.protocols}",
-                    )
-                }
+                // Unconditional, not gated on `trace`. Which certificate we present is the single
+                // fact that decides whether a Sunshine-family host recognises this device, and the
+                // one nothing else in a bug report records. One line per secure connection makes
+                // "the certificate we present is not the certificate the host filed at pairing"
+                // visible by grepping `VL.Tls` for `clientCert=` — instead of being inferred from
+                // a read timeout that says nothing at all.
+                ProtocolLog.i(
+                    ProtocolLog.TAG_TLS,
+                    "[#$exchange] $endpoint: opening TLS to ${authorityOf(url)} offering " +
+                        "${tls.protocols.ifEmpty { listOf("<the platform default>") }}; " +
+                        "clientCert=${tls.identity.describe()}; " +
+                        "pinnedHostCert=${CertificateCodec.describe(tls.serverCertificate)}",
+                )
             }
             opened.requestMethod = "GET"
             opened.connectTimeout = connectTimeoutMs
@@ -720,6 +734,26 @@ class NvHttpClient(
                     traceTag,
                     "$trace [#$exchange] <- FAILED after ${System.currentTimeMillis() - startedAt}ms: $message",
                     t,
+                )
+            }
+            if (tls != null) {
+                // Says, in one line, which half of the handshake the failure belongs to. A host
+                // that never asked for a client certificate cannot have rejected ours, so no amount
+                // of re-pairing will help and the certificate is not worth suspecting.
+                ProtocolLog.w(
+                    ProtocolLog.TAG_TLS,
+                    if (certificateRequested.get()) {
+                        "[#$exchange] $endpoint failed after ${authorityOf(url)} had asked for a " +
+                            "client certificate, so it saw ours " +
+                            "(sha256=${tls.identity.certificateFingerprint}). If this is a read " +
+                            "timeout the host is deciding about that certificate and never " +
+                            "answering; compare the fingerprint against the host's client list."
+                    } else {
+                        "[#$exchange] $endpoint failed and ${authorityOf(url)} never asked for a " +
+                            "client certificate, so the handshake stalled before authentication " +
+                            "was reached. Our certificate cannot be the cause and re-pairing " +
+                            "cannot help — the host's HTTPS listener is not completing handshakes."
+                    },
                 )
             }
             // A failed handshake is reported separately from a failed connection. Only the former

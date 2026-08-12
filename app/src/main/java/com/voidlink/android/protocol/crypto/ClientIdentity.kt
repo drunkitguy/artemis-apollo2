@@ -57,8 +57,40 @@ class ClientIdentity(
     /** The raw signature value of our own certificate, an input to the phase-3 hash (spec §4.5). */
     val certificateSignature: ByteArray get() = certificate.signature
 
+    /**
+     * SHA-256 of the certificate's DER encoding — the identity of the certificate we present in
+     * TLS, in the same form `openssl x509 -fingerprint -sha256` prints.
+     */
+    val certificateFingerprint: String by lazy { CertificateCodec.fingerprint(certificate) }
+
+    /**
+     * SHA-256 of the **exact bytes sent as `clientcert=`** during pairing, i.e. of the PEM text.
+     *
+     * Deliberately a second, independently derived number rather than a restatement of
+     * [certificateFingerprint]. The pairing parameter is the PEM *text* while TLS presents the DER
+     * (spec §2), and those two are only two views of one certificate for as long as nothing
+     * re-encodes, re-reads or regenerates anything in between. Logging both means a divergence —
+     * the failure mode where a host stores certificate A and we later present certificate B — is
+     * one line of logcat rather than a night of guessing.
+     */
+    val pairingCertificateFingerprint: String by lazy {
+        CertificateCodec.fingerprintOf(certificatePem.toByteArray(Charsets.US_ASCII))
+    }
+
+    /**
+     * The whole identity on one greppable line, private key excluded.
+     *
+     * Logged wherever the identity is used — loaded, sent at pairing, presented in TLS — so that
+     * "is this the same certificate the host filed?" is answerable from a bug report alone.
+     */
+    fun describe(): String =
+        "uniqueid=$uniqueId ${CertificateCodec.describe(certificate)} " +
+            "pemSha256=$pairingCertificateFingerprint " +
+            "notBefore=${certificate.notBefore} notAfter=${certificate.notAfter}"
+
     override fun toString(): String =
-        "ClientIdentity(uniqueId=$uniqueId, subject=${certificate.subjectX500Principal.name})"
+        "ClientIdentity(uniqueId=$uniqueId, subject=${certificate.subjectX500Principal.name}, " +
+            "sha256=$certificateFingerprint)"
 }
 
 /**
@@ -129,17 +161,47 @@ class IdentityStore(baseDir: File) {
             val privateKey = KeyFactory.getInstance(ProtocolConstants.CLIENT_KEY_ALGORITHM)
                 .generatePrivate(PKCS8EncodedKeySpec(keyBytes))
             val certificate = CertificateCodec.parseOrNull(certBytes) ?: return null
-            val pem = if (pemFile.isFile) {
-                pemFile.readText(Charsets.US_ASCII)
-            } else {
-                CertificateCodec.toPem(certificate)
+            // The PEM is *derived*, never read back as the source of truth. Pairing sends the PEM
+            // text and TLS presents the DER (spec §2), so if `client.pem` could ever drift from
+            // `client.crt` the host would file certificate A and we would then present certificate
+            // B — which stalls or 401s forever and looks exactly like "the host forgot us". Making
+            // one file authoritative removes that failure mode outright rather than trusting two
+            // files to stay in step.
+            val pem = CertificateCodec.toPem(certificate)
+            if (pemFile.isFile) {
+                val storedPem = runCatching { pemFile.readText(Charsets.US_ASCII) }.getOrNull()
+                if (storedPem != null && storedPem != pem) {
+                    ProtocolLog.e(
+                        ProtocolLog.TAG_IDENTITY,
+                        "$FILE_PEM disagrees with $FILE_CERT and is being rewritten: the stored PEM " +
+                            "hashes to ${CertificateCodec.fingerprintOf(
+                                storedPem.toByteArray(Charsets.US_ASCII),
+                            )} but the certificate we present hashes to " +
+                            "${CertificateCodec.fingerprint(certificate)}. Any host paired while " +
+                            "the stale PEM was in use must be paired again.",
+                    )
+                    runCatching { writeAtomically(pemFile, pem.toByteArray(Charsets.US_ASCII)) }
+                }
             }
-            ProtocolLog.i(ProtocolLog.TAG_IDENTITY, "Loaded existing client identity $uniqueId")
-            ClientIdentity(uniqueId, privateKey, certificate, pem)
+            val identity = ClientIdentity(uniqueId, privateKey, certificate, pem)
+            ProtocolLog.i(
+                ProtocolLog.TAG_IDENTITY,
+                "Loaded existing client identity: ${identity.describe()}",
+            )
+            identity
         } catch (t: Throwable) {
             // A corrupt identity is recoverable by regenerating; it only costs the user a re-pair,
-            // which is far better than an app that can never pair again.
-            ProtocolLog.w(ProtocolLog.TAG_IDENTITY, "Stored identity unreadable; regenerating", t)
+            // which is far better than an app that can never pair again. Logged at ERROR rather
+            // than WARN because the consequence is not local: every host that has already filed
+            // the old certificate silently stops recognising us, and this line is the only place
+            // that ever says so.
+            ProtocolLog.e(
+                ProtocolLog.TAG_IDENTITY,
+                "Stored identity in ${directory.absolutePath} is unreadable, so a NEW identity is " +
+                    "about to be generated. Every host paired with the old certificate will stop " +
+                    "recognising this device and must be paired again.",
+                t,
+            )
             null
         }
     }
@@ -181,8 +243,12 @@ class IdentityStore(baseDir: File) {
             val pem = CertificateCodec.toPem(certificate)
 
             persist(keyPair.private, certificate, pem, uniqueId)
-            ProtocolLog.i(ProtocolLog.TAG_IDENTITY, "Generated new client identity $uniqueId")
-            return ClientIdentity(uniqueId, keyPair.private, certificate, pem)
+            val identity = ClientIdentity(uniqueId, keyPair.private, certificate, pem)
+            ProtocolLog.i(
+                ProtocolLog.TAG_IDENTITY,
+                "Generated new client identity: ${identity.describe()}",
+            )
+            return identity
         } catch (t: Throwable) {
             throw IdentityException("Unable to create a client identity", t)
         }

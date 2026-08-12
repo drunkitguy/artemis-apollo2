@@ -273,6 +273,16 @@ class PairingEngine(
             "salt" to Hex.encode(salt),
             "clientcert" to identity.certificatePemHex,
         )
+        // The certificate the host is about to file under this device. Logged in exactly the form
+        // every later HTTPS connection logs it (`VL.Tls`, `clientCert=`), so "the host stored one
+        // certificate and we now present another" is a one-line comparison rather than an
+        // inference from a read timeout. `clientcert=` itself is only ever truncated in the URL
+        // trace, so without this the bytes we sent are unrecoverable from a bug report.
+        ProtocolLog.i(
+            ProtocolLog.TAG_PAIR,
+            "$PHASE_1_LABEL: sending clientcert=${identity.certificatePemHex.length} hex chars " +
+                "for ${identity.describe()}",
+        )
         var phase1 = httpClient.pairPlain(
             address = address,
             phaseLabel = PHASE_1_LABEL,

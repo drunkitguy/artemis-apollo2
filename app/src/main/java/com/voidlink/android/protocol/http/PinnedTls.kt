@@ -306,7 +306,7 @@ object PinnedTls {
  * no benefit.
  */
 private class SingleIdentityKeyManager(
-    certificate: X509Certificate,
+    private val certificate: X509Certificate,
     private val privateKey: PrivateKey,
     private val requested: AtomicBoolean? = null,
 ) : X509ExtendedKeyManager() {
@@ -361,8 +361,8 @@ private class SingleIdentityKeyManager(
             ProtocolLog.TAG_TLS,
             "Server requested a client certificate via the $via path " +
                 "(keyTypes=${keyType?.toList()}, acceptedIssuers=${issuers?.size ?: 0}); " +
-                "offering \"$ALIAS\" regardless, as the host recognises us by the exact " +
-                "certificate it pinned at pairing time",
+                "offering ${CertificateCodec.describe(certificate)} regardless, as the host " +
+                "recognises us by the exact certificate it pinned at pairing time",
         )
         return ALIAS
     }
@@ -406,9 +406,8 @@ private class PinnedTrustManager(private val pinned: X509Certificate) : X509Trus
             ProtocolLog.w(
                 ProtocolLog.TAG_TLS,
                 "Pinned certificate mismatch: host presented " +
-                    "subject=${presented.subjectX500Principal.name} " +
-                    "serial=${presented.serialNumber}, pinned subject=${pinned.subjectX500Principal.name} " +
-                    "serial=${pinned.serialNumber}",
+                    "${CertificateCodec.describe(presented)}, but we pinned " +
+                    CertificateCodec.describe(pinned),
             )
             throw CertificateException(
                 "host certificate does not match the one pinned during pairing; re-pair this host",

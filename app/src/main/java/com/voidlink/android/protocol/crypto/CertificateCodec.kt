@@ -1,6 +1,8 @@
 package com.voidlink.android.protocol.crypto
 
+import com.voidlink.android.protocol.Hex
 import java.io.ByteArrayInputStream
+import java.security.MessageDigest
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.Base64
@@ -90,4 +92,34 @@ object CertificateCodec {
      * True when [text] looks like PEM, used to decide whether stored bytes need conversion.
      */
     fun looksLikePem(text: String): Boolean = text.contains(PEM_BEGIN)
+
+    /**
+     * The SHA-256 fingerprint of [certificate]'s DER encoding, as lowercase hex.
+     *
+     * This is the same number `openssl x509 -fingerprint -sha256` prints (minus the colons), so a
+     * logcat line and the host's own view of a certificate can be compared directly. It exists
+     * because "the host does not recognise our certificate" and "the host never got far enough to
+     * look at it" are indistinguishable from a read timeout, and the only way to settle it after
+     * the fact is to have written down *which* certificate each side was holding.
+     */
+    fun fingerprint(certificate: X509Certificate): String = fingerprintOf(certificate.encoded)
+
+    /** The SHA-256 fingerprint of arbitrary bytes, as lowercase hex. */
+    fun fingerprintOf(bytes: ByteArray): String =
+        Hex.encode(MessageDigest.getInstance("SHA-256").digest(bytes))
+
+    /**
+     * A one-line identification of [certificate] for a log.
+     *
+     * Serial, subject and fingerprint together: the serial and subject are what a host's client
+     * list shows a user, and the fingerprint is what actually decides whether a presented
+     * certificate is the pinned one.
+     */
+    fun describe(certificate: X509Certificate): String =
+        "subject=${certificate.subjectX500Principal.name} " +
+            "serial=${certificate.serialNumber.toString(SERIAL_RADIX)} " +
+            "sha256=${fingerprint(certificate)}"
+
+    /** Serials are conventionally shown in hex, which is what `openssl x509 -text` prints. */
+    private const val SERIAL_RADIX = 16
 }
