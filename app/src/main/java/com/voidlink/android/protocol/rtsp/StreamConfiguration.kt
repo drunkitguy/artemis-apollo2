@@ -106,7 +106,6 @@ data class StreamConfiguration(
     val audioLayout: AudioChannelLayout = AudioChannelLayout.STEREO,
     val network: NetworkProfile = NetworkProfile.LAN,
     val displayRefreshRateHz: Int = fps,
-    val colorSpace: VideoColorSpace = if (hdr) VideoColorSpace.REC_2020 else VideoColorSpace.REC_709,
     val colorRange: VideoColorRange = VideoColorRange.LIMITED,
     val videoEncoderSlicesPerFrame: Int = RtspConstants.VIDEO_ENCODER_SLICES_PER_FRAME,
     val encryptionFlags: Int = UnverifiedRtspConstants.ENCRYPTION_FLAGS_DEFAULT,
@@ -161,6 +160,18 @@ data class StreamConfiguration(
             NetworkProfile.LAN -> RtspConstants.QOS_TRAFFIC_TYPE_AUDIO_LAN
             NetworkProfile.WAN -> RtspConstants.QOS_TRAFFIC_TYPE_AUDIO_WAN
         }
+
+    /**
+     * The colour space, which HDR determines: BT.2020 for HDR, BT.709 otherwise (spec §7.1).
+     *
+     * Computed rather than stored, deliberately. As a constructor property defaulted from [hdr] it
+     * looked equivalent, but `copy()` does not re-evaluate default arguments — so
+     * `copy(hdr = false)` produced an SDR configuration still carrying the HDR colour space, and
+     * announced the wrong `encoderCscMode` to the host. Deriving it makes that state
+     * unrepresentable.
+     */
+    val colorSpace: VideoColorSpace
+        get() = if (hdr) VideoColorSpace.REC_2020 else VideoColorSpace.REC_709
 
     /** `x-nv-video[0].encoderCscMode` — `(colorSpace shl 1) or colorRange` (spec §6.4). */
     val encoderCscMode: Int get() = (colorSpace.value shl 1) or colorRange.value
