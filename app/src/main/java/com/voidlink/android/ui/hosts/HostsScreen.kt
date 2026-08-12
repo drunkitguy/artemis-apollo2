@@ -649,15 +649,18 @@ private fun PairingDialog(
         title = {
             Text(
                 text = when (outcome) {
-                    null -> if (state.isAwaitingPin) {
-                        "Enter this PIN on your PC"
-                    } else {
-                        "Pairing…"
+                    null -> when {
+                        state.isAwaitingPin -> "Enter this PIN on your PC"
+                        state.verification != null -> "Almost there"
+                        else -> "Pairing…"
                     }
                     PairingOutcome.PAIRED -> "Paired"
                     PairingOutcome.PIN_WRONG -> "Wrong PIN"
                     PairingOutcome.ALREADY_IN_PROGRESS -> "Another device is pairing"
                     PairingOutcome.FAILED -> "Pairing failed"
+                    // Deliberately not "Pairing failed": the pairing succeeded and is kept. What
+                    // failed is the secure connection, and that is what the user must go and fix.
+                    PairingOutcome.HOST_TLS_UNREACHABLE -> "Can't reach your PC securely"
                     PairingOutcome.CANCELLED -> "Pairing cancelled"
                 },
                 style = VoidLinkTheme.cardTitle,
@@ -669,7 +672,12 @@ private fun PairingDialog(
                 when {
                     outcome != null -> PairingResultBody(state = state)
                     state.isAwaitingPin -> PairingPinBody(hostName = state.host.name, pin = state.pin.orEmpty())
-                    else -> PairingWorkingBody(phase = state.phase)
+                    else -> PairingWorkingBody(
+                        phase = state.phase,
+                        hostName = state.host.name,
+                        verification = state.verification,
+                        cancelIsHarmless = state.cancelIsHarmless,
+                    )
                 }
             }
         },
@@ -728,9 +736,22 @@ private fun PairingPinBody(hostName: String, pin: String) {
     )
 }
 
-/** Phases 2 onward: the handshake is running and needs nothing from the user. */
+/**
+ * Phases 2 onward: the handshake is running and needs nothing from the user.
+ *
+ * The last stretch — after the PC has accepted the device — gets words rather than just a step
+ * counter. It can run for tens of seconds against a PC whose secure service is slow to answer, and
+ * a bar that has not visibly moved for that long reads as a crash. It also says, plainly, that
+ * cancelling no longer undoes anything: that is both true and the thing a user staring at an
+ * apparently frozen dialog most needs to know before they reach for the button.
+ */
 @Composable
-private fun PairingWorkingBody(phase: Int) {
+private fun PairingWorkingBody(
+    phase: Int,
+    hostName: String,
+    verification: PairingVerification?,
+    cancelIsHarmless: Boolean,
+) {
     val colors = VoidLinkTheme.colors
     val spacing = VoidLinkTheme.spacing
 
@@ -746,10 +767,27 @@ private fun PairingWorkingBody(phase: Int) {
     )
     Spacer(modifier = Modifier.height(spacing.md))
     Text(
-        text = "Step ${phase.coerceIn(1, PAIRING_PHASE_COUNT)} of $PAIRING_PHASE_COUNT",
+        text = when (verification) {
+            null -> "Step ${phase.coerceIn(1, PAIRING_PHASE_COUNT)} of $PAIRING_PHASE_COUNT"
+            is PairingVerification.Confirming ->
+                "Confirming the connection with $hostName… " +
+                    "(${verification.attempt} of ${verification.totalAttempts})"
+            PairingVerification.Diagnosing ->
+                "$hostName isn't answering securely. Checking why…"
+        },
         style = VoidLinkTheme.footnote,
         color = colors.secondaryLabel,
+        textAlign = TextAlign.Center,
     )
+    if (cancelIsHarmless) {
+        Spacer(modifier = Modifier.height(spacing.sm))
+        Text(
+            text = "$hostName has already accepted this device — cancelling won't undo that.",
+            style = VoidLinkTheme.footnote,
+            color = colors.tertiaryLabel,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 /** The terminal state: what happened, and what the user can do about it. */
@@ -773,6 +811,13 @@ private fun PairingResultBody(state: PairingUiState) {
             PairingOutcome.ALREADY_IN_PROGRESS ->
                 "Wait for the other device to finish, then try again."
             PairingOutcome.CANCELLED -> "The attempt was stopped."
+            // The pairing itself worked; the PC's secure service is what is not answering. Saying
+            // "the handshake did not complete" here would send the user to re-pair, which cannot
+            // help — so name the real problem and keep them off that loop.
+            PairingOutcome.HOST_TLS_UNREACHABLE ->
+                "${state.host.name} accepted this device, but won't answer a secure connection. " +
+                    "The pairing has been kept — restart the streaming software on the PC and " +
+                    "it should connect."
             else -> "The handshake did not complete."
         },
         style = VoidLinkTheme.body,

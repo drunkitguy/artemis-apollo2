@@ -19,7 +19,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 
 /** The terminal outcome of a pairing attempt (spec §4.8). */
 enum class PairResult {
@@ -34,6 +36,15 @@ enum class PairResult {
 
     /** The handshake failed, including a signature mismatch that may indicate a MITM. */
     FAILED,
+
+    /**
+     * The PC accepted our pairing but we cannot open a TLS connection to it at all.
+     *
+     * Separated from [FAILED] because it is not a pairing problem and the remedy is different: the
+     * host's HTTPS service is not answering, or is not where it said it was. Telling the user their
+     * pairing failed sends them to re-pair, which cannot possibly help.
+     */
+    HOST_TLS_UNREACHABLE,
 
     /** The user backed out. */
     CANCELLED,
@@ -71,6 +82,14 @@ sealed interface PairProgress {
     class Verifying(val attempt: Int, val totalAttempts: Int) : PairProgress
 
     /**
+     * Every secure request to the host timed out, and we are self-testing the transport.
+     *
+     * Also strictly after the point of no return. Emitted so the dialog can say what it is doing
+     * instead of showing a bar that has not moved for twenty seconds.
+     */
+    object Diagnosing : PairProgress
+
+    /**
      * The attempt finished.
      *
      * @property result the outcome.
@@ -97,14 +116,19 @@ sealed interface PairProgress {
  * 5. An HTTPS `pairchallenge` using our client certificate — our own confirmation that
  *    client-certificate TLS to this host works.
  *
- * **Where the rollback boundary sits.** A failure or cancellation in phases 1–4 calls `/unpair` and
- * drops the pinned certificate: a half-finished pairing left on the host wedges every subsequent
- * attempt (spec §4.0). From phase 5 onwards it does not, and must not. Phase 4 answering
- * `<paired>1</paired>` is the instant a Sunshine-family host adds our certificate to its client
- * list and writes it to disk; after that the host considers us paired regardless of what phase 5
- * does. Rolling back there discards a pairing that genuinely exists — which is precisely what a
- * `pairchallenge` read timeout used to do, leaving the host listing a client this app believed it
- * had never paired with. An inconclusive phase 5 is instead settled by [confirmPairing].
+ * **Where the rollback boundary sits, and it is unconditional.** A failure or cancellation in
+ * phases 1–4 calls `/unpair` and drops the pinned certificate: a half-finished pairing left on the
+ * host wedges every subsequent attempt (spec §4.0). Once phase 4 has answered `<paired>1</paired>`,
+ * nothing does — not a failure, not a thrown exception, not a cancellation, not the user dismissing
+ * the dialog. That instant is when a Sunshine-family host adds our certificate to its client list
+ * and writes it to disk, and from then on the two sides are paired whatever this code does next.
+ * Rolling back there discards a pairing that genuinely exists, which is what a `pairchallenge` read
+ * timeout used to do; the same hole reopens through Cancel if cancellation is treated as special,
+ * because a user staring at a dialog that looks stuck will press it. The only thing that unpairs
+ * after this point is an explicit "Unpair" from the host list.
+ *
+ * An inconclusive phase 5 is settled by [verifyWithHost], and a host that answers nothing at all
+ * over TLS is characterised by [diagnoseTransport] rather than blamed on pairing.
  *
  * @param httpClient the NVHTTP transport.
  * @param identityStore supplies our certificate and key.
@@ -119,13 +143,22 @@ class PairingEngine(
 ) {
 
     /**
+     * Hosts whose `pairchallenge` leg went unanswered.
+     *
+     * A retry against such a host skips straight to the pinned-HTTPS confirmation, which proves the
+     * same thing and answers in seconds instead of stalling for the full read timeout again. In
+     * memory only: it describes how a host is behaving right now, and re-learning it costs one
+     * timeout.
+     */
+    private val silentPairChallengeHosts = ConcurrentHashMap<String, Boolean>()
+
+    /**
      * Runs the handshake, emitting progress as it goes.
      *
      * The returned flow is cold: collecting it starts the attempt, and cancelling the collection
-     * cancels it — which closes the phase-1 socket and calls `/unpair` so the host dismisses its
-     * PIN prompt (spec §4.8). Cancellation always rolls back, because it is an explicit "I do not
-     * want this PC" from the user; a *failure* only rolls back while the host has not yet accepted
-     * us, which is the boundary described on the class.
+     * cancels it — which closes the phase-1 socket and, **while the host has not yet accepted us**,
+     * calls `/unpair` so the host dismisses its PIN prompt (spec §4.8). After phase 4 a
+     * cancellation stops the waiting and nothing else: see the rollback boundary on the class.
      *
      * `channelFlow` rather than `flow` because the cleanup paths need to report an outcome after
      * catching a failure, and emitting from inside a `catch` would violate a plain flow's
@@ -154,9 +187,22 @@ class PairingEngine(
             }
             send(PairProgress.Done(outcome.result, outcome.detail))
         } catch (cancellation: CancellationException) {
-            // The coroutine is already cancelled, so the cleanup has to opt out of cancellation or
-            // the host is left showing its PIN prompt forever.
-            withContext(NonCancellable) { cleanUp(hostKey, address, "cancelled") }
+            val phase = tracker.phase
+            if (phase < HOST_HAS_ACCEPTED_US_FROM_PHASE) {
+                // The coroutine is already cancelled, so the cleanup has to opt out of cancellation
+                // or the host is left showing its PIN prompt forever.
+                withContext(NonCancellable) { cleanUp(hostKey, address, "cancelled in phase $phase") }
+            } else {
+                // Backing out of the *waiting* is not backing out of the pairing. The PC recorded
+                // this device the moment phase 4 answered, and a user who taps Cancel because the
+                // dialog looks stuck must not lose it. The pinned certificate stays exactly where
+                // it is so the next probe can confirm the pairing and adopt it.
+                ProtocolLog.w(
+                    ProtocolLog.TAG_PAIR,
+                    "Cancelled during phase $phase, after the host had already accepted us. " +
+                        "Keeping the pairing and the pinned certificate — the probe will confirm it.",
+                )
+            }
             throw cancellation
         } catch (t: Throwable) {
             val phase = tracker.phase
@@ -387,70 +433,120 @@ class PairingEngine(
             )
         }
 
-        // ---- Phase 5: HTTPS pairchallenge (spec §4.7) ----------------------------------------
+        // ---- The point of no return ----------------------------------------------------------
         //
-        // Everything below runs with `rollBack = false`, and that is the whole point of this
-        // section. Phase 4 answering `<paired>1</paired>` is the moment a Sunshine-family host adds
-        // our certificate to its client list and persists it — from here the host considers us
-        // paired whatever we do next. Phase 5 is our *confirmation* that client-certificate TLS
-        // works, not a step the host is waiting for. Treating a phase-5 timeout as a failure and
-        // calling `/unpair` therefore threw away a pairing that already existed, and left the host
-        // listing a client the app believed it had never paired with.
-        tracker.phase = 5
-        emit(PairProgress.Phase(5))
-
-        // The certificate has to be pinned before the call, because the call is what uses it — and
-        // under the same key `pairChallengeSecure` reads it back from.
-        trustStore.store(hostKey, serverCertificate)
+        // Phase 4 answering `<paired>1</paired>` is the moment a Sunshine-family host adds our
+        // certificate to its client list and writes it to disk. From here the host considers us
+        // paired whatever we do next, so **nothing below may roll back** — not a failure, not an
+        // exception, not a cancellation. Everything below therefore uses `rollBack = false`.
+        //
+        // The pin is stored first, before any further step can fail or be cancelled, because it is
+        // what lets the probe-time recovery adopt this pairing later even if this dialog never gets
+        // an answer.
+        // NonCancellable because this is the one write that must not lose a race with the user's
+        // finger: a cancellation landing mid-write would leave the host trusting a device that has
+        // thrown away the certificate it needs to talk to it, with nothing left to recover from.
+        withContext(NonCancellable) { trustStore.store(hostKey, serverCertificate) }
         if (trustStore.certificate(hostKey) == null) {
             return Outcome(
                 PairResult.FAILED,
-                "$PHASE_5_LABEL: the host's certificate could not be stored on this device, so no " +
-                    "HTTPS call can be made to it",
+                "the host accepted this device, but its certificate could not be stored here, so " +
+                    "no secure call can be made to it",
                 rollBack = false,
             )
         }
-
-        val phase5 = httpClient.pairChallengeSecure(hostKey, address, serverInfo.httpsPort)
-        val phase5Root = phase5.valueOrNull()
-        if (phase5Root != null && isPaired(phase5Root)) {
-            ProtocolLog.i(ProtocolLog.TAG_PAIR, "Paired with ${serverInfo.hostname ?: hostKey}")
-            return Outcome(PairResult.PAIRED, null, rollBack = false)
-        }
-
-        val reason = when {
-            phase5Root != null -> "the host answered without <paired>1</paired> " +
-                "(${pairedValue(phase5Root)})"
-            else -> phase5.errorDescription() ?: "unknown error"
-        }
-        ProtocolLog.w(
+        ProtocolLog.i(
             ProtocolLog.TAG_PAIR,
-            "$PHASE_5_LABEL did not confirm ($reason). This does not mean the host refused us — " +
-                "it already accepted our certificate in phase 4 — so confirming with a pinned " +
-                "HTTPS /serverinfo instead.",
+            "Host accepted us in phase 4 and its certificate is pinned. Nothing from here on will " +
+                "unpair; the remaining steps only confirm that secure calls work.",
         )
-        return confirmPairing(hostKey, address, serverInfo, reason)
+
+        // ---- Phase 5: HTTPS pairchallenge, then confirmation (spec §4.7) ----------------------
+        tracker.phase = 5
+        emit(PairProgress.Phase(5))
+
+        val verified = withTimeoutOrNull(ProtocolConstants.PAIRING_VERIFY_BUDGET_MS) {
+            verifyWithHost(hostKey, address, serverInfo, emit)
+        }
+        if (verified != null && verified.result == PairResult.PAIRED) return verified
+        if (verified == null) {
+            ProtocolLog.w(
+                ProtocolLog.TAG_PAIR,
+                "Verification exceeded its ${ProtocolConstants.PAIRING_VERIFY_BUDGET_MS}ms budget; " +
+                    "moving on to the transport self-test rather than waiting longer.",
+            )
+        }
+
+        // Every secure call to this host has now failed. Before blaming pairing — which is intact —
+        // find out whether we can speak TLS to it at all.
+        emit(PairProgress.Diagnosing)
+        val diagnosed = withTimeoutOrNull(ProtocolConstants.PAIRING_DIAGNOSE_BUDGET_MS) {
+            diagnoseTransport(hostKey, address, serverInfo, verified?.detail)
+        }
+        return diagnosed ?: Outcome(
+            PairResult.HOST_TLS_UNREACHABLE,
+            "the PC accepted this device, but no secure connection to " +
+                "${address.host}:${serverInfo.httpsPort} could be completed and the transport " +
+                "self-test did not finish either. The pairing is kept — it will start working as " +
+                "soon as the PC's secure service does.",
+            rollBack = false,
+        )
     }
 
     /**
-     * Settles an inconclusive phase 5 by asking the definitive question directly.
+     * Confirms, over client-certificate TLS, that the pairing the host just accepted actually works.
      *
-     * Spec §3.3: a `/serverinfo` that succeeds over client-certificate TLS *is* the definition of
-     * being paired — it proves the host accepts this certificate. So when `pairchallenge` times out
-     * or answers oddly, this is a better answer than guessing, and a far better answer than
-     * discarding a pairing the host has already recorded.
+     * Two routes, and which one applies is decided by *how* `pairchallenge` failed:
      *
-     * Retried a few times because the host may still be reloading the client database it rewrote
-     * during phase 4, which is the most likely reason the first HTTPS connection stalled.
+     * * a **transport** failure (a bare read timeout) means TLS to this host is not working at all,
+     *   and repeating the same request over a different endpoint would fail identically — a real
+     *   device proved that by failing the confirmation with the exact same message. So we stop and
+     *   let the caller run the self-test.
+     * * any **other** failure means TLS is fine and the host merely answered oddly, so the
+     *   confirmation `/serverinfo` is worth retrying: spec §3.3 makes a successful
+     *   client-certificate request the definition of being paired.
      */
-    private suspend fun confirmPairing(
+    private suspend fun verifyWithHost(
         hostKey: String,
         address: HostAddress,
         serverInfo: ServerInfo,
-        reason: String,
+        emit: suspend (PairProgress) -> Unit,
     ): Outcome {
+        val reason: String
+        if (silentPairChallengeHosts.containsKey(hostKey)) {
+            reason = "skipped — pairchallenge went unanswered on this host earlier in the session"
+            ProtocolLog.i(
+                ProtocolLog.TAG_PAIR,
+                "$PHASE_5_LABEL $reason; going straight to the pinned-HTTPS confirmation, which " +
+                    "proves the same thing and answers faster.",
+            )
+        } else {
+            val phase5 = httpClient.pairChallengeSecure(hostKey, address, serverInfo.httpsPort)
+            val phase5Root = phase5.valueOrNull()
+            if (phase5Root != null && isPaired(phase5Root)) {
+                ProtocolLog.i(ProtocolLog.TAG_PAIR, "Paired with ${serverInfo.hostname ?: hostKey}")
+                return Outcome(PairResult.PAIRED, null, rollBack = false)
+            }
+            reason = if (phase5Root != null) {
+                "the host answered without <paired>1</paired> (${pairedValue(phase5Root)})"
+            } else {
+                phase5.errorDescription() ?: "unknown error"
+            }
+            ProtocolLog.w(ProtocolLog.TAG_PAIR, "$PHASE_5_LABEL did not confirm ($reason)")
+            if (phase5 is NvHttpResult.TransportError) {
+                // Remember it, so a retry spends its budget on something that can still succeed.
+                silentPairChallengeHosts[hostKey] = true
+                return Outcome(
+                    PairResult.FAILED,
+                    "$PHASE_5_LABEL: $reason",
+                    rollBack = false,
+                )
+            }
+        }
+
         var lastError = "not attempted"
         repeat(ProtocolConstants.PAIRING_CONFIRM_ATTEMPTS) { attempt ->
+            emit(PairProgress.Verifying(attempt + 1, ProtocolConstants.PAIRING_CONFIRM_ATTEMPTS))
             if (attempt > 0) delay(ProtocolConstants.PAIRING_CONFIRM_RETRY_DELAY_MS)
             val confirmation = httpClient.serverInfoSecure(
                 hostKey = hostKey,
@@ -479,18 +575,86 @@ class PairingEngine(
         return Outcome(
             PairResult.FAILED,
             "$PHASE_5_LABEL: $reason; the follow-up pinned-HTTPS /serverinfo also failed " +
-                "($lastError). The host may still consider this device paired — check its client " +
-                "list before pairing again.",
+                "($lastError)",
             rollBack = false,
         )
     }
 
     /**
-     * The mandatory `/unpair` cleanup (spec §4.0, §4.8).
+     * Works out *why* no secure call to the host succeeds, and repairs it when that is possible.
+     *
+     * A read timeout from `HttpsURLConnection` cannot distinguish a wrong port, a wedged HTTPS
+     * service, a stalled handshake, or a TLS version the host will not complete client
+     * authentication under. [TlsProbe] separates them at the byte level. When it finds a
+     * configuration that does work, the transport adopts it and the confirmation is retried once
+     * with it — which turns a diagnosis into a fix.
+     */
+    private suspend fun diagnoseTransport(
+        hostKey: String,
+        address: HostAddress,
+        serverInfo: ServerInfo,
+        previousDetail: String?,
+    ): Outcome {
+        val report = try {
+            httpClient.diagnoseTls(hostKey, address, serverInfo.httpsPort)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (t: Throwable) {
+            ProtocolLog.w(ProtocolLog.TAG_PAIR, "TLS self-test itself failed", t)
+            null
+        }
+
+        if (report != null && report.tlsWorks) {
+            // The transport has already adopted the configuration that worked; one more try.
+            val retry = httpClient.serverInfoSecure(
+                hostKey = hostKey,
+                address = address,
+                httpsPort = serverInfo.httpsPort,
+                timeoutMs = ProtocolConstants.PAIRING_CONFIRM_TIMEOUT_MS,
+                trace = "${NvHttpClient.PHASE_5_CONFIRM_LABEL} after self-test",
+            )
+            if (retry.isSuccess) {
+                ProtocolLog.i(
+                    ProtocolLog.TAG_PAIR,
+                    "Paired with ${serverInfo.hostname ?: hostKey}: the self-test found " +
+                        "${report.workingProtocols} works and the confirmation then succeeded.",
+                )
+                return Outcome(PairResult.PAIRED, null, rollBack = false)
+            }
+            return Outcome(
+                PairResult.FAILED,
+                "the PC accepted this device and TLS to ${address.host}:${serverInfo.httpsPort} " +
+                    "works, but the confirming request still failed " +
+                    "(${retry.errorDescription() ?: "unknown error"}). The pairing is kept.",
+                rollBack = false,
+            )
+        }
+
+        val conclusion = report?.conclusion()
+            ?: previousDetail
+            ?: "no secure connection to ${address.host}:${serverInfo.httpsPort} could be completed"
+        ProtocolLog.e(
+            ProtocolLog.TAG_PAIR,
+            "Transport self-test says: $conclusion",
+        )
+        return Outcome(
+            PairResult.HOST_TLS_UNREACHABLE,
+            "$conclusion. This is not a pairing problem — the PC has accepted this device and the " +
+                "pairing is kept. It will start working as soon as the PC's secure service does.",
+            rollBack = false,
+        )
+    }
+
+    /**
+     * The `/unpair` cleanup for an attempt that failed **before the host accepted us** (spec §4.0,
+     * §4.8).
      *
      * Best-effort and never throws: the attempt has already failed, and an unreachable host cannot
      * be tidied up anyway. The local pin is dropped too, so a half-finished attempt cannot leave us
      * believing we are paired.
+     *
+     * Callers must check the rollback boundary before calling this. It is the one place that can
+     * destroy a pairing, and after phase 4 there is a real one to destroy.
      */
     private suspend fun cleanUp(hostKey: String, address: HostAddress, reason: String) {
         ProtocolLog.i(ProtocolLog.TAG_PAIR, "Cleaning up pairing attempt ($reason)")

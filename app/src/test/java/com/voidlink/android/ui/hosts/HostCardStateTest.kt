@@ -245,4 +245,55 @@ class HostCardStateTest {
             )
         }
     }
+
+    @Test
+    fun `cancelling is not advertised as harmless before the host has accepted us`() {
+        // Up to phase 4 a cancel really does roll everything back, and saying otherwise would be a
+        // lie that costs the user a wedged half-pairing on the PC.
+        val early = PairingUiState(host = host(), pin = "0420", phase = 3)
+
+        assertFalse(early.hostHasAccepted)
+        assertFalse(early.cancelIsHarmless)
+    }
+
+    @Test
+    fun `cancelling is advertised as harmless once the host has accepted us`() {
+        // The user is looking at a dialog that can sit for tens of seconds. They will press Cancel,
+        // and it must neither undo the pairing nor claim that it did.
+        val late = PairingUiState(host = host(), pin = "0420", phase = 5, hostHasAccepted = true)
+
+        assertTrue(late.cancelIsHarmless)
+    }
+
+    @Test
+    fun `a finished attempt stops offering the cancel reassurance`() {
+        val finished = PairingUiState(
+            host = host(),
+            pin = "0420",
+            phase = 5,
+            hostHasAccepted = true,
+            outcome = PairingOutcome.HOST_TLS_UNREACHABLE,
+        )
+
+        assertTrue(finished.isFinished)
+        assertFalse(finished.cancelIsHarmless)
+    }
+
+    @Test
+    fun `the verification stage is reported so the dialog never looks frozen`() {
+        val confirming = PairingUiState(
+            host = host(),
+            pin = "0420",
+            phase = 5,
+            hostHasAccepted = true,
+            verification = PairingVerification.Confirming(attempt = 2, totalAttempts = 3),
+        )
+
+        assertFalse(confirming.isFinished)
+        assertFalse(confirming.isAwaitingPin)
+        assertEquals(
+            PairingVerification.Confirming(2, 3),
+            confirming.verification,
+        )
+    }
 }

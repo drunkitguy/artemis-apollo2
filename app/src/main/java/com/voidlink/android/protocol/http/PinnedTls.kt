@@ -26,6 +26,7 @@ import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509ExtendedKeyManager
 import javax.net.ssl.X509TrustManager
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Stores the certificate each host presented during pairing.
@@ -180,11 +181,25 @@ object PinnedTls {
      *
      * @param identity our client certificate and key.
      * @param serverCertificate the certificate pinned for this host during pairing.
+     * @param clientCertificateRequested set to `true` the moment the TLS stack asks us for a client
+     *   certificate — i.e. the moment the server's `CertificateRequest` arrives. Whether this ever
+     *   flips is the single most diagnostic fact about a stalled handshake: if it never does, the
+     *   server never got far enough to ask, so nothing about *our* certificate can be the cause.
      */
-    fun context(identity: ClientIdentity, serverCertificate: X509Certificate): SSLContext {
+    fun context(
+        identity: ClientIdentity,
+        serverCertificate: X509Certificate,
+        clientCertificateRequested: AtomicBoolean? = null,
+    ): SSLContext {
         val context = SSLContext.getInstance("TLS")
         context.init(
-            arrayOf(SingleIdentityKeyManager(identity.certificate, identity.privateKey)),
+            arrayOf(
+                SingleIdentityKeyManager(
+                    identity.certificate,
+                    identity.privateKey,
+                    clientCertificateRequested,
+                ),
+            ),
             arrayOf(pinnedTrustManager(serverCertificate)),
             SecureRandom(),
         )
@@ -192,16 +207,36 @@ object PinnedTls {
     }
 
     /**
+     * Builds a certificate-pinned context that offers **no** client certificate.
+     *
+     * Only for [TlsProbe]: comparing this against [context] is what separates "the host stalls when
+     * we present a client certificate" from "the host does not speak TLS on this port at all". It
+     * is never used for a real request, because an NVHTTP host recognises us by that certificate.
+     */
+    fun anonymousContext(serverCertificate: X509Certificate): SSLContext {
+        val context = SSLContext.getInstance("TLS")
+        context.init(null, arrayOf(pinnedTrustManager(serverCertificate)), SecureRandom())
+        return context
+    }
+
+    /**
      * A socket factory that additionally constrains the enabled TLS versions.
      *
      * UNVERIFIED(spec 01 §3.1): whether any still-in-use host requires a version below TLSv1.2.
-     * The list lives in [UnverifiedProtocolConstants.TLS_PROTOCOLS] so that a failing handshake
-     * against an ancient GFE is a one-line experiment rather than a code change.
+     * The default list lives in [UnverifiedProtocolConstants.TLS_PROTOCOLS] so that a failing
+     * handshake against an ancient GFE is a one-line experiment rather than a code change.
+     *
+     * @param protocols overrides that default. [TlsProbe] uses it to try one version at a time, and
+     *   a host that only completes a handshake under one of them keeps that narrower list for the
+     *   rest of the session.
      */
-    fun socketFactory(context: SSLContext): SSLSocketFactory =
+    fun socketFactory(
+        context: SSLContext,
+        protocols: List<String> = UnverifiedProtocolConstants.TLS_PROTOCOLS,
+    ): SSLSocketFactory =
         ProtocolConstrainingSocketFactory(
             delegate = context.socketFactory,
-            desiredProtocols = UnverifiedProtocolConstants.TLS_PROTOCOLS,
+            desiredProtocols = protocols,
         )
 
     /**
@@ -220,6 +255,7 @@ object PinnedTls {
 private class SingleIdentityKeyManager(
     certificate: X509Certificate,
     private val privateKey: PrivateKey,
+    private val requested: AtomicBoolean? = null,
 ) : X509ExtendedKeyManager() {
 
     private val chain: Array<X509Certificate> = arrayOf(certificate)
@@ -232,28 +268,51 @@ private class SingleIdentityKeyManager(
      *
      * A GameStream host's `CertificateRequest` advertises no acceptable issuers we could match
      * against — it recognises us by the exact certificate it pinned at pairing time — so filtering
-     * on [issuers] here would mean never sending a certificate at all.
+     * on [issuers] here would mean never sending a certificate at all. The return type is
+     * deliberately non-nullable so this can never silently degrade into "send no certificate",
+     * which is a classic cause of a host that accepts the connection and then goes quiet.
      */
     override fun chooseClientAlias(
         keyType: Array<out String>?,
         issuers: Array<out Principal>?,
         socket: Socket?,
-    ): String = ALIAS
+    ): String = recordRequest(keyType, issuers, "socket")
 
     /**
      * The `SSLEngine` counterpart of [chooseClientAlias].
      *
      * `X509ExtendedKeyManager`'s default implementation of this returns null, so an engine-based
      * TLS stack would send no client certificate at all and the host would refuse us — a silent
-     * failure that would look exactly like being unpaired. Nothing here uses `SSLEngine` today
-     * (the socket path is what `HttpsURLConnection` takes), which is precisely why the omission
-     * would go unnoticed until something switched.
+     * failure that would look exactly like being unpaired. Android's Conscrypt uses the engine path
+     * on modern releases, so this override is load-bearing, not defensive.
      */
     override fun chooseEngineClientAlias(
         keyType: Array<out String>?,
         issuers: Array<out Principal>?,
         engine: SSLEngine?,
-    ): String = ALIAS
+    ): String = recordRequest(keyType, issuers, "engine")
+
+    /**
+     * Notes that the server actually asked for a client certificate, and logs what it asked for.
+     *
+     * This line is the difference between "we failed to send a certificate" and "the server never
+     * got far enough to want one" — two failures that look identical from a read timeout.
+     */
+    private fun recordRequest(
+        keyType: Array<out String>?,
+        issuers: Array<out Principal>?,
+        via: String,
+    ): String {
+        requested?.set(true)
+        ProtocolLog.i(
+            ProtocolLog.TAG_TLS,
+            "Server requested a client certificate via the $via path " +
+                "(keyTypes=${keyType?.toList()}, acceptedIssuers=${issuers?.size ?: 0}); " +
+                "offering \"$ALIAS\" regardless, as the host recognises us by the exact " +
+                "certificate it pinned at pairing time",
+        )
+        return ALIAS
+    }
 
     override fun getServerAliases(keyType: String?, issuers: Array<out Principal>?): Array<String>? = null
 

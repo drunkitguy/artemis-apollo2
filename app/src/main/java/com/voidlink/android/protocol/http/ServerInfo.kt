@@ -195,8 +195,7 @@ class ServerInfo(
                 appVersion = appVersion,
                 gfeVersion = root.textOf("GfeVersion"),
                 uniqueId = uniqueId,
-                httpsPort = root.intOf("HttpsPort")?.takeIf { it in 1..65535 }
-                    ?: ProtocolConstants.DEFAULT_HTTPS_PORT,
+                httpsPort = readHttpsPort(root),
                 externalPort = root.intOf("ExternalPort")?.takeIf { it in 1..65535 },
                 macAddress = rawMac?.takeIf { !it.equals(ProtocolConstants.MAC_UNKNOWN, true) },
                 localIp = rawLocalIp?.takeIf { it != ProtocolConstants.LOCAL_IP_IGNORED },
@@ -212,6 +211,30 @@ class ServerInfo(
                 displayModes = parseDisplayModes(root),
             )
         }
+
+        /**
+         * Reads `<HttpsPort>`, announcing the fallback rather than taking it silently.
+         *
+         * Every secure request in the app goes to whatever this returns, so a wrong or defaulted
+         * value makes *all* HTTPS traffic vanish into a port that will never answer — which is
+         * indistinguishable from a broken handshake unless the number is written down somewhere.
+         * A silent `?:` was exactly that missing line.
+         */
+        fun readHttpsPort(root: XmlNode): Int {
+            val raw = root.textOf("HttpsPort")
+            val parsed = raw?.toIntOrNull()?.takeIf { it in MIN_PORT..MAX_PORT }
+            if (parsed != null) return parsed
+            ProtocolLog.w(
+                ProtocolLog.TAG_HTTP,
+                "/serverinfo gave no usable <HttpsPort> (raw=${raw ?: "<absent>"}); " +
+                    "falling back to ${ProtocolConstants.DEFAULT_HTTPS_PORT}. Every HTTPS call " +
+                    "will go there, so if the host actually listens elsewhere they will all time out.",
+            )
+            return ProtocolConstants.DEFAULT_HTTPS_PORT
+        }
+
+        private const val MIN_PORT = 1
+        private const val MAX_PORT = 65535
 
         private fun parseDisplayModes(root: XmlNode): List<DisplayMode> {
             val container = root.child("SupportedDisplayMode") ?: return emptyList()

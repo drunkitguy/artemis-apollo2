@@ -18,6 +18,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.security.cert.X509Certificate
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
@@ -41,6 +42,63 @@ class NvHttpClient(
     private val identityStore: IdentityStore,
     private val trustStore: HostTrustStore,
 ) {
+
+    /**
+     * TLS versions to offer a particular host, when the default list turned out not to work.
+     *
+     * Populated only by [diagnoseTls] finding a narrower list that actually completes a handshake.
+     * Deliberately in-memory: it is a workaround for a host misbehaving right now, not a fact about
+     * it worth persisting, and re-deriving it costs one self-test after a restart.
+     */
+    private val tlsProtocolOverrides = ConcurrentHashMap<String, List<String>>()
+
+    /**
+     * Adopts [protocols] for every future HTTPS call to [hostKey].
+     *
+     * @param protocols the working list, or `null` to go back to the default.
+     */
+    fun rememberTlsProtocols(hostKey: String, protocols: List<String>?) {
+        if (protocols == null || protocols.isEmpty()) {
+            tlsProtocolOverrides.remove(hostKey)
+            return
+        }
+        val previous = tlsProtocolOverrides.put(hostKey, protocols)
+        if (previous != protocols) {
+            ProtocolLog.i(
+                ProtocolLog.TAG_TLS,
+                "Using $protocols for every HTTPS call to $hostKey from now on " +
+                    "(default is ${UnverifiedProtocolConstants.TLS_PROTOCOLS})",
+            )
+        }
+    }
+
+    private fun protocolsFor(hostKey: String): List<String> =
+        tlsProtocolOverrides[hostKey] ?: UnverifiedProtocolConstants.TLS_PROTOCOLS
+
+    /**
+     * Runs the TLS reachability self-test against a host's HTTPS port (see [TlsProbe]).
+     *
+     * Called when an HTTPS request fails in a way that says nothing — a bare read timeout — because
+     * that is precisely when we cannot tell a wrong port from a wedged service from a stalled
+     * handshake. If the self-test finds a narrower TLS configuration that does work, it is adopted
+     * for this host immediately, so the very next request uses it.
+     *
+     * @return the report, or `null` when we hold no pinned certificate or no identity and therefore
+     *   cannot form a meaningful handshake to test.
+     */
+    suspend fun diagnoseTls(
+        hostKey: String,
+        address: HostAddress,
+        httpsPort: Int,
+    ): TlsProbeReport? {
+        val identity = identityOrFail() ?: return null
+        val serverCertificate = trustStore.certificate(hostKey) ?: return null
+        val report = TlsProbe.diagnose(address, httpsPort, identity, serverCertificate)
+        if (report.tlsWorks && report.workingProtocols != UnverifiedProtocolConstants.TLS_PROTOCOLS) {
+            rememberTlsProtocols(hostKey, report.workingProtocols)
+        }
+        return report
+    }
 
     // -- /serverinfo ---------------------------------------------------------------------------
 
@@ -153,7 +211,7 @@ class NvHttpClient(
                 endpoint = ProtocolConstants.PATH_APP_ASSET,
                 connectTimeoutMs = ProtocolConstants.DEFAULT_REQUEST_TIMEOUT_MS,
                 readTimeoutMs = ProtocolConstants.DEFAULT_REQUEST_TIMEOUT_MS,
-                tls = TlsSetup(identity, serverCertificate),
+                tls = TlsSetup(identity, serverCertificate, protocolsFor(hostKey)),
             )
         ) {
             is NvHttpResult.Success -> {
@@ -327,7 +385,7 @@ class NvHttpClient(
             endpoint = PHASE_5_LABEL,
             connectTimeoutMs = connectTimeoutMs,
             readTimeoutMs = readTimeoutMs,
-            tls = TlsSetup(identity, serverCertificate),
+            tls = TlsSetup(identity, serverCertificate, protocolsFor(hostKey)),
             trace = PHASE_5_LABEL,
         )
     }
@@ -399,7 +457,7 @@ class NvHttpClient(
             endpoint = path,
             connectTimeoutMs = connectTimeoutMs,
             readTimeoutMs = readTimeoutMs,
-            tls = TlsSetup(identity, serverCertificate),
+            tls = TlsSetup(identity, serverCertificate, protocolsFor(hostKey)),
             trace = trace,
         )
     }
@@ -484,8 +542,15 @@ class NvHttpClient(
                     )
                 }
                 val sslContext = PinnedTls.context(tls.identity, tls.serverCertificate)
-                opened.sslSocketFactory = PinnedTls.socketFactory(sslContext)
+                opened.sslSocketFactory = PinnedTls.socketFactory(sslContext, tls.protocols)
                 opened.hostnameVerifier = PinnedTls.AnyHostnameVerifier
+                if (trace != null) {
+                    ProtocolLog.i(
+                        ProtocolLog.TAG_TLS,
+                        "$trace: opening TLS to ${opened.url.host}:${opened.url.port} " +
+                            "offering ${tls.protocols}",
+                    )
+                }
             }
             opened.requestMethod = "GET"
             opened.connectTimeout = connectTimeoutMs
@@ -579,6 +644,7 @@ class NvHttpClient(
     private class TlsSetup(
         val identity: ClientIdentity,
         val serverCertificate: X509Certificate,
+        val protocols: List<String>,
     )
 
     private class RawResponse(val code: Int, val body: ByteArray)

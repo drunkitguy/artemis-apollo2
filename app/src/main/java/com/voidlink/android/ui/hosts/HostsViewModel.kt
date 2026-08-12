@@ -148,8 +148,37 @@ enum class PairingOutcome {
     /** The handshake failed for some other reason. */
     FAILED,
 
+    /**
+     * The PC accepted this device, but no secure connection to it can be established at all.
+     *
+     * A separate outcome because the remedy is nothing to do with pairing, and offering "Try again"
+     * as the obvious action would send the user round a loop that cannot terminate.
+     */
+    HOST_TLS_UNREACHABLE,
+
     /** The user backed out. */
     CANCELLED,
+}
+
+/**
+ * What the dialog is doing after the host has accepted us.
+ *
+ * Present only during the post-phase-4 stretch, which is the one part of pairing that can take
+ * tens of seconds with nothing to show — and the one part where a user who gives up and cancels
+ * used to destroy a pairing that had already succeeded.
+ */
+sealed interface PairingVerification {
+
+    /**
+     * Confirming over a secure connection that the pairing works.
+     *
+     * @property attempt 1-based attempt now running.
+     * @property totalAttempts how many will be tried.
+     */
+    data class Confirming(val attempt: Int, val totalAttempts: Int) : PairingVerification
+
+    /** Every secure call timed out; the transport self-test is running. */
+    data object Diagnosing : PairingVerification
 }
 
 /**
@@ -168,6 +197,8 @@ data class PairingUiState(
     val phase: Int = 0,
     val outcome: PairingOutcome? = null,
     val detail: String? = null,
+    val verification: PairingVerification? = null,
+    val hostHasAccepted: Boolean = false,
 ) {
     /** True once the attempt has finished, whichever way it went. */
     val isFinished: Boolean get() = outcome != null
@@ -179,6 +210,15 @@ data class PairingUiState(
      * the dialog spends most of its life in.
      */
     val isAwaitingPin: Boolean get() = !isFinished && pin != null && phase <= 1
+
+    /**
+     * Whether cancelling now would leave the pairing intact.
+     *
+     * The dialog says so out loud from this point, because the honest answer changes halfway
+     * through and a user who believes Cancel undoes everything will hesitate to press it — or press
+     * it expecting a clean slate and get something else.
+     */
+    val cancelIsHarmless: Boolean get() = hostHasAccepted && !isFinished
 }
 
 /** How many phases the pairing handshake reports, used for the "Step 3 of 5" counter. */
@@ -386,7 +426,35 @@ class HostsViewModel(
             progressFlow.collect { progress ->
                 when (progress) {
                     is PairProgress.PinReady -> pairing.update { it?.copy(pin = progress.pin) }
-                    is PairProgress.Phase -> pairing.update { it?.copy(phase = progress.phase) }
+                    is PairProgress.Phase -> pairing.update { current ->
+                        if (current == null) {
+                            null
+                        } else {
+                            current.copy(
+                                phase = progress.phase,
+                                // Phase 5 only ever starts once phase 4 has answered, which is the
+                                // point at which the PC has committed to this device.
+                                hostHasAccepted = current.hostHasAccepted ||
+                                    progress.phase >= HOST_HAS_ACCEPTED_FROM_PHASE,
+                                verification = null,
+                            )
+                        }
+                    }
+                    is PairProgress.Verifying -> pairing.update {
+                        it?.copy(
+                            hostHasAccepted = true,
+                            verification = PairingVerification.Confirming(
+                                attempt = progress.attempt,
+                                totalAttempts = progress.totalAttempts,
+                            ),
+                        )
+                    }
+                    is PairProgress.Diagnosing -> pairing.update {
+                        it?.copy(
+                            hostHasAccepted = true,
+                            verification = PairingVerification.Diagnosing,
+                        )
+                    }
                     is PairProgress.Done -> onPairingFinished(host, progress)
                 }
             }
@@ -396,14 +464,29 @@ class HostsViewModel(
     /**
      * Abandons a pairing attempt.
      *
-     * Cancelling the job is what makes the host stop showing its PIN prompt: the engine catches the
-     * cancellation and runs `/unpair` under [kotlinx.coroutines.NonCancellable]. Simply hiding the
-     * dialog would leave the PC waiting, and a half-finished pairing wedges every later attempt.
+     * Before the host has accepted us, cancelling the job is what makes the host stop showing its
+     * PIN prompt: the engine catches the cancellation and runs `/unpair` under
+     * [kotlinx.coroutines.NonCancellable].
+     *
+     * **After** it has accepted us, cancelling stops the waiting and nothing else — the PC has
+     * recorded this device and the pinned certificate stays on disk. So instead of discarding
+     * anything, this immediately re-probes the host: the probe's HTTPS check is the same proof the
+     * dialog was waiting for, and it will promote the record to paired without the user doing
+     * another thing. That turns "I gave up on a stuck dialog" into "it just worked".
      */
     fun cancelPairing() {
+        val abandoned = pairing.value
         pairingJob?.cancel()
         pairingJob = null
         pairing.value = null
+        if (abandoned != null && abandoned.hostHasAccepted && abandoned.outcome == null) {
+            ProtocolLog.i(
+                ProtocolLog.TAG_PAIR,
+                "Pairing dialog dismissed after ${abandoned.host.name} had already accepted this " +
+                    "device; re-probing to confirm and adopt it rather than discarding it",
+            )
+            viewModelScope.launch { probe(abandoned.host) }
+        }
     }
 
     /** Retries after a failed attempt, from the same dialog. */
@@ -414,8 +497,16 @@ class HostsViewModel(
 
     private suspend fun onPairingFinished(host: KnownHost, done: PairProgress.Done) {
         val outcome = done.result.toOutcome()
-        pairing.update { it?.copy(outcome = outcome, detail = done.detail) }
-        if (outcome != PairingOutcome.PAIRED) return
+        val hadBeenAccepted = pairing.value?.hostHasAccepted == true
+        pairing.update { it?.copy(outcome = outcome, detail = done.detail, verification = null) }
+        if (outcome != PairingOutcome.PAIRED) {
+            // A failure *after* the host accepted us leaves a real pairing and a real pinned
+            // certificate behind. Probe once now: if the host's secure service comes good, the
+            // record is promoted without the user being asked to pair a PC that already trusts
+            // them. Costs one probe and can only ever improve the state.
+            if (hadBeenAccepted) probe(host)
+            return
+        }
 
         // Record the pairing and re-probe, so the card's footer becomes "Connect" and the app list
         // is reachable the moment the dialog closes rather than after the next manual refresh.
@@ -438,6 +529,7 @@ class HostsViewModel(
         PairResult.PIN_WRONG -> PairingOutcome.PIN_WRONG
         PairResult.ALREADY_IN_PROGRESS -> PairingOutcome.ALREADY_IN_PROGRESS
         PairResult.FAILED -> PairingOutcome.FAILED
+        PairResult.HOST_TLS_UNREACHABLE -> PairingOutcome.HOST_TLS_UNREACHABLE
         PairResult.CANCELLED -> PairingOutcome.CANCELLED
     }
 
@@ -538,6 +630,15 @@ class HostsViewModel(
 
         /** How long "Paired" stays on screen before the dialog closes itself. */
         private const val PAIRED_DISMISS_MILLIS = 900L
+
+        /**
+         * The phase from which the PC has committed to this device.
+         *
+         * Phase 5 is only ever entered after phase 4 answered `<paired>1</paired>`, so seeing it is
+         * how the UI knows that cancelling is now harmless and that a failure still leaves a real
+         * pairing behind.
+         */
+        private const val HOST_HAS_ACCEPTED_FROM_PHASE = 5
 
         /** Builds the production view model from [ServiceLocator]. */
         val Factory: ViewModelProvider.Factory = viewModelFactory {

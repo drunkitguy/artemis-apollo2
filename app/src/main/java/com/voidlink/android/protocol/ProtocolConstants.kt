@@ -123,13 +123,14 @@ object ProtocolConstants {
     /**
      * Phase 5 — the HTTPS `pairchallenge` (spec §4.7).
      *
-     * Generous on purpose. This leg opens a brand-new TLS connection on a port nothing has touched
-     * yet, and the host verifies our client certificate against its whole client list during the
-     * handshake. On `HttpURLConnection` the read timeout also covers the handshake, so a value
-     * tuned for a plaintext round trip aborts mid-handshake and reports "Read timed out".
+     * Short on purpose, and this is the opposite of the first instinct. On `HttpURLConnection` the
+     * read timeout also covers the TLS handshake, so a host whose HTTPS service is not answering
+     * costs the full value here with nothing to show for it. We now *expect* some hosts to go quiet
+     * on this leg and we can settle the question another way, so waiting longer buys nothing and
+     * makes the dialog look frozen.
      */
-    const val PAIRING_PHASE5_CONNECT_TIMEOUT_MS: Int = 15_000
-    const val PAIRING_PHASE5_READ_TIMEOUT_MS: Int = 45_000
+    const val PAIRING_PHASE5_CONNECT_TIMEOUT_MS: Int = 5_000
+    const val PAIRING_PHASE5_READ_TIMEOUT_MS: Int = 8_000
 
     /**
      * The confirmation `/serverinfo` over pinned HTTPS used when phase 5 is inconclusive (spec §4.7).
@@ -139,9 +140,28 @@ object ProtocolConstants {
      * "genuinely paired" (spec §3.3), so it is the right way to settle the question rather than
      * discarding a pairing that exists.
      */
-    const val PAIRING_CONFIRM_TIMEOUT_MS: Int = 15_000
+    const val PAIRING_CONFIRM_TIMEOUT_MS: Int = 6_000
     const val PAIRING_CONFIRM_ATTEMPTS: Int = 3
-    const val PAIRING_CONFIRM_RETRY_DELAY_MS: Long = 1_500L
+    const val PAIRING_CONFIRM_RETRY_DELAY_MS: Long = 1_000L
+
+    /**
+     * One hard deadline for everything after phase 4 — the `pairchallenge`, every confirmation
+     * attempt, and the TLS self-test that follows a silent host.
+     *
+     * A per-step budget is not enough: several steps that are each "reasonable" still add up to
+     * minutes in front of a dialog with no words on it. This is the number that decides how long
+     * the user waits, so it is the number to change.
+     */
+    const val PAIRING_VERIFY_BUDGET_MS: Long = 30_000L
+
+    /**
+     * Deadline for the TLS self-test that runs when every HTTPS call to a host times out.
+     *
+     * Separate from [PAIRING_VERIFY_BUDGET_MS] because it answers a different question and the user
+     * is told so on screen. In the common failing case it finishes in a few seconds: once the raw
+     * byte-level poke shows the port never answers, there is nothing a handshake could add.
+     */
+    const val PAIRING_DIAGNOSE_BUDGET_MS: Long = 20_000L
 
     // ---- Pairing (spec §4) -------------------------------------------------------------------
 
