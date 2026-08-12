@@ -25,11 +25,11 @@ class Iperf3ProtocolTest {
 
         assertEquals(37, cookie.size)
         assertEquals(0.toByte(), cookie[36])
+        val allowed = Iperf3Protocol.COOKIE_ALPHABET.map { it.code.toByte() }.toSet()
         for (index in 0 until 36) {
-            val character = cookie[index].toInt().toChar()
             assertTrue(
-                "cookie character '$character' is outside iperf3's alphabet",
-                Iperf3Protocol.COOKIE_ALPHABET.contains(character),
+                "cookie byte ${cookie[index]} at $index is outside iperf3's alphabet",
+                cookie[index] in allowed,
             )
         }
     }
