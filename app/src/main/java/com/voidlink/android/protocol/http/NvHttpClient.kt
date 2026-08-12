@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -19,6 +21,7 @@ import java.net.URLEncoder
 import java.security.cert.X509Certificate
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLPeerUnverifiedException
@@ -46,23 +49,45 @@ class NvHttpClient(
     /**
      * TLS versions to offer a particular host, when the default list turned out not to work.
      *
-     * Populated only by [diagnoseTls] finding a narrower list that actually completes a handshake.
-     * Deliberately in-memory: it is a workaround for a host misbehaving right now, not a fact about
-     * it worth persisting, and re-deriving it costs one self-test after a restart.
+     * A memory cache in front of [HostTrustStore.tlsProtocols], which persists it. Keeping this
+     * only in memory was a real defect: the self-test that discovers a working configuration runs
+     * during pairing and nowhere else, so after the process restarted the knowledge was gone and
+     * the first secure request stalled again — "it worked, then it stopped".
      */
     private val tlsProtocolOverrides = ConcurrentHashMap<String, List<String>>()
+
+    /**
+     * One lock per `host:port` we make secure requests to.
+     *
+     * A GameStream host runs its HTTPS listener on a single thread. Two overlapping secure requests
+     * therefore do not run concurrently on the host — the second waits, and if it waits longer than
+     * our read timeout it fails with a bare `SocketTimeoutException` that looks exactly like a dead
+     * host. A grid of box-art tiles, or the 20-second background probe landing on top of a
+     * user-initiated `/applist`, produces precisely that. Issuing them one at a time is both
+     * honest about what the host can do and strictly faster than timing out.
+     */
+    private val httpsGates = ConcurrentHashMap<String, Mutex>()
+
+    /** Distinguishes one request from another in the log, so an unclosed connection is visible. */
+    private val exchangeCounter = AtomicLong(0)
+
+    private fun httpsGateFor(url: String): Mutex =
+        httpsGates.getOrPut(authorityOf(url)) { Mutex() }
 
     /**
      * Adopts [protocols] for every future HTTPS call to [hostKey].
      *
      * @param protocols the working list, or `null` to go back to the default.
      */
-    fun rememberTlsProtocols(hostKey: String, protocols: List<String>?) {
-        if (protocols == null || protocols.isEmpty()) {
+    suspend fun rememberTlsProtocols(hostKey: String, protocols: List<String>?) {
+        if (protocols.isNullOrEmpty()) {
             tlsProtocolOverrides.remove(hostKey)
             return
         }
         val previous = tlsProtocolOverrides.put(hostKey, protocols)
+        // Persisted, not just cached: this must survive the process, or the next launch repeats the
+        // stall that discovering it was meant to end.
+        trustStore.storeTlsProtocols(hostKey, protocols)
         if (previous != protocols) {
             ProtocolLog.i(
                 ProtocolLog.TAG_TLS,
@@ -72,8 +97,19 @@ class NvHttpClient(
         }
     }
 
-    private fun protocolsFor(hostKey: String): List<String> =
-        tlsProtocolOverrides[hostKey] ?: UnverifiedProtocolConstants.TLS_PROTOCOLS
+    /**
+     * The TLS versions to offer [hostKey], memory cache first and persisted store behind it.
+     */
+    private suspend fun protocolsFor(hostKey: String): List<String> {
+        tlsProtocolOverrides[hostKey]?.let { return it }
+        val stored = trustStore.tlsProtocols(hostKey) ?: return UnverifiedProtocolConstants.TLS_PROTOCOLS
+        tlsProtocolOverrides[hostKey] = stored
+        ProtocolLog.i(
+            ProtocolLog.TAG_TLS,
+            "Restored a working TLS configuration for $hostKey from a previous session: $stored",
+        )
+        return stored
+    }
 
     /**
      * Runs the TLS reachability self-test against a host's HTTPS port (see [TlsProbe]).
@@ -534,16 +570,62 @@ class NvHttpClient(
         tls: TlsSetup?,
         trace: String? = null,
         traceTag: String = ProtocolLog.TAG_PAIR,
+    ): NvHttpResult<RawResponse> {
+        // Requests to one listener are issued one at a time. A GameStream host serves each of its
+        // two listeners on a single thread, so overlapping requests do not run concurrently over
+        // there — the second waits, and if it waits past our read timeout it fails with a bare
+        // `SocketTimeoutException` indistinguishable from a dead host. A grid of box-art tiles, or
+        // the background probe landing on top of a user-initiated /applist, produces exactly that.
+        //
+        // The gate is keyed by `host:port`, so the plaintext and secure listeners get their own
+        // locks rather than blocking each other.
+        //
+        // The one exemption is a request with no read timeout: that is pairing phase 1, which
+        // blocks for as long as the user takes to type a PIN into the host. Holding a lock for
+        // minutes would freeze every other operation against that machine, so it goes ungated.
+        val gate = if (readTimeoutMs > 0) gateFor(url) else null
+        if (gate == null) {
+            return executeNow(url, endpoint, connectTimeoutMs, readTimeoutMs, tls, trace, traceTag)
+        }
+        val waitedFrom = System.currentTimeMillis()
+        return gate.withLock {
+            val waited = System.currentTimeMillis() - waitedFrom
+            if (waited > GATE_WAIT_LOG_THRESHOLD_MS) {
+                ProtocolLog.i(
+                    ProtocolLog.TAG_HTTP,
+                    "$endpoint waited ${waited}ms for the secure channel to ${authorityOf(url)} " +
+                        "to free up; the host serves HTTPS on one thread, so requests to it are " +
+                        "issued one at a time",
+                )
+            }
+            executeNow(url, endpoint, connectTimeoutMs, readTimeoutMs, tls, trace, traceTag)
+        }
+    }
+
+    private suspend fun executeNow(
+        url: String,
+        endpoint: String,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        tls: TlsSetup?,
+        trace: String?,
+        traceTag: String,
     ): NvHttpResult<RawResponse> = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         var cancellationHandle: DisposableHandle? = null
         val startedAt = System.currentTimeMillis()
+        val exchange = exchangeCounter.incrementAndGet()
         if (trace != null) {
-            ProtocolLog.i(traceTag, "$trace -> GET ${redactUrl(url)}")
+            ProtocolLog.i(traceTag, "$trace [#$exchange] -> GET ${redactUrl(url)}")
         }
         try {
             val opened = URL(url).openConnection() as HttpURLConnection
             connection = opened
+            ProtocolLog.d(
+                ProtocolLog.TAG_HTTP,
+                "[#$exchange] opened a new ${if (tls != null) "TLS" else "plaintext"} connection " +
+                    "to ${authorityOf(url)} for $endpoint",
+            )
             if (tls != null) {
                 if (opened !is HttpsURLConnection) {
                     return@withContext NvHttpResult.TransportError(
@@ -556,7 +638,7 @@ class NvHttpClient(
                 if (trace != null) {
                     ProtocolLog.i(
                         ProtocolLog.TAG_TLS,
-                        "$trace: opening TLS to ${opened.url.host}:${opened.url.port} " +
+                        "$trace [#$exchange]: opening TLS to ${opened.url.host}:${opened.url.port} " +
                             "offering ${tls.protocols}",
                     )
                 }
@@ -567,16 +649,26 @@ class NvHttpClient(
             opened.useCaches = false
             opened.instanceFollowRedirects = false
             opened.doInput = true
+            // Never pool a connection to one of these hosts. `useCaches = false` does not stop the
+            // platform's connection pool from keeping the socket alive after `disconnect()`, and a
+            // pooled socket to a host that has already closed its side is a request that fails for
+            // no visible reason. The host closes after every response anyway, so keep-alive buys
+            // nothing and costs determinism.
+            opened.setRequestProperty("Connection", "close")
 
             cancellationHandle = coroutineContext[Job]?.invokeOnCompletion { cause ->
                 if (cause != null) runCatching { opened.disconnect() }
             }
 
             val code = opened.responseCode
+            // The body must be drained on *every* status, not just success: a response left unread
+            // holds its socket open regardless of what disconnect() is asked to do afterwards.
             val stream: InputStream? = if (code in 200..299) {
                 runCatching { opened.inputStream }.getOrNull()
+                    ?: runCatching { opened.errorStream }.getOrNull()
             } else {
                 runCatching { opened.errorStream }.getOrNull()
+                    ?: runCatching { opened.inputStream }.getOrNull()
             }
             val body = stream?.use { readBounded(it, MAX_RESPONSE_BYTES) } ?: ByteArray(0)
             ensureActive()
@@ -584,7 +676,7 @@ class NvHttpClient(
             if (trace != null) {
                 ProtocolLog.i(
                     traceTag,
-                    "$trace <- HTTP $code, ${body.size} bytes in " +
+                    "$trace [#$exchange] <- HTTP $code, ${body.size} bytes in " +
                         "${System.currentTimeMillis() - startedAt}ms: ${bodyPreview(body)}",
                 )
             }
@@ -600,7 +692,7 @@ class NvHttpClient(
             if (trace != null) {
                 ProtocolLog.w(
                     traceTag,
-                    "$trace <- FAILED after ${System.currentTimeMillis() - startedAt}ms: $message",
+                    "$trace [#$exchange] <- FAILED after ${System.currentTimeMillis() - startedAt}ms: $message",
                     t,
                 )
             }
@@ -614,7 +706,17 @@ class NvHttpClient(
             }
         } finally {
             cancellationHandle?.dispose()
-            runCatching { connection?.disconnect() }
+            // Unconditional, on every path including cancellation. A connection left open against a
+            // single-threaded host is not a leak we pay for later — it is the next request timing
+            // out. The log line is the pair to the "opened" one above, so a missing close is
+            // visible in logcat rather than only in the symptom.
+            val closed = runCatching { connection?.disconnect() }.isSuccess
+            ProtocolLog.d(
+                ProtocolLog.TAG_HTTP,
+                "[#$exchange] disconnected from ${authorityOf(url)} after " +
+                    "${System.currentTimeMillis() - startedAt}ms" +
+                    (if (closed) "" else " (disconnect threw)"),
+            )
         }
     }
 
@@ -680,6 +782,20 @@ class NvHttpClient(
 
         /** How much of a long query value a trace line quotes before eliding the rest. */
         const val TRACE_VALUE_CHARS: Int = 24
+
+        /** Only log a queue wait when it is long enough to be worth explaining. */
+        private const val GATE_WAIT_LOG_THRESHOLD_MS = 250L
+
+        /**
+         * The `host:port` a URL addresses, used as the key of the per-host secure-request lock.
+         *
+         * Parsed by hand rather than with [URL] so it cannot throw: this runs on the failure path
+         * too, and a malformed URL must not turn into a second, more confusing exception.
+         */
+        fun authorityOf(url: String): String {
+            val afterScheme = url.substringAfter("://", url)
+            return afterScheme.substringBefore('/').substringBefore('?')
+        }
 
         /**
          * Query parameters whose values are derived from the PIN and must never reach a log.

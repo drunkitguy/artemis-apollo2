@@ -378,6 +378,20 @@ private fun EmptyLibraryState(
                     secondaryActionLabel = "Back to hosts",
                     onSecondaryAction = onBack,
                 )
+                // We have just had a plaintext answer from this machine, so "it may be asleep, or
+                // on a different network" is provably false here — and a user who reads it goes and
+                // checks the one thing that is definitely fine. Say what actually happened.
+                EmptyLibraryReason.SECURE_CHANNEL_SILENT -> EmptyState(
+                    icon = VoidLinkIcons.Host,
+                    title = "$host is online but not answering securely",
+                    body = "It replied to a normal request just now, then ignored the encrypted " +
+                        "one this app needs for the game list. Restarting the streaming software " +
+                        "on the PC usually clears it.",
+                    primaryActionLabel = "Try again",
+                    onPrimaryAction = onRetry,
+                    secondaryActionLabel = "Back to hosts",
+                    onSecondaryAction = onBack,
+                )
                 EmptyLibraryReason.TLS_FAILURE -> EmptyState(
                     icon = VoidLinkIcons.Locked,
                     title = "Can't connect securely to $host",

@@ -113,7 +113,10 @@ class NvHttpAppCatalogProvider(
         // and a future result type cannot be silently absorbed by an `else`.
         is NvHttpResult.Success -> AppCatalogFailure.TRANSPORT
         is NvHttpResult.HostError -> AppCatalogFailure.HOST_REFUSED
-        is NvHttpResult.TransportError -> AppCatalogFailure.TRANSPORT
+        // Reached only after the plaintext probe above already answered, so we *know* the machine
+        // is awake and on this network. That makes this a silent secure channel, never an
+        // unreachable host, and the difference is the whole message the user gets.
+        is NvHttpResult.TransportError -> AppCatalogFailure.SECURE_CHANNEL_SILENT
         is NvHttpResult.TlsRejected -> AppCatalogFailure.TLS
         is NvHttpResult.Malformed -> AppCatalogFailure.UNREADABLE
         NvHttpResult.NotPaired -> AppCatalogFailure.NOT_PAIRED

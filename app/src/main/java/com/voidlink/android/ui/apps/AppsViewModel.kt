@@ -58,6 +58,14 @@ enum class EmptyLibraryReason {
     /** The request did not complete — timeout, refused connection, dropped socket. */
     TRANSPORT_FAILURE,
 
+    /**
+     * The PC answered over plaintext but its secure channel said nothing.
+     *
+     * Never phrased as "asleep or on another network": we have a live answer from the machine, so
+     * that advice is provably wrong and sends the user to check the one thing that is fine.
+     */
+    SECURE_CHANNEL_SILENT,
+
     /** The secure connection to the host could not be established. */
     TLS_FAILURE,
 
@@ -167,6 +175,7 @@ class AppsViewModel(
             AppCatalogFailure.PERMISSION_DENIED -> EmptyLibraryReason.PERMISSION_DENIED
             AppCatalogFailure.HOST_REFUSED -> EmptyLibraryReason.HOST_REFUSED
             AppCatalogFailure.TRANSPORT -> EmptyLibraryReason.TRANSPORT_FAILURE
+            AppCatalogFailure.SECURE_CHANNEL_SILENT -> EmptyLibraryReason.SECURE_CHANNEL_SILENT
             AppCatalogFailure.TLS -> EmptyLibraryReason.TLS_FAILURE
             AppCatalogFailure.UNREADABLE -> EmptyLibraryReason.UNREADABLE_RESPONSE
         }

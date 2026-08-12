@@ -67,6 +67,16 @@ enum class AppCatalogFailure {
     /** The request did not complete: timeout, refused connection, socket closed. */
     TRANSPORT,
 
+    /**
+     * The host answered over plaintext moments earlier, but its secure channel did not answer at
+     * all.
+     *
+     * Distinct from [TRANSPORT] because we hold proof the machine is awake and on this network — we
+     * just spoke to it. Telling the user their PC might be asleep when we have a live answer from
+     * it is not merely unhelpful, it sends them to check the one thing that is definitely fine.
+     */
+    SECURE_CHANNEL_SILENT,
+
     /** The TLS handshake failed — the host would not accept our client certificate. */
     TLS,
 

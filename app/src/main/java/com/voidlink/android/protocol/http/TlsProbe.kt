@@ -263,7 +263,11 @@ object TlsProbe {
                 PortBehaviour.ACCEPTED_THEN_SILENT
             }
         } finally {
-            runCatching { socket.close() }
+            val closed = runCatching { socket.close() }.isSuccess
+            ProtocolLog.d(
+                ProtocolLog.TAG_TLS,
+                "TLS self-test: closed the raw poke socket to $host:$port (closed=$closed)",
+            )
         }
     }
 
@@ -355,8 +359,17 @@ object TlsProbe {
                 failure = failure,
             )
         } finally {
-            runCatching { tls?.close() }
-            runCatching { plain?.close() }
+            // Both sockets, on every path, including the deliberately-failing attempts. The probe
+            // runs precisely when a host is already struggling, and a socket leaked here would make
+            // the very problem it is diagnosing worse. Closing the TLS socket first sends a proper
+            // close_notify; the plain close is belt and braces against a factory that never wrapped.
+            val tlsClosed = runCatching { tls?.close() }.isSuccess
+            val plainClosed = runCatching { plain?.close() }.isSuccess
+            ProtocolLog.d(
+                ProtocolLog.TAG_TLS,
+                "TLS self-test: closed sockets for \"$label\" " +
+                    "(tls=$tlsClosed, plain=$plainClosed)",
+            )
         }
     }
 

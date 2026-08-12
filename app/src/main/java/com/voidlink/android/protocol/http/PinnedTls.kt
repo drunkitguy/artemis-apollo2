@@ -47,6 +47,9 @@ class HostTrustStore(baseDir: File) {
     private val mutex = Mutex()
     private val cache = ConcurrentHashMap<String, X509Certificate>()
 
+    /** Working TLS versions per host; an empty list means "asked, and there is no override". */
+    private val tlsCache = ConcurrentHashMap<String, List<String>>()
+
     /**
      * The pinned certificate for [hostKey], or `null` when we have never paired with it.
      *
@@ -129,11 +132,58 @@ class HostTrustStore(baseDir: File) {
         return true
     }
 
+    /**
+     * The TLS versions previously found to work with [hostKey], or `null` for the default list.
+     *
+     * Persisted rather than held in memory, and that is the point. When a host only completes a
+     * client-authenticated handshake under a narrower configuration, forgetting that on the next
+     * app launch means the first secure request stalls all over again — which reads to the user as
+     * "it worked yesterday and now it doesn't". The self-test that discovers it only runs during
+     * pairing, so there is nothing to re-learn it from afterwards.
+     */
+    suspend fun tlsProtocols(hostKey: String): List<String>? {
+        tlsCache[hostKey]?.let { return it.ifEmpty { null } }
+        return withContext(Dispatchers.IO) {
+            val file = tlsFileFor(hostKey)
+            val stored = if (!file.isFile) {
+                emptyList()
+            } else {
+                runCatching { file.readText(Charsets.US_ASCII) }
+                    .getOrNull()
+                    ?.split(',')
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                    .orEmpty()
+            }
+            tlsCache[hostKey] = stored
+            stored.ifEmpty { null }
+        }
+    }
+
+    /** Records the TLS versions that actually work with [hostKey]. */
+    suspend fun storeTlsProtocols(hostKey: String, protocols: List<String>) {
+        if (protocols.isEmpty()) return
+        mutex.withLock {
+            tlsCache[hostKey] = protocols
+            withContext(Dispatchers.IO) {
+                if (!directory.isDirectory && !directory.mkdirs()) return@withContext
+                runCatching { tlsFileFor(hostKey).writeText(protocols.joinToString(","), Charsets.US_ASCII) }
+                    .onFailure {
+                        ProtocolLog.w(ProtocolLog.TAG_TLS, "Cannot record TLS versions for $hostKey", it)
+                    }
+            }
+        }
+    }
+
     /** Forgets the pin for [hostKey]; called after `/unpair` and on a failed pairing attempt. */
     suspend fun remove(hostKey: String) {
         mutex.withLock {
             cache.remove(hostKey)
-            withContext(Dispatchers.IO) { runCatching { fileFor(hostKey).delete() } }
+            tlsCache.remove(hostKey)
+            withContext(Dispatchers.IO) {
+                runCatching { fileFor(hostKey).delete() }
+                runCatching { tlsFileFor(hostKey).delete() }
+            }
         }
     }
 
@@ -146,9 +196,14 @@ class HostTrustStore(baseDir: File) {
     private fun fileFor(hostKey: String): File =
         File(directory, Hex.encode(hostKey.toByteArray(Charsets.UTF_8)) + FILE_SUFFIX)
 
+    /** Sibling of [fileFor] holding the working TLS versions, under the same safe filename rule. */
+    private fun tlsFileFor(hostKey: String): File =
+        File(directory, Hex.encode(hostKey.toByteArray(Charsets.UTF_8)) + TLS_SUFFIX)
+
     private companion object {
         const val DIRECTORY_NAME = "hosts"
         const val FILE_SUFFIX = ".pem"
+        const val TLS_SUFFIX = ".tls"
     }
 }
 
