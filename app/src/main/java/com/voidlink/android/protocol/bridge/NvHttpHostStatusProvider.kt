@@ -11,6 +11,7 @@ import com.voidlink.android.protocol.ProtocolLog
 import com.voidlink.android.protocol.discovery.MdnsDiscovery
 import com.voidlink.android.protocol.http.HostTrustStore
 import com.voidlink.android.protocol.http.NvHttpClient
+import com.voidlink.android.protocol.http.NvHttpResult
 import com.voidlink.android.protocol.http.ServerInfo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
@@ -54,26 +55,42 @@ class NvHttpHostStatusProvider(
         // The authoritative pairing check: only a successful client-certificate TLS request proves
         // the host still trusts us (spec §3.3). It also returns the real MAC, which Sunshine
         // withholds over plaintext (spec §1.4).
-        val secureInfo = if (trustStore.isTrusted(host.uuid)) {
+        val secureResult = if (trustStore.isTrusted(host.uuid)) {
             client.serverInfoSecure(
                 hostKey = host.uuid,
                 address = resolved.address,
                 httpsPort = plainInfo.httpsPort,
                 timeoutMs = timeoutMs,
-            ).valueOrNull()
+            )
         } else {
             null
         }
 
-        val best = secureInfo ?: plainInfo
-        val paired = secureInfo != null
-        if (trustStore.isTrusted(host.uuid) && !paired) {
-            ProtocolLog.w(
-                ProtocolLog.TAG_HTTP,
-                "${host.name} answered on plaintext but rejected our certificate; treating as unpaired",
-            )
+        // A slow network is not evidence of anything. Only a handshake the host actually refused
+        // means it has forgotten us; a timeout leaves the last known answer standing, because
+        // demoting a paired host makes its card offer "Pair with PIN" and makes the PC put up a
+        // PIN prompt the user never asked for.
+        val paired = when (secureResult) {
+            null -> false
+            is NvHttpResult.Success -> true
+            is NvHttpResult.TlsRejected -> {
+                ProtocolLog.w(
+                    ProtocolLog.TAG_HTTP,
+                    "${host.name} refused our certificate; treating as unpaired",
+                )
+                false
+            }
+            else -> {
+                ProtocolLog.d(
+                    ProtocolLog.TAG_HTTP,
+                    "${host.name}: HTTPS probe inconclusive (${secureResult?.errorDescription()}); " +
+                        "keeping the stored pairing state",
+                )
+                host.paired
+            }
         }
 
+        val best = secureResult?.valueOrNull() ?: plainInfo
         return HostStatus(
             reachability = HostReachability.ONLINE,
             paired = paired,
@@ -82,6 +99,9 @@ class NvHttpHostStatusProvider(
             // host; the Apps screen already resolves the name from the list it has loaded.
             runningAppName = null,
             hostName = best.hostname,
+            // The host's own identity, which is what discovery files it under. Reporting it lets a
+            // manually added record be reconciled onto the same PC instead of shadowing it.
+            uniqueId = best.uniqueId,
             // Only the HTTPS response carries the real MAC, so this is null until the host
             // is paired. The repository treats null as "not seen this time" rather than as
             // a correction, so a later plaintext probe cannot erase a MAC we already learned.

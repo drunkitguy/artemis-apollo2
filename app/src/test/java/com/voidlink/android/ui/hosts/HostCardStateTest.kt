@@ -128,6 +128,43 @@ class HostCardStateTest {
     }
 
     @Test
+    fun `the status line says a session is running even when it cannot name it`() {
+        // The host reports `currentgame` on every probe but only its title with an extra round
+        // trip, so the label must degrade rather than silently drop the information.
+        val runningUnnamed = HostStatus(
+            reachability = HostReachability.ONLINE,
+            paired = true,
+            runningAppId = "42",
+        )
+        val runningNamed = runningUnnamed.copy(runningAppName = "Hades II")
+
+        assertEquals(
+            "Online",
+            HostCardState(host = host(paired = true), status = online).statusLabel,
+        )
+        assertEquals(
+            "Online · In game",
+            HostCardState(host = host(paired = true), status = runningUnnamed).statusLabel,
+        )
+        assertEquals(
+            "Online · Hades II",
+            HostCardState(host = host(paired = true), status = runningNamed).statusLabel,
+        )
+    }
+
+    @Test
+    fun `an offline host never advertises a session`() {
+        val stale = HostStatus(
+            reachability = HostReachability.OFFLINE,
+            paired = true,
+            runningAppId = "42",
+            runningAppName = "Hades II",
+        )
+
+        assertEquals("Offline", HostCardState(host = host(paired = true), status = stale).statusLabel)
+    }
+
+    @Test
     fun `a blank running app name is treated as no app`() {
         val blank = HostStatus(
             reachability = HostReachability.ONLINE,

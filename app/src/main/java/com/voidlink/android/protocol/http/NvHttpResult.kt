@@ -24,8 +24,19 @@ sealed interface NvHttpResult<out T> {
      */
     class HostError(val statusCode: Int, val statusMessage: String?) : NvHttpResult<Nothing>
 
-    /** The request could not be completed: connect refused, timeout, TLS failure, socket closed. */
+    /** The request could not be completed: connect refused, timeout, socket closed. */
     class TransportError(val message: String, val cause: Throwable? = null) : NvHttpResult<Nothing>
+
+    /**
+     * The TLS handshake itself failed — the host would not accept our client certificate.
+     *
+     * Split out from [TransportError] because the two mean opposite things about pairing. A
+     * timeout says nothing at all about whether the host still trusts us; a rejected handshake
+     * says it does not. Collapsing them makes a slow network look identical to being unpaired,
+     * which demotes a perfectly good host to "Pair with PIN" and makes the PC pop a pointless
+     * prompt when the user taps it.
+     */
+    class TlsRejected(val message: String, val cause: Throwable? = null) : NvHttpResult<Nothing>
 
     /** The host answered, but the body was not a usable document. */
     class Malformed(val reason: String) : NvHttpResult<Nothing>
@@ -48,6 +59,7 @@ sealed interface NvHttpResult<out T> {
         is HostError -> statusMessage?.takeIf { it.isNotBlank() }
             ?: "host returned status $statusCode"
         is TransportError -> message
+        is TlsRejected -> "the host rejected our certificate ($message)"
         is Malformed -> reason
         NotPaired -> "not paired with this host"
     }

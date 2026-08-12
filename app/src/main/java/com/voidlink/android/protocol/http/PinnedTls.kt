@@ -20,6 +20,7 @@ import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLEngine
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509ExtendedKeyManager
@@ -101,6 +102,30 @@ class HostTrustStore(baseDir: File) {
                 cache[hostKey] = certificate
             }
         }
+    }
+
+    /**
+     * Moves the pin from [oldKey] to [newKey], so a host that turns out to already be known under
+     * its real `uniqueid` keeps the certificate it was paired with.
+     *
+     * Without this, re-filing a manually added host under the identity a probe revealed would
+     * orphan its pin: the record would still claim to be paired while every HTTPS call failed, and
+     * the user would have to pair again for no visible reason. Does nothing when there is no pin
+     * to move, or when [newKey] already has one — the existing pin is the one HTTPS is currently
+     * succeeding with, so it wins.
+     *
+     * @return true when a certificate was actually moved.
+     */
+    suspend fun rekey(oldKey: String, newKey: String): Boolean {
+        if (oldKey == newKey || newKey.isBlank()) return false
+        val existing = certificate(oldKey) ?: return false
+        if (certificate(newKey) != null) {
+            remove(oldKey)
+            return false
+        }
+        store(newKey, existing)
+        remove(oldKey)
+        return true
     }
 
     /** Forgets the pin for [hostKey]; called after `/unpair` and on a failed pairing attempt. */
@@ -213,6 +238,21 @@ private class SingleIdentityKeyManager(
         keyType: Array<out String>?,
         issuers: Array<out Principal>?,
         socket: Socket?,
+    ): String = ALIAS
+
+    /**
+     * The `SSLEngine` counterpart of [chooseClientAlias].
+     *
+     * `X509ExtendedKeyManager`'s default implementation of this returns null, so an engine-based
+     * TLS stack would send no client certificate at all and the host would refuse us — a silent
+     * failure that would look exactly like being unpaired. Nothing here uses `SSLEngine` today
+     * (the socket path is what `HttpsURLConnection` takes), which is precisely why the omission
+     * would go unnoticed until something switched.
+     */
+    override fun chooseEngineClientAlias(
+        keyType: Array<out String>?,
+        issuers: Array<out Principal>?,
+        engine: SSLEngine?,
     ): String = ALIAS
 
     override fun getServerAliases(keyType: String?, issuers: Array<out Principal>?): Array<String>? = null

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +54,7 @@ import com.voidlink.android.data.HostReachability
 import com.voidlink.android.data.HostStatus
 import com.voidlink.android.data.KnownHost
 import com.voidlink.android.data.SettingsFormat
+import com.voidlink.android.ui.components.EmptyState
 import com.voidlink.android.ui.components.GlyphTile
 import com.voidlink.android.ui.components.HairlineDivider
 import com.voidlink.android.ui.components.PendingStatusLine
@@ -186,8 +188,29 @@ fun HostsScreen(
                         onSettings = { onHostSettings(card.host) },
                     )
                 }
-                item(key = ADD_TILE_KEY) {
-                    AddHostCard(onClick = { addDialogOpen = true }, isEmptyState = state.isEmpty)
+                if (state.isEmpty) {
+                    // A whole-width explanation rather than a lone tile: with nothing found, the
+                    // user's next question is "why", and the answer is almost always the network.
+                    item(key = EMPTY_STATE_KEY, span = { GridItemSpan(maxLineSpan) }) {
+                        EmptyState(
+                            icon = VoidLinkIcons.Offline,
+                            title = if (state.isDiscovering) {
+                                "Looking for PCs…"
+                            } else {
+                                "No PCs found"
+                            },
+                            body = "Make sure your PC is switched on, on the same Wi-Fi network as " +
+                                "this device, and running Sunshine, Apollo or GeForce Experience.",
+                            primaryActionLabel = "Add manually",
+                            onPrimaryAction = { addDialogOpen = true },
+                            secondaryActionLabel = "Search again",
+                            onSecondaryAction = onRefresh,
+                        )
+                    }
+                } else {
+                    item(key = ADD_TILE_KEY) {
+                        AddHostCard(onClick = { addDialogOpen = true })
+                    }
                 }
             }
         }
@@ -325,7 +348,7 @@ fun HostCard(
                         )
                         online -> StatusLine(
                             icon = VoidLinkIcons.Online,
-                            text = card.runningAppName?.let { "Online · $it" } ?: "Online",
+                            text = card.statusLabel,
                             tint = colors.online,
                         )
                         else -> StatusLine(
@@ -477,13 +500,12 @@ private const val DISABLED_FOOTER_ALPHA = 0.55f
  * The "Add host manually" tile that closes the grid.
  *
  * @param onClick opens the add dialog.
- * @param isEmptyState true when it is the only thing in the grid, which earns a longer explanation.
+ * Shown alongside real hosts; when the grid is empty the fuller [EmptyState] takes over instead.
  * @param modifier layout modifier.
  */
 @Composable
 fun AddHostCard(
     onClick: () -> Unit,
-    isEmptyState: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val colors = VoidLinkTheme.colors
@@ -516,15 +538,6 @@ fun AddHostCard(
             style = VoidLinkTheme.cardTitle,
             color = colors.accent,
         )
-        if (isEmptyState) {
-            Spacer(modifier = Modifier.height(spacing.sm))
-            Text(
-                text = "No hosts found yet. Make sure your PC is awake and on the same network, " +
-                    "or enter its address yourself.",
-                style = VoidLinkTheme.footnote,
-                color = colors.secondaryLabel,
-            )
-        }
     }
 }
 
@@ -808,6 +821,9 @@ private fun MessageBanner(
 
 /** Stable key for the trailing "add host" tile in the grid. */
 private const val ADD_TILE_KEY = "voidlink.add-host-tile"
+
+/** Stable key for the full-width empty state. */
+private const val EMPTY_STATE_KEY = "voidlink.hosts-empty-state"
 
 @Preview(name = "Hosts", widthDp = 720, heightDp = 900)
 @Composable

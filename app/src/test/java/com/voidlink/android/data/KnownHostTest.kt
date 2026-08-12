@@ -120,6 +120,77 @@ class KnownHostTest {
     }
 
     @Test
+    fun `a manually added host with no twin is simply re-filed under its real identity`() {
+        val manual = host(uuid = "local-1", name = "192.168.1.24").copy(manuallyAdded = true)
+
+        val merged = manual.mergedOnto(existing = null, realUuid = "REAL-UUID")
+
+        assertEquals("REAL-UUID", merged.uuid)
+        assertEquals(manual.addresses, merged.addresses)
+    }
+
+    @Test
+    fun `merging keeps a name the user typed but drops one that is just the address`() {
+        val discovered = host(uuid = "REAL", name = "BATTLESTATION")
+        val typedAddress = host(uuid = "local", name = "192.168.1.24", addresses = listOf("192.168.1.24"))
+            .copy(manuallyAdded = true)
+        val typedName = host(uuid = "local", name = "Den PC", addresses = listOf("192.168.1.24"))
+            .copy(manuallyAdded = true)
+
+        assertEquals("BATTLESTATION", typedAddress.mergedOnto(discovered, "REAL").name)
+        assertEquals("Den PC", typedName.mergedOnto(discovered, "REAL").name)
+    }
+
+    @Test
+    fun `merging unions the addresses so whichever one works survives`() {
+        val discovered = host(uuid = "REAL", addresses = listOf("10.0.0.5"))
+        val manual = host(uuid = "local", addresses = listOf("192.168.1.24", "10.0.0.5"))
+
+        val merged = manual.mergedOnto(discovered, "REAL")
+
+        assertEquals(listOf("10.0.0.5", "192.168.1.24"), merged.addresses)
+    }
+
+    @Test
+    fun `merging never loses a pairing, a MAC or a settings override`() {
+        val override = StreamSettings(bitrateKbps = 45_000)
+        val discovered = host(uuid = "REAL", paired = false, macAddress = null)
+        val manual = host(
+            uuid = "local",
+            paired = true,
+            macAddress = "aa:bb:cc:dd:ee:ff",
+            settingsOverride = override,
+            lastSeenEpochMillis = 99L,
+        )
+
+        val merged = manual.mergedOnto(discovered, "REAL")
+
+        assertTrue(merged.paired)
+        assertEquals("aa:bb:cc:dd:ee:ff", merged.macAddress)
+        assertEquals(override, merged.settingsOverride)
+        assertEquals(99L, merged.lastSeenEpochMillis)
+    }
+
+    @Test
+    fun `merging prefers the existing record's own MAC and override`() {
+        val discovered = host(
+            uuid = "REAL",
+            macAddress = "11:22:33:44:55:66",
+            settingsOverride = StreamSettings(bitrateKbps = 10_000),
+        )
+        val manual = host(
+            uuid = "local",
+            macAddress = "aa:bb:cc:dd:ee:ff",
+            settingsOverride = StreamSettings(bitrateKbps = 45_000),
+        )
+
+        val merged = manual.mergedOnto(discovered, "REAL")
+
+        assertEquals("11:22:33:44:55:66", merged.macAddress)
+        assertEquals(10_000, merged.settingsOverride?.bitrateKbps)
+    }
+
+    @Test
     fun `a probe that learns a MAC records it`() {
         // The case that makes Wake-on-LAN reachable at all for a manually added host: Sunshine
         // hands the real MAC back only over HTTPS, once we are paired.

@@ -12,20 +12,30 @@ import com.voidlink.android.data.HostStatusProvider
 import com.voidlink.android.data.HostWaker
 import com.voidlink.android.data.KnownHost
 import com.voidlink.android.di.ServiceLocator
+import com.voidlink.android.protocol.ProtocolLog
 import com.voidlink.android.protocol.bridge.HostPairingCoordinator
+import com.voidlink.android.protocol.http.HostTrustStore
 import com.voidlink.android.protocol.pairing.PairProgress
 import com.voidlink.android.protocol.pairing.PairResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -62,6 +72,22 @@ data class HostCardState(
     /** Name of the app streaming on this host right now, when it is online and running one. */
     val runningAppName: String?
         get() = status.runningAppName?.takeIf { isOnline && it.isNotBlank() }
+
+    /**
+     * The status line's text.
+     *
+     * A host reports *that* something is streaming (`currentgame`) on every probe, but its title
+     * only with an extra `/applist` round trip per host — too expensive for a list that re-probes
+     * on a timer. So the card says a session is running even when it cannot name it, which is the
+     * part that actually changes what the user does: tapping Connect will resume, not start fresh.
+     */
+    val statusLabel: String
+        get() = when {
+            !isOnline -> "Offline"
+            runningAppName != null -> "Online · $runningAppName"
+            status.runningAppId != null -> "Online · In game"
+            else -> "Online"
+        }
 
     /** The footer button the card should show. */
     val primaryAction: HostAction
@@ -188,6 +214,7 @@ class HostsViewModel(
     private val statusProvider: HostStatusProvider,
     private val hostWaker: HostWaker,
     private val pairingCoordinator: HostPairingCoordinator,
+    private val trustStore: HostTrustStore,
 ) : ViewModel() {
 
     private val statuses = MutableStateFlow<Map<String, HostStatus>>(emptyMap())
@@ -198,21 +225,53 @@ class HostsViewModel(
     private var refreshJob: Job? = null
     private var pairingJob: Job? = null
 
+    /** The transient parts of the state, pre-combined so the main [combine] stays within arity. */
+    private val transientState: Flow<Triple<Boolean, String?, PairingUiState?>> =
+        combine(discovering, messages, pairing) { isDiscovering, message, pairingState ->
+            Triple(isDiscovering, message, pairingState)
+        }
+
+    /**
+     * Re-probes on a slow cadence for as long as the screen is actually watching.
+     *
+     * A PC that boots after the app opened would otherwise sit at "Offline" until the user thought
+     * to hit refresh. This lives in [uiState]'s upstream deliberately: with
+     * [SharingStarted.WhileSubscribed] the loop starts when the screen subscribes and is cancelled
+     * shortly after it stops, so a backgrounded app is not quietly probing the network.
+     */
+    private val autoProbe: Flow<Unit> = flow {
+        // Emit first: `combine` produces nothing until every source has a value.
+        emit(Unit)
+        while (true) {
+            delay(AUTO_PROBE_INTERVAL_MILLIS)
+            try {
+                probeAll()
+            } catch (cancellation: CancellationException) {
+                // The screen stopped watching; that is not a failure.
+                throw cancellation
+            } catch (failure: Throwable) {
+                // This loop is part of the state flow's upstream, so letting anything escape would
+                // tear down the whole screen's state over one bad probe. The next tick retries.
+                ProtocolLog.w(ProtocolLog.TAG_HTTP, "Background probe sweep failed", failure)
+            }
+            emit(Unit)
+        }
+    }
+
     /** The state the screen renders. */
     val uiState: StateFlow<HostsUiState> = combine(
         hostRepository.hosts,
         statuses,
-        discovering,
-        messages,
-        pairing,
-    ) { hosts, statusMap, isDiscovering, message, pairingState ->
+        transientState,
+        autoProbe,
+    ) { hosts, statusMap, transient, _ ->
         HostsUiState(
             hosts = hosts.map { host ->
                 HostCardState(host = host, status = statusMap[host.uuid] ?: HostStatus.Unknown)
             },
-            isDiscovering = isDiscovering,
-            message = message,
-            pairing = pairingState,
+            isDiscovering = transient.first,
+            message = transient.second,
+            pairing = transient.third,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -274,11 +333,23 @@ class HostsViewModel(
         }
     }
 
-    /** Drops the local pairing so the host can be paired again. */
-    fun unpair(uuid: String) {
+    /**
+     * Unpairs from [host] on the host as well as locally.
+     *
+     * Clearing only the local flag would leave the PC still trusting this device and our pinned
+     * certificate still on disk, so "Unpair" would not actually unpair anything — and the next
+     * probe, which asks the trust store rather than the flag, would quietly mark it paired again.
+     */
+    fun unpair(host: KnownHost) {
         viewModelScope.launch {
-            hostRepository.markUnpaired(uuid)
-            messages.value = "Unpaired."
+            val toldTheHost = pairingCoordinator.unpair(host)
+            hostRepository.markUnpaired(host.uuid)
+            messages.value = if (toldTheHost) {
+                "Unpaired from ${host.name}."
+            } else {
+                "Forgot ${host.name} on this device; it may still be paired on the PC."
+            }
+            probe(host)
         }
     }
 
@@ -375,17 +446,29 @@ class HostsViewModel(
         messages.value = null
     }
 
-    private suspend fun probeAll() {
-        hostRepository.snapshot().forEach { probe(it) }
+    /**
+     * Probes every saved host, a few at a time.
+     *
+     * Sequentially, a handful of switched-off PCs serialise their connect timeouts and the sweep
+     * takes longer than the discovery window that follows it — so a machine that is actually on
+     * appears late for no reason. The bound keeps a large host list from opening every socket at
+     * once.
+     */
+    private suspend fun probeAll() = coroutineScope {
+        val gate = Semaphore(PROBE_PARALLELISM)
+        hostRepository.snapshot()
+            .map { host -> async { gate.withPermit { probe(host) } } }
+            .awaitAll()
     }
 
     private suspend fun probe(host: KnownHost) {
         val status = statusProvider.probe(host)
-        // A manual add probes on its own coroutine while a refresh sweep may be running, so the map
-        // has to be updated atomically or one of the two results is silently dropped.
-        statuses.update { it + (host.uuid to status) }
+        val uuid = reconcileIdentity(host, status)
+        // Probes run concurrently and a manual add probes on its own coroutine, so the map has to
+        // be updated atomically or one of the results is silently dropped.
+        statuses.update { it + (uuid to status) }
         if (status.isOnline) {
-            hostRepository.updateHost(host.uuid) { stored ->
+            hostRepository.updateHost(uuid) { stored ->
                 // A paired host answers over HTTPS with its real MAC; persisting it here is what
                 // makes Wake-on-LAN possible later, once the PC is asleep and cannot be asked.
                 stored.markSeen(System.currentTimeMillis()).withLearnedMac(status.macAddress)
@@ -393,9 +476,37 @@ class HostsViewModel(
         }
     }
 
+    /**
+     * Folds a locally-keyed host onto the identity the host itself reported.
+     *
+     * @return the uuid the host is stored under afterwards, which is what the status map must be
+     *   keyed by.
+     */
+    private suspend fun reconcileIdentity(host: KnownHost, status: HostStatus): String {
+        val realId = status.uniqueId?.takeIf { it.isNotBlank() && it != host.uuid }
+            ?: return host.uuid
+        // The certificate moves first: if the record were re-filed and then the move failed, the
+        // host would claim to be paired while every HTTPS call failed against a missing pin.
+        trustStore.rekey(host.uuid, realId)
+        if (!hostRepository.reconcileIdentity(host.uuid, realId)) return host.uuid
+        statuses.update { it - host.uuid }
+        return realId
+    }
+
     companion object {
         private const val STOP_TIMEOUT_MILLIS = 5_000L
         private const val DISCOVERY_WINDOW_MILLIS = 4_000L
+
+        /**
+         * How often the visible host list re-probes.
+         *
+         * Long enough that a phone is not waking its radio constantly, short enough that a PC the
+         * user has just switched on turns green before they give up and press refresh.
+         */
+        private const val AUTO_PROBE_INTERVAL_MILLIS = 20_000L
+
+        /** How many hosts are probed at once; each probe is a socket and a timeout. */
+        private const val PROBE_PARALLELISM = 4
 
         /** How long "Paired" stays on screen before the dialog closes itself. */
         private const val PAIRED_DISMISS_MILLIS = 900L
@@ -408,6 +519,7 @@ class HostsViewModel(
                     statusProvider = ServiceLocator.hostStatusProvider,
                     hostWaker = ServiceLocator.hostWaker,
                     pairingCoordinator = ServiceLocator.pairingCoordinator,
+                    trustStore = ServiceLocator.hostTrustStore,
                 )
             }
         }

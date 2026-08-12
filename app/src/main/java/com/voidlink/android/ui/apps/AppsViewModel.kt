@@ -27,12 +27,30 @@ import kotlinx.coroutines.launch
  * @property isLoading true while the app list is being fetched.
  * @property message a transient one-line notice, or `null`.
  */
+/**
+ * Why a library came back empty.
+ *
+ * The three causes need three different things from the user — switch the PC on, pair with it, or
+ * add a game to it — so showing one grey "No apps to show yet." for all of them is a dead end.
+ */
+enum class EmptyLibraryReason {
+    /** The host did not answer. */
+    UNREACHABLE,
+
+    /** The host answered but does not trust this device, so `/applist` is not available. */
+    UNPAIRED,
+
+    /** The host answered and genuinely lists nothing. */
+    NO_APPS,
+}
+
 data class AppsUiState(
     val host: KnownHost? = null,
     val apps: List<HostApp> = emptyList(),
     val runningAppId: String? = null,
     val isLoading: Boolean = false,
     val message: String? = null,
+    val emptyReason: EmptyLibraryReason? = null,
 ) {
     /** Title for the screen — the host's name, or a neutral fallback while it loads. */
     val title: String get() = host?.name ?: "Apps"
@@ -71,7 +89,11 @@ class AppsViewModel(
             val host = hostRepository.snapshot().firstOrNull { it.uuid == hostId }
             if (host == null) {
                 state.update {
-                    AppsUiState(isLoading = false, message = "That host is no longer saved.")
+                    AppsUiState(
+                        isLoading = false,
+                        message = "That host is no longer saved.",
+                        emptyReason = EmptyLibraryReason.UNREACHABLE,
+                    )
                 }
                 return@launch
             }
@@ -83,6 +105,14 @@ class AppsViewModel(
                     apps = apps,
                     runningAppId = status.runningAppId,
                     isLoading = false,
+                    // The probe already told us why an empty list is empty; the catalogue cannot,
+                    // because "unreachable", "unpaired" and "no games" all arrive as an empty list.
+                    emptyReason = when {
+                        apps.isNotEmpty() -> null
+                        !status.isOnline -> EmptyLibraryReason.UNREACHABLE
+                        !status.paired -> EmptyLibraryReason.UNPAIRED
+                        else -> EmptyLibraryReason.NO_APPS
+                    },
                     // A notice set just before the refresh (e.g. "Stopped the running app.") has to
                     // survive it, or the user never gets to read the outcome of what they did.
                     message = previous.message,
@@ -112,6 +142,17 @@ class AppsViewModel(
             }
             if (quit) refresh()
         }
+    }
+
+    /**
+     * Loads one tile's box art.
+     *
+     * Called per visible tile rather than for the whole library at once; the provider caches to
+     * disk, so scrolling back to a tile does not go to the network again.
+     */
+    suspend fun boxArt(app: HostApp): ByteArray? {
+        val host = state.value.host ?: return null
+        return catalogProvider.boxArt(host, app.id)
     }
 
     /** Clears the transient message after the screen has shown it. */

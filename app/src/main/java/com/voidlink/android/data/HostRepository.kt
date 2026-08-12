@@ -130,6 +130,33 @@ class HostRepository(private val dataStore: DataStore<Preferences>) {
     }
 
     /**
+     * Re-files the host stored under [fromUuid] under the identity [toUuid] the host itself
+     * reported, merging into an existing record when discovery already created one.
+     *
+     * A manually added host is stored under a locally minted id, because at the moment the user
+     * typed an address nothing had asked the machine who it was. Discovery files the same PC under
+     * its real `<uniqueid>`. Left alone the two never reconcile, so the user sees the same computer
+     * twice and pairs with it twice. The first probe that reveals the real identity resolves it.
+     *
+     * The surviving record keeps whatever the user chose — a name they typed by hand outranks the
+     * host's own, and a settings override is never dropped — and unions everything that is safe to
+     * union, because either record may hold the address that actually works.
+     *
+     * @return true when a record was moved or merged.
+     */
+    suspend fun reconcileIdentity(fromUuid: String, toUuid: String): Boolean {
+        if (fromUuid == toUuid || toUuid.isBlank()) return false
+        var changed = false
+        mutate { current ->
+            val stale = current.firstOrNull { it.uuid == fromUuid } ?: return@mutate current
+            changed = true
+            val merged = stale.mergedOnto(current.firstOrNull { it.uuid == toUuid }, toUuid)
+            current.filterNot { it.uuid == fromUuid || it.uuid == toUuid } + merged
+        }
+        return changed
+    }
+
+    /**
      * Creates and stores a host the user typed in by hand.
      *
      * @param address the hostname or IP the user entered.

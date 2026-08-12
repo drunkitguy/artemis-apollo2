@@ -177,7 +177,7 @@ private fun HostsRoute(
         },
         onRename = { host, newName -> viewModel.rename(host.uuid, newName) },
         onDelete = { host -> viewModel.delete(host.uuid) },
-        onUnpair = { host -> viewModel.unpair(host.uuid) },
+        onUnpair = viewModel::unpair,
         onWake = viewModel::wake,
         onHostSettings = onHostSettings,
         onDismissPairing = viewModel::cancelPairing,
@@ -214,5 +214,7 @@ private fun AppsRoute(
         // duplicating the control here.
         onExternalDisplay = onToggleSidebar,
         onDismissMessage = viewModel::consumeMessage,
+        onRefresh = viewModel::refresh,
+        loadBoxArt = viewModel::boxArt,
     )
 }

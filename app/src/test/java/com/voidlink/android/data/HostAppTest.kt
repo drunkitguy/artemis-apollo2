@@ -1,6 +1,7 @@
 package com.voidlink.android.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,22 +61,16 @@ class HostAppTest {
     }
 
     @Test
-    fun `box art bytes do not make two entries for the same app unequal by content`() {
-        // Equality is deliberately by presence of art rather than by its bytes: a re-fetch that
-        // returns a byte-identical-but-different array must not invalidate the grid.
-        val a = HostApp(id = "1", name = "Hades II", boxArt = byteArrayOf(1, 2, 3))
-        val b = HostApp(id = "1", name = "Hades II", boxArt = byteArrayOf(9, 9))
+    fun `an app carries no image bytes, so a large library cannot retain them`() {
+        // The model deliberately has no box-art field: art is fetched per visible tile instead.
+        // A regression here is not cosmetic, it is an out-of-memory crash on a fifty-game host.
+        val fields = HostApp::class.java.declaredFields.map { it.name }
 
-        assertEquals(a, b)
-        assertEquals(a.hashCode(), b.hashCode())
-    }
-
-    @Test
-    fun `an app with art is not equal to the same app without art`() {
-        val withArt = HostApp(id = "1", name = "Hades II", boxArt = byteArrayOf(1))
-        val withoutArt = HostApp(id = "1", name = "Hades II")
-
-        assertNotEquals(withArt, withoutArt)
+        assertFalse("HostApp must not carry image bytes", fields.any { it.contains("boxArt") })
+        assertFalse(
+            "HostApp must not carry any byte array",
+            HostApp::class.java.declaredFields.any { it.type == ByteArray::class.java },
+        )
     }
 
     @Test

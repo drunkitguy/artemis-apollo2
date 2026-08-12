@@ -95,6 +95,32 @@ data class KnownHost(
     }
 
     /**
+     * Folds this record onto [existing], the record already stored under the host's real identity.
+     *
+     * Used when a probe reveals that a host added by hand is a PC discovery already knows about.
+     * The rule is "lose nothing the user chose, and keep whichever address actually works", so
+     * every field is either unioned or resolved in favour of the more deliberate value.
+     *
+     * @param existing the record under the real identity, or `null` when there is none and this
+     *   record is simply being re-filed.
+     * @param realUuid the host's own `<uniqueid>`.
+     */
+    fun mergedOnto(existing: KnownHost?, realUuid: String): KnownHost {
+        if (existing == null) return copy(uuid = realUuid)
+        return existing.copy(
+            uuid = realUuid,
+            // A name the user typed is meaningful; one that is merely the address they entered is
+            // not, and the host's own name beats it.
+            name = if (manuallyAdded && name != primaryAddress) name else existing.name,
+            addresses = (existing.addresses + addresses).distinct(),
+            macAddress = existing.macAddress ?: macAddress,
+            paired = existing.paired || paired,
+            settingsOverride = existing.settingsOverride ?: settingsOverride,
+            lastSeenEpochMillis = maxOf(existing.lastSeenEpochMillis, lastSeenEpochMillis),
+        )
+    }
+
+    /**
      * Returns a copy carrying [macAddress] when the probe actually learned one.
      *
      * A MAC read back over HTTPS from a paired host is authoritative and replaces whatever
@@ -124,6 +150,12 @@ data class KnownHost(
  * @property runningAppId id of the app currently streaming on the host, or `null` when idle.
  * @property runningAppName human-readable name of [runningAppId], when the host supplied one.
  * @property hostName the host's self-reported name, used to keep a renamed PC in sync.
+ * @property uniqueId the host's own `<uniqueid>`, when the probe read one.
+ *
+ *   This is the identity discovery files a host under. A host the user added by typing an address
+ *   is stored under a locally minted id instead, because nothing had asked the machine who it was
+ *   yet; carrying the real id back here is what lets those two records be recognised as one PC
+ *   rather than becoming two cards the user has to pair with twice.
  * @property macAddress the host's MAC, when this probe learned one.
  *
  *   Sunshine returns the real MAC only over HTTPS to a client it already trusts, so this is
@@ -137,6 +169,7 @@ data class HostStatus(
     val runningAppId: String? = null,
     val runningAppName: String? = null,
     val hostName: String? = null,
+    val uniqueId: String? = null,
     val macAddress: String? = null,
 ) {
     /** Convenience predicate matching the green "Online" state in the UI. */

@@ -5,23 +5,17 @@ import com.voidlink.android.data.HostApp
 import com.voidlink.android.data.KnownHost
 import com.voidlink.android.protocol.ProtocolConstants
 import com.voidlink.android.protocol.ProtocolLog
-import com.voidlink.android.protocol.http.AppListEntry
 import com.voidlink.android.protocol.http.BoxArtCache
 import com.voidlink.android.protocol.http.NvHttpClient
 import com.voidlink.android.protocol.http.NvHttpResult
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 
 /**
  * The real [AppCatalogProvider]: `/applist` plus `/appasset` box art, over pinned HTTPS.
  *
- * Box art is fetched for the whole list up front because the UI model carries the bytes inline,
- * but with two guards that keep that from being a mistake: a disk cache, since art essentially
- * never changes, and bounded parallelism, since each fetch is its own TLS handshake and a
- * fifty-game library would otherwise open fifty connections at once.
+ * The list is returned as soon as `/applist` answers, and art is fetched one tile at a time as the
+ * grid asks for it. Fetching the whole library's art first meant a fifty-game host showed an empty
+ * screen for several seconds and then retained tens of megabytes of PNG for as long as the screen
+ * was open. The disk cache carries the cost of re-fetching on scroll.
  *
  * @param client the NVHTTP transport.
  * @param resolver picks the reachable address and the HTTPS port.
@@ -62,26 +56,37 @@ class NvHttpAppCatalogProvider(
             }
         }
 
-        val apps = coroutineScope {
-            val gate = Semaphore(BOX_ART_PARALLELISM)
-            entries
-                .map { entry ->
-                    async {
-                        val art = gate.withPermit {
-                            fetchBoxArt(host.uuid, resolved, entry)
-                        }
-                        HostApp(
-                            id = entry.id.toString(),
-                            name = entry.title,
-                            isDesktop = entry.isDesktop,
-                            supportsHdr = entry.hdrSupported,
-                            boxArt = art,
-                        )
-                    }
-                }
-                .awaitAll()
-        }
-        return apps.sortedWith(HostApp.displayOrder)
+        return entries
+            .map { entry ->
+                HostApp(
+                    id = entry.id.toString(),
+                    name = entry.title,
+                    isDesktop = entry.isDesktop,
+                    supportsHdr = entry.hdrSupported,
+                )
+            }
+            .sortedWith(HostApp.displayOrder)
+    }
+
+    /**
+     * Fetches one tile's box art, cache first.
+     *
+     * A host with no art for a title answers with nothing, which is normal and not an error — the
+     * UI draws its generated tile instead.
+     */
+    override suspend fun boxArt(host: KnownHost, appId: String): ByteArray? {
+        val id = appId.toLongOrNull() ?: return null
+        boxArtCache.get(host.uuid, id)?.let { return it }
+        val resolved = resolver.resolve(host, ProtocolConstants.PROBE_TIMEOUT_ONLINE_MS)
+            ?: return null
+        val fetched = client.boxArt(
+            hostKey = host.uuid,
+            address = resolved.address,
+            appId = id,
+            httpsPort = resolved.serverInfo.httpsPort,
+        ).valueOrNull()
+        if (fetched != null) boxArtCache.put(host.uuid, id, fetched)
+        return fetched
     }
 
     /**
@@ -104,30 +109,4 @@ class NvHttpAppCatalogProvider(
         return result.valueOrNull() == true
     }
 
-    private suspend fun fetchBoxArt(
-        hostKey: String,
-        resolved: ResolvedHost,
-        entry: AppListEntry,
-    ): ByteArray? {
-        boxArtCache.get(hostKey, entry.id)?.let { return it }
-        val fetched = client.boxArt(
-            hostKey = hostKey,
-            address = resolved.address,
-            appId = entry.id,
-            httpsPort = resolved.serverInfo.httpsPort,
-        ).valueOrNull()
-        // A host with no art for a title is normal; the UI draws its generated tile instead.
-        if (fetched != null) boxArtCache.put(hostKey, entry.id, fetched)
-        return fetched
-    }
-
-    private companion object {
-        /**
-         * How many box-art fetches may be in flight at once.
-         *
-         * Each is a separate pinned-TLS handshake; four keeps a large library responsive without
-         * making the host's little HTTP server the bottleneck.
-         */
-        const val BOX_ART_PARALLELISM = 4
-    }
 }

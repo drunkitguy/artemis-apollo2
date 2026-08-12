@@ -44,6 +44,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.voidlink.android.data.HostApp
 import com.voidlink.android.data.KnownHost
+import com.voidlink.android.ui.components.EmptyState
 import com.voidlink.android.ui.components.ScreenHeader
 import com.voidlink.android.ui.components.VoidLinkIcons
 import com.voidlink.android.ui.theme.VoidLinkShapeTokens
@@ -73,6 +74,8 @@ private const val TITLE_SCRIM_FRACTION = 0.44f
  * @param onExternalDisplay the display button in the header was tapped.
  * @param onDismissMessage clears the transient notice; without it a message set once would sit on
  *   the screen for the rest of the session.
+ * @param onRefresh re-reads the host's state and library.
+ * @param loadBoxArt fetches one app's box art, called per tile as it comes on screen.
  * @param modifier layout modifier.
  */
 @Composable
@@ -84,6 +87,8 @@ fun AppsScreen(
     onQuitRunning: () -> Unit,
     onExternalDisplay: () -> Unit,
     onDismissMessage: () -> Unit,
+    onRefresh: () -> Unit,
+    loadBoxArt: suspend (HostApp) -> ByteArray?,
     modifier: Modifier = Modifier,
 ) {
     val colors = VoidLinkTheme.colors
@@ -154,16 +159,12 @@ fun AppsScreen(
         }
 
         if (state.isEmpty) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "No apps to show yet.",
-                    style = VoidLinkTheme.body,
-                    color = colors.secondaryLabel,
-                )
-            }
+            EmptyLibraryState(
+                reason = state.emptyReason,
+                hostName = state.host?.name,
+                onRetry = onRefresh,
+                onBack = onBack,
+            )
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = AppTileMinWidth),
@@ -178,6 +179,7 @@ fun AppsScreen(
                         running = app.id == state.runningAppId,
                         onClick = { onLaunch(app) },
                         onQuit = onQuitRunning,
+                        loadBoxArt = loadBoxArt,
                     )
                 }
             }
@@ -195,6 +197,7 @@ fun AppsScreen(
  * @param running true when this app is the one currently streaming on the host.
  * @param onClick launch this app.
  * @param onQuit stop the running app; only reachable when [running] is true.
+ * @param loadBoxArt fetches this app's art, called while the tile is on screen.
  * @param modifier layout modifier.
  */
 @Composable
@@ -203,11 +206,12 @@ fun AppTile(
     running: Boolean,
     onClick: () -> Unit,
     onQuit: () -> Unit,
+    loadBoxArt: suspend (HostApp) -> ByteArray?,
     modifier: Modifier = Modifier,
 ) {
     val colors = VoidLinkTheme.colors
     val spacing = VoidLinkTheme.spacing
-    val boxArt = rememberBoxArt(app.boxArt)
+    val boxArt = rememberBoxArt(app = app, load = loadBoxArt)
 
     Box(
         modifier = modifier
@@ -320,6 +324,46 @@ private fun PlaceholderArt(app: HostApp) {
     }
 }
 
+/** The empty library, told apart by cause so the user knows what to do next. */
+@Composable
+private fun EmptyLibraryState(
+    reason: EmptyLibraryReason?,
+    hostName: String?,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val host = hostName ?: "this PC"
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        when (reason) {
+            EmptyLibraryReason.UNPAIRED -> EmptyState(
+                icon = VoidLinkIcons.Locked,
+                title = "Not paired yet",
+                body = "$host answered, but it does not trust this device. Pair with it from the " +
+                    "Hosts screen and its games will appear here.",
+                primaryActionLabel = "Back to hosts",
+                onPrimaryAction = onBack,
+            )
+            EmptyLibraryReason.NO_APPS -> EmptyState(
+                icon = VoidLinkIcons.Host,
+                title = "Nothing to stream",
+                body = "$host is paired and reachable but lists no applications. Add a game in " +
+                    "the host software, then refresh.",
+                primaryActionLabel = "Refresh",
+                onPrimaryAction = onRetry,
+            )
+            else -> EmptyState(
+                icon = VoidLinkIcons.Offline,
+                title = "Can't reach $host",
+                body = "It may be asleep, or on a different network from this device.",
+                primaryActionLabel = "Try again",
+                onPrimaryAction = onRetry,
+                secondaryActionLabel = "Back to hosts",
+                onSecondaryAction = onBack,
+            )
+        }
+    }
+}
+
 /** A banner naming the app currently streaming on the host, with a quit action. */
 @Composable
 private fun RunningAppBanner(
@@ -372,24 +416,28 @@ private fun RunningAppBanner(
 }
 
 /**
- * Decodes encoded box-art bytes off the main thread and caches the result for the composition.
+ * Fetches and decodes one tile's box art, off the main thread, only while the tile is composed.
  *
- * Returns `null` while decoding, when there are no bytes, or when the bytes are not a decodable
- * image — callers fall back to the generated placeholder in all three cases.
+ * Scoped to the tile on purpose: the coroutine is cancelled and the bitmap released when the tile
+ * scrolls out of the grid, which is what keeps a large library from holding every image at once.
+ * Returns `null` while loading, when the host has no art, or when the bytes will not decode —
+ * callers fall back to the generated placeholder in all three cases.
  *
- * @param bytes the encoded image the host supplied, or `null`.
+ * @param app the tile's app.
+ * @param load fetches the encoded bytes; expected to hit a disk cache on repeat.
  */
 @Composable
-fun rememberBoxArt(bytes: ByteArray?): ImageBitmap? {
-    val decoded = produceState<ImageBitmap?>(initialValue = null, key1 = bytes) {
-        value = if (bytes == null || bytes.isEmpty()) {
-            null
-        } else {
-            withContext(Dispatchers.Default) {
-                runCatching {
+fun rememberBoxArt(app: HostApp, load: suspend (HostApp) -> ByteArray?): ImageBitmap? {
+    val decoded = produceState<ImageBitmap?>(initialValue = null, key1 = app.id) {
+        value = withContext(Dispatchers.Default) {
+            runCatching {
+                val bytes = load(app)
+                if (bytes == null || bytes.isEmpty()) {
+                    null
+                } else {
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                }.getOrNull()
-            }
+                }
+            }.getOrNull()
         }
     }
     return decoded.value
@@ -416,6 +464,30 @@ private fun AppsScreenPreview() {
             onQuitRunning = {},
             onExternalDisplay = {},
             onDismissMessage = {},
+            onRefresh = {},
+            loadBoxArt = { null },
+        )
+    }
+}
+
+/** The library of a PC that is switched off — the empty state users hit most often. */
+@Preview(name = "Apps — unreachable", widthDp = 720, heightDp = 900)
+@Composable
+private fun AppsScreenUnreachablePreview() {
+    VoidLinkTheme {
+        AppsScreen(
+            state = AppsUiState(
+                host = KnownHost(uuid = "1", name = "BATTLESTATION"),
+                emptyReason = EmptyLibraryReason.UNREACHABLE,
+            ),
+            onToggleSidebar = {},
+            onBack = {},
+            onLaunch = {},
+            onQuitRunning = {},
+            onExternalDisplay = {},
+            onDismissMessage = {},
+            onRefresh = {},
+            loadBoxArt = { null },
         )
     }
 }

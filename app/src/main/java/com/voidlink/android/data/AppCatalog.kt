@@ -3,44 +3,22 @@ package com.voidlink.android.data
 /**
  * One launchable application (or the desktop session) exposed by a host.
  *
- * Box art is carried as raw encoded bytes because the protocol layer hands back whatever the host
- * sent — decoding to a bitmap is the UI layer's business, and only for tiles that are on screen.
+ * Deliberately carries **no image bytes**. Box art is fetched per tile through
+ * [AppCatalogProvider.boxArt] as it comes on screen: a fifty-game library is tens of megabytes of
+ * PNG, and holding all of it in UI state — on top of the decoded bitmaps — is an out-of-memory
+ * crash waiting for a device with less RAM than the developer's.
  *
- * @property id host-assigned application id, used when launching.
+ * @property id host-assigned application id, used when launching and when fetching art.
  * @property name display name.
  * @property isDesktop true for the synthetic "Desktop" entry, which is always sorted first.
  * @property supportsHdr whether the host advertises HDR for this title.
- * @property boxArt encoded box-art image bytes, or `null` when the host has none.
  */
-class HostApp(
+data class HostApp(
     val id: String,
     val name: String,
     val isDesktop: Boolean = false,
     val supportsHdr: Boolean = false,
-    val boxArt: ByteArray? = null,
 ) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is HostApp) return false
-        // Identity is the host-assigned id; box-art bytes are incidental payload.
-        return id == other.id &&
-            name == other.name &&
-            isDesktop == other.isDesktop &&
-            supportsHdr == other.supportsHdr &&
-            (boxArt == null) == (other.boxArt == null)
-    }
-
-    override fun hashCode(): Int {
-        var result = id.hashCode()
-        result = 31 * result + name.hashCode()
-        result = 31 * result + isDesktop.hashCode()
-        result = 31 * result + supportsHdr.hashCode()
-        result = 31 * result + (boxArt != null).hashCode()
-        return result
-    }
-
-    override fun toString(): String = "HostApp(id=$id, name=$name, isDesktop=$isDesktop)"
-
     companion object {
         /**
          * The order a host's library is drawn in: Desktop first, then everything else
@@ -66,10 +44,21 @@ interface AppCatalogProvider {
     /**
      * Fetches the applications [host] offers.
      *
-     * Must not throw for ordinary network failures — implementations return an empty list, and the
-     * caller renders the host's offline state instead.
+     * Must return as soon as the list itself is known, without waiting on artwork, so the grid can
+     * draw immediately. Must not throw for ordinary network failures — implementations return an
+     * empty list, and the caller renders the host's offline state instead.
      */
     suspend fun listApps(host: KnownHost): List<HostApp>
+
+    /**
+     * Fetches one application's box art, or `null` when the host has none for it.
+     *
+     * Called per tile as it becomes visible, and expected to be cheap on repeat: implementations
+     * cache to disk, because art essentially never changes.
+     *
+     * @param appId the [HostApp.id] to fetch art for.
+     */
+    suspend fun boxArt(host: KnownHost, appId: String): ByteArray?
 
     /**
      * Asks the host to quit whatever app is currently running.
@@ -90,6 +79,8 @@ object StubAppCatalogProvider : AppCatalogProvider {
     val desktopEntry: HostApp = HostApp(id = "desktop", name = "Desktop", isDesktop = true)
 
     override suspend fun listApps(host: KnownHost): List<HostApp> = listOf(desktopEntry)
+
+    override suspend fun boxArt(host: KnownHost, appId: String): ByteArray? = null
 
     override suspend fun quitRunningApp(host: KnownHost): Boolean = false
 }

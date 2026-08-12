@@ -19,6 +19,8 @@ import java.net.URLEncoder
 import java.security.cert.X509Certificate
 import java.util.UUID
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 
 /**
  * The NVHTTP control API (spec §3).
@@ -167,6 +169,7 @@ class NvHttpClient(
             is NvHttpResult.HostError -> raw
             is NvHttpResult.Malformed -> raw
             is NvHttpResult.TransportError -> raw
+            is NvHttpResult.TlsRejected -> raw
             NvHttpResult.NotPaired -> NvHttpResult.NotPaired
         }
     }
@@ -336,6 +339,7 @@ class NvHttpClient(
             is NvHttpResult.HostError -> result
             is NvHttpResult.Malformed -> result
             is NvHttpResult.TransportError -> result
+            is NvHttpResult.TlsRejected -> result
             NvHttpResult.NotPaired -> NvHttpResult.NotPaired
         }
     }
@@ -400,6 +404,7 @@ class NvHttpClient(
             is NvHttpResult.HostError -> raw
             is NvHttpResult.Malformed -> raw
             is NvHttpResult.TransportError -> raw
+            is NvHttpResult.TlsRejected -> raw
             NvHttpResult.NotPaired -> NvHttpResult.NotPaired
         }
 
@@ -457,11 +462,16 @@ class NvHttpClient(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (t: Throwable) {
-            // Everything reachable here — connect refused, DNS failure, SSLHandshakeException,
-            // SocketTimeoutException, the socket being closed by our own cancellation handler — is
-            // an ordinary "could not reach this PC" for the caller.
             ProtocolLog.d(ProtocolLog.TAG_HTTP, "$endpoint failed: ${t.javaClass.simpleName}: ${t.message}")
-            NvHttpResult.TransportError(t.message ?: t.javaClass.simpleName, t)
+            val message = t.message ?: t.javaClass.simpleName
+            // A failed handshake is reported separately from a failed connection. Only the former
+            // is evidence about pairing: a host that has forgotten our certificate aborts the
+            // handshake, whereas a timeout means the answer is simply unknown this time.
+            if (t is SSLHandshakeException || t is SSLPeerUnverifiedException) {
+                NvHttpResult.TlsRejected(message, t)
+            } else {
+                NvHttpResult.TransportError(message, t)
+            }
         } finally {
             cancellationHandle?.dispose()
             runCatching { connection?.disconnect() }
@@ -585,5 +595,6 @@ private inline fun <T : Any> NvHttpResult<XmlNode>.mapCatchingRoot(
     is NvHttpResult.HostError -> this
     is NvHttpResult.Malformed -> this
     is NvHttpResult.TransportError -> this
+    is NvHttpResult.TlsRejected -> this
     NvHttpResult.NotPaired -> NvHttpResult.NotPaired
 }

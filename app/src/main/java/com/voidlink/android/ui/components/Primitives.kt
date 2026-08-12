@@ -2,12 +2,14 @@ package com.voidlink.android.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -193,6 +196,90 @@ fun PendingStatusLine(
             style = VoidLinkTheme.footnote.copy(fontWeight = FontWeight.Medium),
             color = tint,
         )
+    }
+}
+
+/**
+ * The full-screen "there is nothing here, and here is why" state.
+ *
+ * A single line of grey text tells the user that something is wrong but not what to do about it,
+ * and the same line for three different causes tells them nothing at all. Every empty state in the
+ * app therefore names its cause and offers the action that resolves it.
+ *
+ * @param icon a large glyph for the situation.
+ * @param title one short line naming what happened.
+ * @param body a sentence explaining the likely cause.
+ * @param modifier layout modifier.
+ * @param primaryActionLabel label for the main action, or `null` for none.
+ * @param onPrimaryAction invoked by the main action.
+ * @param secondaryActionLabel label for a second, lesser action, or `null` for none.
+ * @param onSecondaryAction invoked by the second action.
+ */
+@Composable
+fun EmptyState(
+    icon: ImageVector,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+    primaryActionLabel: String? = null,
+    onPrimaryAction: () -> Unit = {},
+    secondaryActionLabel: String? = null,
+    onSecondaryAction: () -> Unit = {},
+) {
+    val colors = VoidLinkTheme.colors
+    val spacing = VoidLinkTheme.spacing
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.xl, vertical = spacing.xxl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = colors.tertiaryLabel,
+            modifier = Modifier.size(56.dp),
+        )
+        Spacer(modifier = Modifier.height(spacing.lg))
+        Text(
+            text = title,
+            style = VoidLinkTheme.cardTitle,
+            color = colors.label,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(spacing.sm))
+        Text(
+            text = body,
+            style = VoidLinkTheme.body,
+            color = colors.secondaryLabel,
+            textAlign = TextAlign.Center,
+        )
+        if (primaryActionLabel != null) {
+            Spacer(modifier = Modifier.height(spacing.lg))
+            Text(
+                text = primaryActionLabel,
+                style = VoidLinkTheme.body.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(VoidLinkShapeTokens.ButtonRadius))
+                    .background(colors.accentFill)
+                    .clickable(onClick = onPrimaryAction)
+                    .padding(horizontal = spacing.xl, vertical = spacing.md),
+            )
+        }
+        if (secondaryActionLabel != null) {
+            Spacer(modifier = Modifier.height(spacing.sm))
+            Text(
+                text = secondaryActionLabel,
+                style = VoidLinkTheme.body,
+                color = colors.secondaryLabel,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(VoidLinkShapeTokens.ButtonRadius))
+                    .clickable(onClick = onSecondaryAction)
+                    .padding(horizontal = spacing.lg, vertical = spacing.sm),
+            )
+        }
     }
 }
 
