@@ -11,6 +11,7 @@ import com.voidlink.android.data.StubAppCatalogProvider
 import com.voidlink.android.data.StubConnectionTester
 import com.voidlink.android.data.StubHostStatusProvider
 import com.voidlink.android.data.StubHostWaker
+import com.voidlink.android.media.VideoPipeline
 import com.voidlink.android.protocol.bridge.HostEndpointResolver
 import com.voidlink.android.protocol.bridge.HostPairingCoordinator
 import com.voidlink.android.protocol.bridge.NvHttpAppCatalogProvider
@@ -23,6 +24,9 @@ import com.voidlink.android.protocol.http.BoxArtCache
 import com.voidlink.android.protocol.http.HostTrustStore
 import com.voidlink.android.protocol.http.NvHttpClient
 import com.voidlink.android.protocol.pairing.PairingEngine
+import com.voidlink.android.protocol.session.NvHttpSessionLauncher
+import com.voidlink.android.protocol.session.SessionLauncher
+import com.voidlink.android.protocol.session.streamSessionVideoSource
 
 /**
  * The app's one and only dependency graph.
@@ -56,6 +60,9 @@ object ServiceLocator {
 
     @Volatile
     private var pairingCoordinatorInstance: HostPairingCoordinator? = null
+
+    @Volatile
+    private var sessionLauncherInstance: SessionLauncher? = null
 
     /**
      * Liveness source for hosts.
@@ -124,6 +131,17 @@ object ServiceLocator {
                 client = httpClient,
                 resolver = resolver,
             )
+
+            // The fourth provider swap, and the one that turns tapping a game into a real stream:
+            // the stream screen holds a `VideoSourceFactory` and nothing else from `protocol/`
+            // (architecture §2.3), so the whole session layer attaches here in two lines.
+            val sessionLauncher = NvHttpSessionLauncher(
+                client = httpClient,
+                resolver = resolver,
+                hosts = hostRepositoryInstance ?: error(NOT_INITIALIZED),
+            )
+            sessionLauncherInstance = sessionLauncher
+            VideoPipeline.videoSourceFactory = streamSessionVideoSource(sessionLauncher)
         }
     }
 
@@ -152,6 +170,16 @@ object ServiceLocator {
     /** Per-host pinned server certificates. */
     val hostTrustStore: HostTrustStore
         get() = trustStoreInstance ?: error(NOT_INITIALIZED)
+
+    /**
+     * Starts streaming sessions: resolve the host, then `/launch` or `/resume`.
+     *
+     * Exposed for the same reason [pairingCoordinator] is — the session layer is a flow with its
+     * own progress and failure vocabulary, not a request/response call that fits one of the
+     * `data/` provider interfaces.
+     */
+    val sessionLauncher: SessionLauncher
+        get() = sessionLauncherInstance ?: error(NOT_INITIALIZED)
 
     /** The NVHTTP client, for callers that need an endpoint the providers do not expose. */
     val nvHttpClient: NvHttpClient

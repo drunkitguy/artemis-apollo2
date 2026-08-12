@@ -75,19 +75,19 @@ interface VideoSourceFactory {
 }
 
 /**
- * The default factory: no session layer is wired up.
+ * The fallback factory: the app's dependency graph was never wired.
  *
- * It exists so the stream screen has honest behaviour before the protocol work lands. This build
- * decodes video correctly and has no one to get video from, and saying exactly that beats a black
- * fullscreen window — which is indistinguishable from a crash, and which this app shipped once
- * already.
+ * The session layer exists — `protocol/session/StreamSessionVideoSource` is the real
+ * implementation, installed by `di/ServiceLocator.initialize` — so reaching this object now means
+ * the graph was not initialised at all, which happens in a Compose preview or a unit test and never
+ * in a running app. It stays because an honest sentence beats a black fullscreen window, which is
+ * indistinguishable from a crash and which this app shipped once already.
  */
 object UnavailableVideoSourceFactory : VideoSourceFactory {
     override suspend fun open(request: VideoSourceRequest): VideoSourceResult =
         VideoSourceResult.Unavailable(
-            summary = "There is no streaming session in this build yet. Pairing, your app " +
-                "library and host controls all work, but the RTSP handshake and the video " +
-                "receiver that would feed the decoder are not implemented.",
+            summary = "This build has no streaming session wired up. The app's dependency graph " +
+                "was not initialised, so there is nothing to ask the host for a stream.",
             detail = "Requested ${request.format.describe()}",
         )
 }
@@ -103,11 +103,18 @@ object UnavailableVideoSourceFactory : VideoSourceFactory {
 object VideoPipeline {
 
     /**
-     * Where frames come from. Assign the real implementation during application start-up:
+     * Where frames come from.
+     *
+     * `di/ServiceLocator.initialize` assigns the real implementation at application start-up:
      *
      * ```kotlin
-     * VideoPipeline.videoSourceFactory = StreamSessionVideoSource(serviceLocator)
+     * VideoPipeline.videoSourceFactory = streamSessionVideoSource(sessionLauncher)
      * ```
+     *
+     * The value declared here is the fallback for a graph that was never wired — a preview or a
+     * unit test — which is why it is [UnavailableVideoSourceFactory] rather than the real thing:
+     * the real one needs an application context, and a `Context` has no business being reachable
+     * from a field initialiser in the decode layer.
      */
     @Volatile
     var videoSourceFactory: VideoSourceFactory = UnavailableVideoSourceFactory
