@@ -41,6 +41,14 @@ object VoidLinkIcons {
     /** A reachable host. */
     val Online: ImageVector = Icons.Filled.Wifi
 
+    /**
+     * Measure the network path to a host.
+     *
+     * Deliberately the same glyph as [Online]: the thing being measured *is* the link, and a second
+     * network metaphor beside the status line would read as a different subject.
+     */
+    val LinkTest: ImageVector = Icons.Filled.Wifi
+
     /** An unreachable host. */
     val Offline: ImageVector = Icons.Filled.Warning
 

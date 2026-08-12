@@ -46,6 +46,7 @@ import com.voidlink.android.data.StreamSettings
 import com.voidlink.android.data.SurroundMode
 import com.voidlink.android.data.TouchMode
 import com.voidlink.android.data.VideoCodec
+import com.voidlink.android.ui.components.ActionRow
 import com.voidlink.android.ui.components.FavoriteToggle
 import com.voidlink.android.ui.components.HairlineDivider
 import com.voidlink.android.ui.components.NavigationRow
@@ -87,6 +88,10 @@ val SettingsSidebarWidth = 340.dp
  * @param onEditGlobal leaves an override scope and returns to the global settings.
  * @param onToggleFavorite stars or unstars a row. Favourites are a property of the panel rather
  *   than of a host, so this always writes the global settings.
+ * @param testTargetName the PC the connection test would measure, or `null` when the panel is not
+ *   scoped to one. The Video section's test row is disabled in that case, with its info text saying
+ *   why — measuring the link needs a specific machine to measure it to.
+ * @param onTestConnection opens the connection test for [testTargetName].
  */
 @Composable
 fun SettingsSidebar(
@@ -99,6 +104,8 @@ fun SettingsSidebar(
     overrideHostName: String? = null,
     onEditGlobal: () -> Unit = {},
     onToggleFavorite: (String) -> Unit = {},
+    testTargetName: String? = null,
+    onTestConnection: () -> Unit = {},
 ) {
     val colors = VoidLinkTheme.colors
     val spacing = VoidLinkTheme.spacing
@@ -117,6 +124,8 @@ fun SettingsSidebar(
         include = { true },
         choosingFavorites = choosingFavorites,
         onToggleFavorite = onToggleFavorite,
+        testTargetName = testTargetName,
+        onTestConnection = onTestConnection,
     )
     // The same row functions, filtered to the starred ids. Rendering them twice is what makes the
     // Favorites section carry real controls rather than shortcuts that jump somewhere else.
@@ -354,6 +363,8 @@ private data class RowContext(
     val include: (String) -> Boolean,
     val choosingFavorites: Boolean,
     val onToggleFavorite: (String) -> Unit,
+    val testTargetName: String? = null,
+    val onTestConnection: () -> Unit = {},
 )
 
 /**
@@ -400,6 +411,26 @@ private fun VideoRows(rows: RowContext) {
             info = "How much data the host may spend on video each second. Raise it for sharper " +
                 "detail, lower it if the stream stutters on a busy network. Above roughly " +
                 "150 Mbps most hardware decoders stall rather than get sharper.",
+        )
+    }
+    rows.Slot(ROW_TEST_CONNECTION) {
+        val target = rows.testTargetName
+        ActionRow(
+            label = "Test Connection",
+            actionLabel = "Measure",
+            onClick = rows.onTestConnection,
+            enabled = target != null,
+            info = if (target != null) {
+                "Times a short, paced burst of small requests to $target to measure latency, " +
+                    "jitter and failures — jitter is what makes a stream stutter, and it matters " +
+                    "more than raw bandwidth. If you also run iperf3 on the PC it measures real " +
+                    "throughput, then recommends a bitrate and shows how it worked it out. " +
+                    "Nothing in the test touches the streaming service itself."
+            } else {
+                "Measuring needs a particular PC to measure the path to. Open one PC's own " +
+                    "settings — long-press its card and choose Settings, or open this panel from " +
+                    "its game library — and this row will point at it."
+            },
         )
     }
     rows.Slot(ROW_RESOLUTION) {
@@ -804,6 +835,7 @@ private fun PeripheralRows(rows: RowContext) {
 // Stable ids, persisted in StreamSettings.favoriteRowIds. Never renamed: a change here silently
 // unstars whatever the user had chosen.
 private const val ROW_BITRATE = "video.bitrate"
+private const val ROW_TEST_CONNECTION = "video.testConnection"
 private const val ROW_RESOLUTION = "video.resolution"
 private const val ROW_FRAME_RATE = "video.frameRate"
 private const val ROW_CODEC = "video.codec"
@@ -928,6 +960,7 @@ private fun SettingsSidebarOverridePreview() {
             onClose = {},
             onResetDefaults = {},
             overrideHostName = "BATTLESTATION",
+            testTargetName = "BATTLESTATION",
         )
     }
 }

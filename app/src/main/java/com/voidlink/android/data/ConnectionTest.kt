@@ -199,6 +199,9 @@ interface ConnectionTester {
      * @param mode which kind of test to run.
      * @param seconds how long the transfer should last.
      * @param targetMbps the rate to drive [ThroughputMode.PACED_UDP] at; ignored by the TCP mode.
+     *   Callers pass the bitrate they are considering, unmodified — that setting is already the
+     *   whole session's budget on the network rather than a video-only figure, so it is exactly
+     *   what the link should be asked to carry.
      * @return a cold flow: collecting starts the test, cancelling tears the sockets down.
      */
     fun measureThroughput(

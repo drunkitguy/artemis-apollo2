@@ -49,6 +49,8 @@ private val SplitLayoutMinWidth = 840.dp
  * @param overrideHostName name of the host whose overrides are being edited, or `null` for global.
  * @param onEditGlobal leaves an override scope and returns to the global settings.
  * @param onToggleFavorite stars or unstars a settings row.
+ * @param testTargetName the PC the Video section's connection test would measure, or `null`.
+ * @param onTestConnection opens the connection test.
  * @param content the screen behind or beside the panel.
  */
 @Composable
@@ -62,6 +64,8 @@ fun SettingsScaffold(
     overrideHostName: String? = null,
     onEditGlobal: () -> Unit = {},
     onToggleFavorite: (String) -> Unit = {},
+    testTargetName: String? = null,
+    onTestConnection: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val colors = VoidLinkTheme.colors
@@ -84,6 +88,8 @@ fun SettingsScaffold(
                             overrideHostName = overrideHostName,
                             onEditGlobal = onEditGlobal,
                             onToggleFavorite = onToggleFavorite,
+                            testTargetName = testTargetName,
+                            onTestConnection = onTestConnection,
                         )
                         Box(
                             modifier = Modifier

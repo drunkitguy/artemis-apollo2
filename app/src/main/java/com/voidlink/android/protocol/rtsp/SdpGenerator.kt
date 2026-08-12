@@ -15,7 +15,11 @@ import com.voidlink.android.protocol.ProtocolLog
  *   the host's adaptive bitrate, which is what we want — quality is decided on the client. It also
  *   means the bitrate cannot change mid-session, which is why `03-UI-SPEC.md` §5.3 marks that row
  *   "Reconnect required" next to resolution and frame rate. Do not go looking for a "set bitrate"
- *   control message; there isn't one.
+ *   control message; there isn't one, in any host or client
+ *   (`docs/05-DYNAMIC-BITRATE.md` §1.1–§1.2 confirms this exhaustively).
+ * * **`x-ml-video.configuredBitrateKbps` is not optional.** It carries the user's raw number, and
+ *   omitting it makes Apollo — our user's host — encode at roughly 0.64× the requested bitrate. See
+ *   the comment at that attribute below; it is the one line here whose absence is invisible.
  * * **Dynamic resolution change is off.** Accepting it would mean reconfiguring `MediaCodec`
  *   mid-stream, which the video layer does not do.
  *
@@ -71,12 +75,31 @@ object SdpGenerator {
             add("x-nv-video[0].averageBitrate", RtspConstants.LEGACY_AVERAGE_BITRATE_SELECTOR)
             add("x-nv-video[0].peakBitrate", RtspConstants.LEGACY_PEAK_BITRATE_SELECTOR)
         }
-        // Sent to every host, not only Sunshine: spec §6.4 lists it in the bitrate table rather
-        // than in the Sunshine-only table, and a host that does not know the name ignores it.
-        add("x-ml-video.configuredBitrateKbps", config.bitrateKbps)
+        // MANDATORY, and it carries the *raw* user value, not the negotiated one.
+        //
+        // Spec §6.4 files this under "lets the host know the user's number", which reads as a
+        // convenience. It is not one against Apollo — the host our user actually runs. Apollo reads
+        // this attribute and, when it is absent, falls back to maximumBitrateKbps and then applies
+        // the FEC/audio/overhead deduction to a figure that has already had it applied once. The
+        // result is an encode target of about 0.64x what the user asked for: a stream that works,
+        // looks worse than it should, and gives no signal as to why. Sunshine skips the whole
+        // adjustment block instead, so this only ever shows up on Apollo.
+        // (docs/05-DYNAMIC-BITRATE.md §1.3 and §5, correcting spec 01 §6.4.)
+        //
+        // Sent to every host, not only the Sunshine family: spec §6.4 lists it in the bitrate table
+        // rather than the Sunshine-only table, and a host that does not know the name ignores it.
+        add("x-ml-video.configuredBitrateKbps", config.configuredBitrateKbps)
 
         // ---- FEC and QoS ---------------------------------------------------------------------
         add("x-nv-vqos[0].fec.enable", RtspConstants.FEC_ENABLE)
+        // Spec §6.4's rule — 20 on LAN, 5 on WAN — is what is implemented here, and it is what the
+        // brief for this layer mandates. Flagging a known discrepancy for the reconciliation pass
+        // rather than acting on it unilaterally: docs/05-DYNAMIC-BITRATE.md §5 item 2 reports that
+        // moonlight-common-c sends this attribute only to GFE hosts and keys it on *resolution*
+        // (5 at >=3840x2160, 20 otherwise), and that against Sunshine/Apollo it is inert because
+        // FEC percentage is a host-side setting. If that is right, nothing here changes behaviour
+        // on our user's host either way; StreamConfiguration.fecRepairPercent is the one place to
+        // edit when the two documents are reconciled.
         add("x-nv-vqos[0].fec.repairPercent", config.fecRepairPercent)
         add("x-nv-vqos[0].fec.minRequiredFecPackets", RtspConstants.FEC_MIN_REQUIRED_PACKETS)
         add("x-nv-vqos[0].bllFec.enable", RtspConstants.BLL_FEC_ENABLE)

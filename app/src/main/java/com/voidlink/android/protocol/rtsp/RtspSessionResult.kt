@@ -156,7 +156,14 @@ sealed interface RtspError {
  * @property height announced height.
  * @property fps announced frame rate.
  * @property bitrateKbps announced bitrate — pinned as both floor and ceiling, so it is *the*
- *   bitrate for the whole session and cannot be changed without re-launching (spec §6.4).
+ *   bitrate for the whole session and cannot be changed without re-launching (spec §6.4). A total
+ *   wire budget covering FEC, audio and headers, not a video-only figure
+ *   (`docs/05-DYNAMIC-BITRATE.md` §1.3), so a link-quality estimator comparing measured throughput
+ *   against it must not expect the encoder to be producing this many bits.
+ * @property configuredBitrateKbps the raw number the user chose, as announced in
+ *   `x-ml-video.configuredBitrateKbps`. Equal to [bitrateKbps] while no client-side adjustment is
+ *   applied. Carried here so that anything reporting "your bitrate" to the user quotes the number
+ *   the user actually set.
  * @property packetSize announced video payload size, which the video reassembler needs (spec §7.7).
  * @property encryptionFlags the `x-ss-general.encryptionEnabled` mask that was announced. `0` in
  *   v1, which is what tells the video and control layers not to expect encryption headers.
@@ -187,6 +194,7 @@ class NegotiatedSession(
     val height: Int,
     val fps: Int,
     val bitrateKbps: Int,
+    val configuredBitrateKbps: Int,
     val packetSize: Int,
     val encryptionFlags: Int,
     val audioLayout: AudioChannelLayout,

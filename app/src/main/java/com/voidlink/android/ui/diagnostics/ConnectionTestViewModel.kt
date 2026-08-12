@@ -177,10 +177,9 @@ class ConnectionTestViewModel(
     /**
      * Runs the Tier 2 throughput measurement.
      *
-     * @param targetMbps the rate the paced UDP test should drive at. The caller passes the **wire**
-     *   cost of the bitrate it is considering — error correction and audio included — because that
-     *   is what the network will actually be asked to carry, and testing the video figure alone
-     *   would pass a rate that then fails in practice.
+     * @param targetMbps the rate the paced UDP test should drive at — the bitrate the caller is
+     *   considering, unmodified. That setting is already the whole session's budget on the network,
+     *   so it is the right figure to ask the link to carry.
      */
     fun measureThroughput(targetMbps: Double) {
         throughputJob?.cancel()

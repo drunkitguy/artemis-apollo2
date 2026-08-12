@@ -60,9 +60,24 @@ enum class NetworkProfile {
  * @property width negotiated width in pixels.
  * @property height negotiated height in pixels.
  * @property fps negotiated frame rate.
- * @property bitrateKbps the user's configured bitrate. Sent as both the floor and the ceiling,
+ * @property bitrateKbps the **negotiated** bitrate: what goes in `initialBitrateKbps` and in both
+ *   `bw.minimumBitrateKbps` / `bw.maximumBitrateKbps`. Sent as both the floor and the ceiling,
  *   which disables the host's adaptive bitrate — see [SdpGenerator] for why that is deliberate,
  *   and note the consequence: bitrate cannot change without re-launching the session.
+ *
+ *   This number is a **total wire budget, not a video-only figure**: it is expected to cover FEC
+ *   parity, audio and headers, and the host deducts all three to reach its encoder target
+ *   (`docs/05-DYNAMIC-BITRATE.md` §1.3). We therefore hand the host the user's number as-is and let
+ *   it do that arithmetic once. Pre-deducting on the client would have the host deduct a second
+ *   time from an already-reduced figure.
+ * @property configuredBitrateKbps the **raw** number the user chose, before any client-side
+ *   adjustment. Emitted verbatim as `x-ml-video.configuredBitrateKbps` and defaulted to
+ *   [bitrateKbps], because v1 applies no adjustment and the two are then the same value.
+ *
+ *   Kept as a separate field rather than folded into [bitrateKbps] because the two are *not*
+ *   interchangeable to a host, and conflating them is the difference between the stream the user
+ *   asked for and one at 0.64× of it — see [SdpGenerator] and `docs/05-DYNAMIC-BITRATE.md` §1.3.
+ *   If a future change ever does scale the negotiated value, this field must keep the raw one.
  * @property codec the codec being requested.
  * @property hdr whether to request 10-bit HDR. Forces a 10-bit profile, hence HEVC or AV1.
  * @property yuv444 whether to request 4:4:4 chroma. Sunshine-only, and rarely decodable on mobile.
@@ -85,6 +100,7 @@ data class StreamConfiguration(
     val fps: Int,
     val bitrateKbps: Int,
     val codec: VideoCodec,
+    val configuredBitrateKbps: Int = bitrateKbps,
     val hdr: Boolean = false,
     val yuv444: Boolean = false,
     val audioLayout: AudioChannelLayout = AudioChannelLayout.STEREO,

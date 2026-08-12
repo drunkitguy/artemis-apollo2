@@ -26,11 +26,12 @@ enum class BitrateLimit(val label: String) {
  * The number on its own is a magic constant the user has no way to argue with. The explanation is
  * what lets them decide the recommendation is wrong for their case — which it sometimes will be.
  *
- * @property recommendedKbps what to write into [StreamSettings.bitrateKbps].
- * @property targetKbps what the chosen resolution, frame rate and codec asked for before any link
+ * @property recommendedKbps what to write into [StreamSettings.bitrateKbps]. This is the stream's
+ *   **total budget on the network**, which is what the setting has always meant.
+ * @property targetKbps what the chosen resolution, frame rate and codec asked for, before any link
  *   evidence was applied.
- * @property wireKbps what [recommendedKbps] actually costs on the network once error correction,
- *   audio and packet headers are added.
+ * @property videoKbps roughly how much of [recommendedKbps] survives as encoded video once the host
+ *   has taken its share for error correction, audio and control traffic. Informational only.
  * @property limitedBy which constraint produced the final figure.
  * @property headline one sentence naming the recommendation and its limit.
  * @property reasons the derivation, in the order it was applied.
@@ -40,7 +41,7 @@ enum class BitrateLimit(val label: String) {
 data class BitrateAdvice(
     val recommendedKbps: Int,
     val targetKbps: Int,
-    val wireKbps: Int,
+    val videoKbps: Int,
     val limitedBy: BitrateLimit,
     val headline: String,
     val reasons: List<String>,
@@ -55,13 +56,20 @@ data class BitrateAdvice(
  *
  * ### The rule that matters
  *
- * **Never recommend more than [HEADROOM_FRACTION] of what the link was measured to carry, and
- * measure that against the *wire* cost rather than the video bitrate.** Users overshoot this
- * constantly, and overshooting is not a gentle degradation: the moment the stream needs more than
- * the path can deliver, packets are dropped, the decoder starts requesting keyframes, and latency
- * spikes into the hundreds of milliseconds. A stream at 20 Mbps that never drops a frame is
- * unambiguously better than one at 40 Mbps that hitches every few seconds, and the second one is
- * what "just set it to the maximum" produces.
+ * **Never recommend more than [HEADROOM_FRACTION] of what the link was measured to carry.** Users
+ * overshoot this constantly, and overshooting is not a gentle degradation: the moment the stream
+ * needs more than the path can deliver, packets are dropped, the decoder starts requesting
+ * keyframes, and latency spikes into the hundreds of milliseconds. A stream at 20 Mbps that never
+ * drops a frame is unambiguously better than one at 40 Mbps that hitches every few seconds, and
+ * the second one is what "just set it to the maximum" produces.
+ *
+ * ### What the bitrate number means
+ *
+ * The setting is the **total budget the session is allowed to put on the wire**, not a video-only
+ * figure: the host subtracts forward error correction, the audio stream and a small fixed
+ * allowance from it and gives the remainder to the encoder. So the comparison against measured
+ * throughput is made against the requested number directly, with no inflation factor — inflating
+ * it would under-provision every recommendation by the size of the invented factor.
  */
 object BitrateAdvisor {
 
@@ -76,30 +84,23 @@ object BitrateAdvisor {
     const val HEADROOM_FRACTION: Double = 0.55
 
     /**
-     * Multiplier from the bitrate the user sets to the bytes that actually cross the network.
+     * Roughly what share of the requested bitrate reaches the encoder as video.
      *
-     * The bitrate setting governs the **video** payload only. On top of it the stack adds forward
-     * error correction — 20% by default in this protocol family, inherited from GeForce Experience
-     * — plus an audio stream and per-packet RTP/UDP/IP headers. A 100 Mbps setting therefore puts
-     * roughly 120–125 Mbps on the wire.
-     *
-     * Applying the headroom rule to the slider figure instead of this one would make every
-     * recommendation about 25% optimistic, in exactly the direction that causes packet loss.
-     *
-     * **This is an assumption, not a fact about the user's system:** the FEC percentage is a
-     * host-side setting they may have changed, and a host configured for heavier FEC costs more
-     * than this. It is deliberately at the top of the 20–25% range for that reason.
+     * Shown to the user as context, never used to scale the recommendation. The reference client
+     * hands the host 80% of the requested figure and the host then deducts its error-correction
+     * overhead and the audio stream from that, so this is an approximation of a number that is
+     * genuinely a host-side policy — the error-correction percentage in particular is configurable
+     * on the PC and cannot be read from here.
      */
-    const val WIRE_OVERHEAD: Double = 1.25
+    const val ENCODER_SHARE: Double = 0.80
 
     /**
-     * Baseline video bitrate in kbps for each resolution at 60 fps, H.264, SDR, 4:2:0.
+     * Baseline **total** bitrate in kbps for each resolution at 60 fps, H.264, SDR, 4:2:0.
      *
-     * Two things shaped these numbers. First, they are aimed at "looks right on a good LAN" rather
-     * than "survives a bad one" — the link evidence, not the baseline, is what makes a
-     * recommendation safe. Second, they do **not** scale with pixel count: compression gets more
-     * efficient as resolution rises, so 4K is worth about three times 1080p rather than four, and
-     * 1440p about one and a half.
+     * Scaled with pixel count: 4K is four times 1080p, which is what the reference client's own
+     * table does. The magnitudes sit above that table because it aims at "works on most networks"
+     * whereas this aims at "looks right on a good LAN" — the link evidence, not the baseline, is
+     * what makes a recommendation safe.
      *
      * [StreamResolution.NATIVE] has no pixel count until launch time, so it is treated as 1080p and
      * the explanation says so.
@@ -107,8 +108,8 @@ object BitrateAdvisor {
     fun baselineKbpsAt60(resolution: StreamResolution): Int = when (resolution) {
         StreamResolution.RES_720P -> 15_000
         StreamResolution.RES_1080P -> 30_000
-        StreamResolution.RES_1440P -> 45_000
-        StreamResolution.RES_2160P -> 90_000
+        StreamResolution.RES_1440P -> 60_000
+        StreamResolution.RES_2160P -> 120_000
         StreamResolution.NATIVE -> 30_000
     }
 
@@ -124,16 +125,19 @@ object BitrateAdvisor {
     /**
      * How much less bitrate a codec needs for the same picture.
      *
-     * HEVC and AV1 reach comparable quality at roughly 30–40% fewer bits than H.264.
-     * [VideoCodec.AUTO] is deliberately pessimistic: it may well negotiate down to H.264 on a
-     * device whose HEVC decoder the host does not like, and a recommendation that assumed the
-     * saving would then be too high for the codec actually in use.
+     * HEVC and AV1 reach comparable quality at roughly 30–40% fewer bits than H.264, and both are
+     * preferred wherever the device can decode them: the reference client's automatic selection
+     * orders codecs by ascending decode complexity with **H.264 as the last resort**, and H.264 has
+     * no 10-bit profile here, so picking it also rules out HDR.
+     *
+     * [VideoCodec.AUTO] is given a little of H.264's appetite anyway, because negotiation can still
+     * land there on a device whose modern decoder the host will not use.
      */
     fun codecFactor(codec: VideoCodec): Double = when (codec) {
         VideoCodec.H264 -> 1.0
         VideoCodec.HEVC -> 0.65
         VideoCodec.AV1 -> 0.60
-        VideoCodec.AUTO -> 0.85
+        VideoCodec.AUTO -> 0.75
     }
 
     /** 10-bit HDR carries more data per sample; 15% is the usual observed cost. */
@@ -222,6 +226,8 @@ object BitrateAdvisor {
         val qualityAdjusted = target * qualityFactor
 
         // ---- What the link was measured to carry -----------------------------------------------
+        // Compared against the requested bitrate directly. That figure is already the whole
+        // session's budget on the network, so there is nothing to add to it before the comparison.
         val capKbps = when (throughput) {
             null -> {
                 reasons += "No throughput was measured, so this is the codec's own appetite rather " +
@@ -231,30 +237,30 @@ object BitrateAdvisor {
             }
 
             is ThroughputEvidence.Sustained -> {
-                val measuredKbps = throughput.megabitsPerSecond * 1_000.0
-                val wireBudget = measuredKbps * HEADROOM_FRACTION
+                val measuredKbps = throughput.megabitsPerSecond * KBPS_PER_MBPS
+                val budget = measuredKbps * HEADROOM_FRACTION
                 reasons += "TCP measured ${mbps(measuredKbps)} sustained. A real-time stream may use " +
-                    "at most ${percentOf(HEADROOM_FRACTION)} of that — ${mbps(wireBudget)} on the " +
-                    "wire — because a link measured once is the best case, and sizing a stream to " +
-                    "the best case guarantees it breaks the moment anything else uses the network."
-                wireBudget / WIRE_OVERHEAD
+                    "at most ${percentOf(HEADROOM_FRACTION)} of that — ${mbps(budget)} — because a " +
+                    "link measured once is the best case, and sizing a stream to the best case " +
+                    "guarantees it breaks the moment anything else uses the network."
+                budget
             }
 
             is ThroughputEvidence.Loaded -> {
-                val targetWire = throughput.targetMbps * 1_000.0
-                val wireBudget = targetWire * loadedFactor(throughput.lossPercent)
+                val requestedKbps = throughput.targetMbps * KBPS_PER_MBPS
+                val budget = requestedKbps * loadedFactor(throughput.lossPercent)
                 reasons += if (throughput.isClean) {
-                    "UDP at ${mbps(targetWire)} arrived with ${percent(throughput.lossPercent)} loss " +
-                        "and ${ms(throughput.jitterMs)} jitter — the link carried the intended rate " +
-                        "cleanly, which is stronger evidence than a peak-bandwidth figure because it " +
-                        "is the same traffic shape as the stream."
+                    "UDP at ${mbps(requestedKbps)} — the rate your settings ask the network for — " +
+                        "arrived with ${percent(throughput.lossPercent)} loss and " +
+                        "${ms(throughput.jitterMs)} jitter. The link carried the intended rate " +
+                        "cleanly, which is stronger evidence than a peak-bandwidth figure because " +
+                        "it is the same traffic shape as the stream."
                 } else {
-                    "UDP at ${mbps(targetWire)} lost ${percent(throughput.lossPercent)} of its " +
+                    "UDP at ${mbps(requestedKbps)} lost ${percent(throughput.lossPercent)} of its " +
                         "datagrams (${ms(throughput.jitterMs)} jitter), so that rate is above what " +
-                        "this path will actually deliver; the budget is cut to ${mbps(wireBudget)} " +
-                        "on the wire."
+                        "this path actually delivers; the budget is cut to ${mbps(budget)}."
                 }
-                wireBudget / WIRE_OVERHEAD
+                budget
             }
         }
 
@@ -265,7 +271,7 @@ object BitrateAdvisor {
             StreamSettings.BITRATE_MIN_KBPS,
             StreamSettings.BITRATE_MAX_KBPS,
         )
-        val wire = (recommended * WIRE_OVERHEAD).roundToInt()
+        val video = (recommended * ENCODER_SHARE).roundToInt()
 
         val limitedBy = when {
             rounded > StreamSettings.BITRATE_MAX_KBPS -> BitrateLimit.CLIENT_CEILING
@@ -274,10 +280,11 @@ object BitrateAdvisor {
             else -> BitrateLimit.CODEC_BASELINE
         }
 
-        reasons += "Recommendation: ${mbps(recommended.toDouble())} of video, which is about " +
-            "${mbps(wire.toDouble())} on the wire once ${percentOf(WIRE_OVERHEAD - 1.0)} for error " +
-            "correction, audio and packet headers is added. The extra is an assumption — the error " +
-            "correction rate is a setting on the PC, not something this app can read."
+        reasons += "Recommendation: ${mbps(recommended.toDouble())}. That is the whole session's " +
+            "budget on the network, not the video alone — the PC takes error correction, audio and " +
+            "a small fixed allowance out of it, leaving roughly ${mbps(video.toDouble())} of " +
+            "actual video. How much it takes is a setting on the PC, so treat that split as an " +
+            "estimate."
 
         if (limitedBy == BitrateLimit.CLIENT_CEILING) {
             reasons += "Capped at this app's 150 Mbps ceiling; above roughly that, hardware decoders " +
@@ -286,8 +293,11 @@ object BitrateAdvisor {
 
         return BitrateAdvice(
             recommendedKbps = recommended,
-            targetKbps = roundToStep(target).coerceAtLeast(StreamSettings.BITRATE_MIN_KBPS),
-            wireKbps = wire,
+            targetKbps = roundToStep(target).coerceIn(
+                StreamSettings.BITRATE_MIN_KBPS,
+                StreamSettings.BITRATE_MAX_KBPS,
+            ),
+            videoKbps = video,
             limitedBy = limitedBy,
             headline = headlineFor(recommended, limitedBy),
             reasons = reasons,
@@ -310,6 +320,7 @@ object BitrateAdvisor {
         else -> 0.30
     }
 
+    private const val KBPS_PER_MBPS = 1_000.0
     private const val NOTABLE_JITTER_MS = 10.0
     private const val SEVERE_JITTER_MS = 25.0
     private const val NOTABLE_JITTER_PENALTY = 0.80
@@ -339,7 +350,7 @@ object BitrateAdvisor {
     }
 
     private fun mbps(kbps: Double): String =
-        String.format(Locale.US, "%.1f Mbps", kbps / 1_000.0)
+        String.format(Locale.US, "%.1f Mbps", kbps / KBPS_PER_MBPS)
 
     private fun ms(value: Double): String = String.format(Locale.US, "%.1f ms", value)
 

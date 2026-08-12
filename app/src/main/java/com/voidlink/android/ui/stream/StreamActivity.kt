@@ -1,107 +1,145 @@
 package com.voidlink.android.ui.stream
 
+import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.getValue
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import com.voidlink.android.di.ServiceLocator
+import com.voidlink.android.media.VideoPipeline
 import com.voidlink.android.ui.navigation.StreamLaunchContract
-import com.voidlink.android.ui.theme.VoidLinkTheme
 
 /**
- * Placeholder for the streaming session.
+ * The streaming session's Activity.
  *
- * The streaming pipeline — RTSP negotiation, the ENet control channel, RTP receive, forward error
- * correction, `MediaCodec` decode, audio playback and input forwarding — is not implemented in
- * this build. Until it is, this screen exists to say so.
+ * Separate from `MainActivity` because the stream needs window flags, an orientation policy and a
+ * surface lifetime that would be actively harmful in a navigation graph (architecture §8).
  *
- * That matters more than it looks: without it this activity showed a black fullscreen window with
- * no text and no affordance, which is indistinguishable from a hang or a crash. An honest screen
- * is better than a blank one.
+ * What this class owns, and only this class:
+ *
+ * * **Window policy** — sticky immersive, cutout-aware, screen kept on, sustained performance.
+ * * **The display size**, which is what `Native` resolution resolves against.
+ * * **The session's lifetime**, delegated to a [StreamController] bound to `lifecycleScope`.
+ *
+ * Everything else — decoder selection, the surface, the failure text — lives in [StreamController]
+ * and [StreamScreen]. The manifest already declares `configChanges` covering orientation and size,
+ * so rotation does not recreate this Activity and therefore cannot restart the session, which is
+ * exactly what UI spec §5.7 requires.
+ *
+ * **There is no state in which this Activity shows a black window with nothing on it.** If a
+ * session cannot start, or no decoder can handle the stream, [StreamScreen] draws the reason.
  */
 class StreamActivity : ComponentActivity() {
+
+    private lateinit var controller: StreamController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val appName = intent?.getStringExtra(StreamLaunchContract.EXTRA_APP_NAME)
+        configureWindow()
+
+        controller = StreamController(
+            scope = lifecycleScope,
+            settingsRepository = ServiceLocator.settingsRepository,
+            hostRepository = ServiceLocator.hostRepository,
+            probe = VideoPipeline.decoderProbe,
+            videoSourceFactory = VideoPipeline.videoSourceFactory,
+        )
+
+        val bounds = displayBounds()
+        controller.start(
+            StreamStartRequest(
+                hostId = intent?.getStringExtra(StreamLaunchContract.EXTRA_HOST_ID),
+                appId = intent?.getStringExtra(StreamLaunchContract.EXTRA_APP_ID),
+                appName = intent?.getStringExtra(StreamLaunchContract.EXTRA_APP_NAME),
+                displayWidth = bounds.width(),
+                displayHeight = bounds.height(),
+            ),
+        )
 
         setContent {
-            VoidLinkTheme {
-                StreamUnavailableScreen(
-                    appName = appName,
-                    onClose = { finish() },
-                )
-            }
+            // Deliberately not wrapped in VoidLinkTheme: every colour on this screen is fixed
+            // black and white by UI spec §5.1–5.2, because a themed surround around a game reads
+            // as a rendering fault rather than as a design.
+            val state by controller.state.collectAsStateWithLifecycle()
+
+            StreamScreen(
+                state = state,
+                onSurfaceAvailable = { surface -> controller.onSurfaceAvailable(surface) },
+                onSurfaceDestroyed = { controller.onSurfaceDestroyed() },
+                onDismissStats = { controller.setStatsOverlayVisible(false) },
+                onExit = { finish() },
+            )
         }
     }
-}
 
-/**
- * Explains that streaming is not available, naming the app the user tried to launch so the screen
- * is clearly a response to their action rather than a generic error.
- */
-@Composable
-private fun StreamUnavailableScreen(
-    appName: String?,
-    onClose: () -> Unit,
-) {
-    val colors = VoidLinkTheme.colors
+    override fun onResume() {
+        super.onResume()
+        // The system bars come back after a swipe, a dialog, or returning from the background;
+        // re-hiding them here is what makes immersive mode stick.
+        applyImmersiveMode()
+    }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 420.dp)
-                .padding(horizontal = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = appName ?: "Streaming",
-                color = colors.label,
-                fontSize = 22.sp,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = "Streaming is not implemented in this build. Pairing, your app library " +
-                    "and host controls all work, but there is no video pipeline yet, so there " +
-                    "is nothing to show here.",
-                color = colors.secondaryLabel,
-                fontSize = 15.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-            Button(
-                onClick = onClose,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.accent,
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 28.dp),
-            ) {
-                Text(text = "Back to library", fontSize = 17.sp)
+    override fun onDestroy() {
+        controller.stop()
+        super.onDestroy()
+    }
+
+    /**
+     * Window flags for a low-latency fullscreen stream.
+     *
+     * `FLAG_KEEP_SCREEN_ON` and sustained performance mode are spec §12.6; drawing into the
+     * display cutout is what makes a notched phone show the full letterboxed frame instead of a
+     * black bar beside the notch.
+     */
+    private fun configureWindow() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val attributes = window.attributes
+            attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            // Reassigning is required: mutating the object the getter returned does not re-apply.
+            window.attributes = attributes
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            runCatching { window.setSustainedPerformanceMode(true) }
+        }
+
+        applyImmersiveMode()
+    }
+
+    private fun applyImmersiveMode() {
+        val controllerCompat = WindowInsetsControllerCompat(window, window.decorView)
+        controllerCompat.hide(WindowInsetsCompat.Type.systemBars())
+        controllerCompat.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    }
+
+    /**
+     * The window's size in pixels, which is what `Native` resolution means.
+     *
+     * `WindowMetrics` (API 30+) reports the real window including the area behind the system bars,
+     * which is what we draw into; below that `DisplayMetrics` is the only option and is close
+     * enough, since this window is fullscreen anyway.
+     */
+    private fun displayBounds(): Rect {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val metrics = runCatching { windowManager.currentWindowMetrics }.getOrNull()
+            if (metrics != null) {
+                return Rect(metrics.bounds)
             }
         }
+        val displayMetrics = resources.displayMetrics
+        return Rect(0, 0, displayMetrics.widthPixels, displayMetrics.heightPixels)
     }
 }

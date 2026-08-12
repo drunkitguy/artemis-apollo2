@@ -137,6 +137,64 @@ class SdpGeneratorTest {
     }
 
     @Test
+    fun `configuredBitrateKbps is present in every document and carries the raw user value`() {
+        // The single highest-value assertion in this file. Apollo — the host our user actually runs
+        // — falls back to maximumBitrateKbps when this attribute is absent, and then applies the
+        // FEC/audio/overhead deduction to a figure that has already had it applied, encoding at
+        // roughly 0.64x what was asked for. Nothing about that failure is visible: the stream comes
+        // up, plays, and merely looks worse than it should. Dropping this attribute in a future
+        // edit must break a test, because it will not break anything a human would notice.
+        // (docs/05-DYNAMIC-BITRATE.md §1.3.)
+        val configurations = listOf(
+            SdpGoldens.config1080p60H264Stereo(),
+            SdpGoldens.config1440p120Hevc(),
+            SdpGoldens.config4K60HdrSurround(),
+            SdpGoldens.config1080p60WanSurround71(),
+        )
+        val profiles = listOf(SdpGoldens.sunshineGen7(), SdpGoldens.nvidiaGen5())
+
+        for (configuration in configurations) {
+            for (profile in profiles) {
+                val attribute = SdpGenerator.attributes(configuration, profile)
+                    .firstOrNull { it.name == "x-ml-video.configuredBitrateKbps" }
+                assertNotNull(
+                    "x-ml-video.configuredBitrateKbps missing for $configuration on $profile",
+                    attribute,
+                )
+                assertEquals(configuration.configuredBitrateKbps.toString(), attribute!!.value)
+            }
+        }
+    }
+
+    @Test
+    fun `the raw and the negotiated bitrate are never conflated`() {
+        // They are the same number today because v1 applies no client-side adjustment. If one is
+        // ever scaled, the other must not follow it — which is the whole reason they are separate
+        // fields rather than one.
+        val adjusted = SdpGoldens.config1080p60H264Stereo()
+            .copy(bitrateKbps = 16_000, configuredBitrateKbps = 20_000)
+        val attributes = attributeMap(adjusted)
+
+        assertEquals("20000", attributes["x-ml-video.configuredBitrateKbps"])
+        assertEquals("16000", attributes["x-nv-vqos[0].bw.minimumBitrateKbps"])
+        assertEquals("16000", attributes["x-nv-vqos[0].bw.maximumBitrateKbps"])
+        assertEquals("16000", attributes["x-nv-video[0].initialBitrateKbps"])
+        assertEquals("16000", attributes["x-nv-video[0].initialPeakBitrateKbps"])
+    }
+
+    @Test
+    fun `no client side deduction is applied to the bitrate the user chose`() {
+        // The number is a total wire budget covering FEC, audio and headers, and the host performs
+        // that arithmetic itself. Pre-deducting here would have it deducted twice.
+        val configuration = SdpGoldens.config1080p60H264Stereo()
+        assertEquals(configuration.bitrateKbps, configuration.configuredBitrateKbps)
+
+        val attributes = attributeMap(configuration)
+        assertEquals("20000", attributes["x-ml-video.configuredBitrateKbps"])
+        assertEquals("20000", attributes["x-nv-vqos[0].bw.maximumBitrateKbps"])
+    }
+
+    @Test
     fun `dynamic resolution change stays off because MediaCodec is not reconfigured mid-stream`() {
         assertEquals("0", attributeMap(SdpGoldens.config1080p60H264Stereo())["x-nv-vqos[0].drc.enable"])
     }

@@ -345,6 +345,7 @@ class RtspSessionNegotiator(
             height = announcedConfiguration.height,
             fps = announcedConfiguration.fps,
             bitrateKbps = announcedConfiguration.bitrateKbps,
+            configuredBitrateKbps = announcedConfiguration.configuredBitrateKbps,
             packetSize = announcedConfiguration.packetSize,
             encryptionFlags = announcedConfiguration.encryptionFlags,
             audioLayout = effectiveLayout,

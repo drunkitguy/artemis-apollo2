@@ -514,6 +514,70 @@ fun ToggleRow(
 }
 
 /**
+ * A row whose value is a button rather than a setting: it *does* something instead of storing
+ * something.
+ *
+ * Kept to the same shape as every other row — label on the left, the action in accent blue on the
+ * right — so a section can mix "change this" and "run this" without looking assembled from two
+ * different kits.
+ *
+ * @param label row label.
+ * @param actionLabel text on the button.
+ * @param onClick invoked when the button is tapped.
+ * @param modifier layout modifier.
+ * @param enabled whether the button accepts input. A disabled action keeps its info button live,
+ *   which is where the reason it is unavailable has to be written.
+ * @param info optional help text; the circled-i is rendered only when this is non-null.
+ */
+@Composable
+fun ActionRow(
+    label: String,
+    actionLabel: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    info: String? = null,
+) {
+    val colors = VoidLinkTheme.colors
+    val spacing = VoidLinkTheme.spacing
+    var infoRevealed by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else DISABLED_ALPHA)
+            .padding(horizontal = spacing.lg, vertical = spacing.sm),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                style = VoidLinkTheme.body,
+                color = colors.label,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (info != null) {
+                InfoToggleGlyph(expanded = infoRevealed, onClick = { infoRevealed = !infoRevealed })
+                Spacer(modifier = Modifier.width(spacing.xs))
+            }
+            Text(
+                text = actionLabel,
+                style = VoidLinkTheme.body.copy(fontSize = SEGMENT_FONT_SIZE),
+                color = colors.accent,
+                maxLines = 1,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(VoidLinkShapeTokens.SegmentPillRadius))
+                    .background(colors.accentFill)
+                    .clickable(enabled = enabled, onClick = onClick)
+                    .padding(horizontal = spacing.md, vertical = spacing.sm),
+            )
+        }
+        InlineInfoText(info = info, visible = infoRevealed)
+    }
+}
+
+/**
  * A label plus a dropdown picker — used where a segmented control would have too many options,
  * such as gesture action bindings.
  *
