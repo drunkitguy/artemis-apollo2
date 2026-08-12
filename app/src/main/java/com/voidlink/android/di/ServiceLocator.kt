@@ -2,16 +2,19 @@ package com.voidlink.android.di
 
 import android.content.Context
 import com.voidlink.android.data.AppCatalogProvider
+import com.voidlink.android.data.ConnectionTester
 import com.voidlink.android.data.HostRepository
 import com.voidlink.android.data.HostStatusProvider
 import com.voidlink.android.data.HostWaker
 import com.voidlink.android.data.SettingsRepository
 import com.voidlink.android.data.StubAppCatalogProvider
+import com.voidlink.android.data.StubConnectionTester
 import com.voidlink.android.data.StubHostStatusProvider
 import com.voidlink.android.data.StubHostWaker
 import com.voidlink.android.protocol.bridge.HostEndpointResolver
 import com.voidlink.android.protocol.bridge.HostPairingCoordinator
 import com.voidlink.android.protocol.bridge.NvHttpAppCatalogProvider
+import com.voidlink.android.protocol.bridge.NvHttpConnectionTester
 import com.voidlink.android.protocol.bridge.NvHttpHostStatusProvider
 import com.voidlink.android.protocol.bridge.WakeOnLanHostWaker
 import com.voidlink.android.protocol.crypto.IdentityStore
@@ -72,6 +75,10 @@ object ServiceLocator {
     @Volatile
     var hostWaker: HostWaker = StubHostWaker
 
+    /** Measures the network path to a host; replaced by the real sampler and iperf3 client. */
+    @Volatile
+    var connectionTester: ConnectionTester = StubConnectionTester
+
     /**
      * Wires the graph. Safe to call more than once; later calls are ignored.
      *
@@ -113,6 +120,10 @@ object ServiceLocator {
                 boxArtCache = boxArtCache,
             )
             hostWaker = WakeOnLanHostWaker()
+            connectionTester = NvHttpConnectionTester(
+                client = httpClient,
+                resolver = resolver,
+            )
         }
     }
 
@@ -158,6 +169,7 @@ object ServiceLocator {
         apps: AppCatalogProvider? = null,
         waker: HostWaker? = null,
         pairing: HostPairingCoordinator? = null,
+        tester: ConnectionTester? = null,
     ) {
         settings?.let { settingsRepositoryInstance = it }
         hosts?.let { hostRepositoryInstance = it }
@@ -165,6 +177,7 @@ object ServiceLocator {
         apps?.let { appCatalogProvider = it }
         waker?.let { hostWaker = it }
         pairing?.let { pairingCoordinatorInstance = it }
+        tester?.let { connectionTester = it }
     }
 
     private const val NOT_INITIALIZED =

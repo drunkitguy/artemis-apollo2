@@ -25,6 +25,9 @@ object ProtocolLog {
     const val TAG_TLS: String = "VL.Tls"
     const val TAG_WOL: String = "VL.Wol"
 
+    /** Link-quality sampling and the iperf3 client — everything that measures rather than streams. */
+    const val TAG_NETPERF: String = "VL.NetPerf"
+
     private val announcedUnverified = ConcurrentHashMap<String, Boolean>()
 
     /** Debug-level message. */

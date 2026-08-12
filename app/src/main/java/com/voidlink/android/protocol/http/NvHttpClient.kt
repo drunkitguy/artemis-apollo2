@@ -74,7 +74,13 @@ class NvHttpClient(
     /** Hosts the TLS self-test has already run against; see [diagnoseTls] for why it runs once. */
     private val diagnosedHosts = ConcurrentHashMap<String, Boolean>()
 
-    private fun httpsGateFor(url: String): Mutex =
+    /**
+     * The lock covering requests to one `host:port`.
+     *
+     * Named for the listener rather than the scheme because both of a host's listeners are
+     * single-threaded and both need serialising; the key already keeps them apart.
+     */
+    private fun gateFor(url: String): Mutex =
         httpsGates.getOrPut(authorityOf(url)) { Mutex() }
 
     /**
