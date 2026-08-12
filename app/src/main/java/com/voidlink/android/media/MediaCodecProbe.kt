@@ -64,6 +64,21 @@ object MediaCodecProbe : DecoderProbe {
             candidates.joinToString(separator = "; ") { it.describe() }
         }
         ProtocolLog.i(TAG, "Decoder probe for ${request.describe()}: $summary")
+
+        for (support in DecoderInventory.from(candidates)) {
+            ProtocolLog.i(TAG, "  ${support.describe()}")
+        }
+
+        // Worth its own line in the log: a software-only AV1 decoder is the single most common way
+        // for a device to look AV1-capable and stream terribly.
+        val av1 = DecoderInventory.from(candidates).firstOrNull { it.codec == VideoCodecType.AV1 }
+        if (av1 != null && av1.available && !av1.hardwareAccelerated) {
+            ProtocolLog.w(
+                TAG,
+                "AV1 is present only as a software decoder (${av1.decoderName}); it will not be used.",
+            )
+        }
+
         return candidates
     }
 
@@ -113,6 +128,34 @@ object MediaCodecProbe : DecoderProbe {
             1
         }
 
+        val maxWidth = try {
+            videoCapabilities.supportedWidths.upper
+        } catch (error: Throwable) {
+            0
+        }
+        val maxHeight = try {
+            videoCapabilities.supportedHeights.upper
+        } catch (error: Throwable) {
+            0
+        }
+        val maxFrameRate = try {
+            videoCapabilities.supportedFrameRates.upper
+        } catch (error: Throwable) {
+            0
+        }
+        val maxFrameRateHere = if (!sizeSupported) {
+            0
+        } else {
+            try {
+                videoCapabilities
+                    .getSupportedFrameRatesFor(request.width, request.height)
+                    .upper
+                    .toInt()
+            } catch (error: Throwable) {
+                0
+            }
+        }
+
         val vendorParameters = supportedVendorParameters(capabilities)
 
         return DecoderCandidate(
@@ -122,6 +165,10 @@ object MediaCodecProbe : DecoderProbe {
             supportsRequestedSize = sizeSupported,
             supportsRequestedFrameRate = rateSupported,
             supportsTenBit = supportsTenBit(capabilities, codec),
+            maxWidth = maxWidth,
+            maxHeight = maxHeight,
+            maxFrameRate = maxFrameRate,
+            maxFrameRateAtRequestedSize = maxFrameRateHere,
             maxSupportedInstances = if (instances > 0) instances else 1,
             supportedVendorParameters = vendorParameters ?: emptyList(),
             vendorParametersKnown = vendorParameters != null,

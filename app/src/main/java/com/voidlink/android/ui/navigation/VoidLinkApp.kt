@@ -160,6 +160,27 @@ fun VoidLinkApp(
                 }
             }
         }
+
+        // Drawn over everything, including the settings panel, because it is a detour from whatever
+        // the user was doing and hands them straight back to it.
+        if (connectionTestHost != null) {
+            ConnectionTestRoute(
+                hostId = connectionTestHost.uuid,
+                // The settings the panel is currently editing, so the recommendation is about the
+                // same values that Apply will change.
+                settings = shownSettings,
+                applyScopeLabel = if (overrideHost == null) {
+                    "all PCs"
+                } else {
+                    "${overrideHost.name} only"
+                },
+                onApply = { kbps ->
+                    applyUpdate({ current -> current.copy(bitrateKbps = kbps) })
+                    connectionTestHostId = null
+                },
+                onClose = { connectionTestHostId = null },
+            )
+        }
     }
 }
 
@@ -169,12 +190,14 @@ fun VoidLinkApp(
  * @param onToggleSidebar shows or hides the settings panel.
  * @param onOpenHost the user wants to browse a host's library.
  * @param onHostSettings the user wants the panel scoped to one host's overrides.
+ * @param onTestConnection the user wants the link to one host measured.
  */
 @Composable
 private fun HostsRoute(
     onToggleSidebar: () -> Unit,
     onOpenHost: (KnownHost) -> Unit,
     onHostSettings: (KnownHost) -> Unit,
+    onTestConnection: (KnownHost) -> Unit,
 ) {
     val viewModel: HostsViewModel = viewModel(factory = HostsViewModel.Factory)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -198,6 +221,7 @@ private fun HostsRoute(
         onUnpair = viewModel::unpair,
         onWake = viewModel::wake,
         onHostSettings = onHostSettings,
+        onTestConnection = onTestConnection,
         onDismissPairing = viewModel::cancelPairing,
         onRetryPairing = viewModel::retryPairing,
         onMessageShown = viewModel::consumeMessage,

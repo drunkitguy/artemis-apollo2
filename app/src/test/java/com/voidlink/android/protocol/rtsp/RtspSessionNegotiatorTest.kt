@@ -363,11 +363,11 @@ class RtspSessionNegotiatorTest {
         )
         val error = failure(negotiate(transport))
         assertTrue(describe(error), error is RtspError.Refused)
-        error as RtspError.Refused
-        assertEquals(RtspStep.OPTIONS, error.step)
-        assertEquals(500, error.statusCode)
-        assertEquals("Internal Server Error", error.reasonPhrase)
-        assertTrue(error.describe().contains("OPTIONS"))
+        val refused = error as RtspError.Refused
+        assertEquals(RtspStep.OPTIONS, refused.step)
+        assertEquals(500, refused.statusCode)
+        assertEquals("Internal Server Error", refused.reasonPhrase)
+        assertTrue(refused.describe().contains("OPTIONS"))
     }
 
     @Test
@@ -383,9 +383,9 @@ class RtspSessionNegotiatorTest {
         )
         val error = failure(negotiate(transport))
         assertTrue(describe(error), error is RtspError.Refused)
-        error as RtspError.Refused
-        assertEquals(RtspStep.ANNOUNCE, error.step)
-        assertEquals(400, error.statusCode)
+        val refused = error as RtspError.Refused
+        assertEquals(RtspStep.ANNOUNCE, refused.step)
+        assertEquals(400, refused.statusCode)
         // The three SETUPs did happen; the configuration is what the host disliked.
         assertEquals(6, transport.requests.size)
     }
@@ -400,10 +400,10 @@ class RtspSessionNegotiatorTest {
         )
         val error = failure(negotiate(transport))
         assertTrue(describe(error), error is RtspError.Timeout)
-        error as RtspError.Timeout
-        assertEquals(RtspStep.DESCRIBE, error.step)
-        assertEquals(RtspConstants.DESCRIBE_TIMEOUT_MS.toLong(), error.waitedMs)
-        assertFalse(error.budgetExhausted)
+        val timeout = error as RtspError.Timeout
+        assertEquals(RtspStep.DESCRIBE, timeout.step)
+        assertEquals(RtspConstants.DESCRIBE_TIMEOUT_MS.toLong(), timeout.waitedMs)
+        assertFalse(timeout.budgetExhausted)
     }
 
     @Test
@@ -507,10 +507,10 @@ class RtspSessionNegotiatorTest {
         val error = failure(negotiate(transport, clock = clock))
 
         assertTrue(describe(error), error is RtspError.Timeout)
-        error as RtspError.Timeout
-        assertTrue(error.budgetExhausted)
-        assertEquals(RtspStep.DESCRIBE, error.step)
-        assertEquals(RtspConstants.SESSION_BUDGET_MS, error.waitedMs)
+        val timeout = error as RtspError.Timeout
+        assertTrue(timeout.budgetExhausted)
+        assertEquals(RtspStep.DESCRIBE, timeout.step)
+        assertEquals(RtspConstants.SESSION_BUDGET_MS, timeout.waitedMs)
         assertEquals(1, transport.requests.size)
     }
 

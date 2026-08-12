@@ -9,19 +9,26 @@ import com.voidlink.android.data.VideoCodec
  * codec selection is the part of the decode path most likely to be wrong on a device we do not
  * own, and it is the part CI can actually test.
  *
- * The rules implement `docs/01-PROTOCOL.md` §7.2 steps 1–6:
+ * ### The rules
  *
- * 1. A decoder that cannot handle the requested **size** is never selected. Nothing good happens
+ * 1. **A decoder that cannot handle the requested size is never selected.** Nothing good happens
  *    if we configure a 4K stream on a decoder that tops out at 1080p; failing here produces a
  *    sentence the user can act on ("lower the resolution") instead of a codec error at frame one.
- * 2. A decoder that handles the size but not the **frame rate** *is* selected, with a note. The
- *    frame rate is fixed at `/launch` time and cannot be renegotiated, and a decoder that merely
- *    fails to advertise 120 fps usually still decodes at 120 fps, just without a guarantee.
- * 3. An explicit codec preference is honoured, then relaxed down the ladder rather than failing.
- * 4. `Auto` prefers AV1 only when it probes clean **and** is hardware — spec §7.2 step 5 is
- *    explicit that AV1 low-latency decode is spotty, so the default ladder is HEVC → H.264.
- * 5. HDR requires a 10-bit-capable codec whose decoder advertises a 10-bit profile; when it does
- *    not, HDR is cleared and said out loud rather than silently ignored.
+ * 2. **Hardware decode is required for AV1, full stop.** `MediaCodecList` returns Google's
+ *    software AV1 decoder (`c2.android.av1-decoder`, libgav1) on devices with no AV1 hardware at
+ *    all, and software AV1 at 1080p60 on a handheld is a latency catastrophe that presents to the
+ *    user as a network problem. Software AV1 is therefore never selected — AV1 is reported as
+ *    unavailable and the reason is said out loud.
+ * 3. **Hardware decode is strongly preferred for everything else.** A software H.264 or HEVC
+ *    decoder is chosen only when no hardware decoder on the device can handle the stream at all,
+ *    and never silently: the note says so in the plainest terms available.
+ * 4. **H.264 is the last resort, never a default.** There is no 10-bit H.264 in this protocol
+ *    (spec §7.1), so falling back to it forecloses HDR entirely. The `Auto` ladder therefore runs
+ *    down decode efficiency — AV1, then HEVC, then H.264 — rather than up.
+ * 5. **An explicit codec preference is honoured when hardware can satisfy it**, then relaxed with
+ *    an explanation rather than failing.
+ * 6. **HDR requires a 10-bit profile on the chosen decoder specifically**, not merely a 10-bit
+ *    capable codec family. When it is missing, HDR is cleared and said out loud.
  */
 object DecoderSelector {
 
@@ -39,15 +46,19 @@ object DecoderSelector {
         candidates: List<DecoderCandidate>,
         request: VideoFormatRequest,
     ): DecoderSelectionResult {
+        val inventory = DecoderInventory.from(candidates)
+
         if (request.width <= 0 || request.height <= 0 || request.frameRate <= 0) {
             return DecoderSelectionResult.NoDecoder(
                 summary = "The requested stream format (${request.describe()}) is not a valid video size.",
                 inspected = candidates,
+                inventory = inventory,
             )
         }
         if (candidates.isEmpty()) {
             return DecoderSelectionResult.NoDecoder(
                 summary = "This device reports no video decoders for H.264, HEVC or AV1.",
+                inventory = inventory,
             )
         }
 
@@ -57,37 +68,41 @@ object DecoderSelector {
                 summary = "No decoder on this device supports ${request.width}×${request.height}. " +
                     "Lower the resolution in Settings and try again.",
                 inspected = candidates,
+                inventory = inventory,
             )
         }
 
-        val ladder = ladderFor(request.preferredCodec, usable)
+        // Rule 2: software AV1 is not a candidate for anything, ever.
+        val eligible = usable.filter { it.codec != VideoCodecType.AV1 || it.hardwareAccelerated }
+        val hardware = eligible.filter { it.hardwareAccelerated }
+        val software = eligible.filter { !it.hardwareAccelerated }
+
+        val ladder = ladderFor(request.preferredCodec, hardware)
         val wantTenBit = request.hdr
-        val chosen = ladder.firstNotNullOfOrNull { codec -> best(usable, codec, wantTenBit) }
-            ?: return DecoderSelectionResult.NoDecoder(
-                summary = "No usable decoder was found for ${request.describe()}.",
+
+        // Rule 3: exhaust the hardware ladder before considering any software decoder.
+        var usedSoftwareFallback = false
+        var chosen = ladder.firstNotNullOfOrNull { codec -> best(hardware, codec, wantTenBit) }
+        if (chosen == null) {
+            chosen = ladder.firstNotNullOfOrNull { codec -> best(software, codec, wantTenBit) }
+            usedSoftwareFallback = chosen != null
+        }
+        if (chosen == null) {
+            return DecoderSelectionResult.NoDecoder(
+                summary = noDecoderSummary(request, usable, inventory),
                 inspected = candidates,
+                inventory = inventory,
             )
+        }
 
-        val notes = mutableListOf<String>()
-
-        val preferred = VideoCodecType.fromPreference(request.preferredCodec)
-        if (preferred != null && preferred != chosen.codec) {
-            notes += "${preferred.label} is not available on this device; using ${chosen.codec.label}."
-        }
-        if (!chosen.hardwareAccelerated) {
-            notes += "Only a software ${chosen.codec.label} decoder was found. Expect higher " +
-                "latency and dropped frames; lowering the resolution helps most."
-        }
-        if (!chosen.supportsRequestedFrameRate) {
-            notes += "This device does not advertise ${request.width}×${request.height} at " +
-                "${request.frameRate} fps. The stream will run, but frames may be dropped."
-        }
+        val notes = buildNotes(
+            request = request,
+            chosen = chosen,
+            usable = usable,
+            usedSoftwareFallback = usedSoftwareFallback,
+        )
 
         val hdr = request.hdr && chosen.codec.tenBitCapable && chosen.supportsTenBit
-        if (request.hdr && !hdr) {
-            notes += "HDR needs a 10-bit decoder, which ${chosen.name} does not report. " +
-                "Streaming in SDR."
-        }
 
         return DecoderSelectionResult.Selected(
             DecoderChoice(
@@ -99,7 +114,8 @@ object DecoderSelector {
                     frameRate = request.frameRate,
                     hdr = hdr,
                 ),
-                notes = notes.toList(),
+                notes = notes,
+                inventory = inventory,
             ),
         )
     }
@@ -107,49 +123,143 @@ object DecoderSelector {
     /**
      * The order codecs are tried in.
      *
-     * An explicit preference leads, then everything below it, so a user who asked for AV1 on a
-     * device without it lands on HEVC rather than on an error. `H.264` is the one preference that
-     * does *not* relax: it is the "my device is struggling, force the safe codec" escape hatch and
-     * silently upgrading it would defeat the setting.
+     * An explicit preference leads, then everything below it in efficiency order, so a user who
+     * asked for AV1 on a device without AV1 hardware lands on HEVC rather than on an error.
+     * `H.264` is the one preference that does *not* relax: it is the "my device is struggling,
+     * force the safe codec" escape hatch, and silently upgrading it would defeat the setting.
+     *
+     * @param hardware the hardware-decodable candidates, used only to decide whether AV1 has
+     *   earned the front of the `Auto` ladder.
      */
     private fun ladderFor(
         preference: VideoCodec,
-        usable: List<DecoderCandidate>,
+        hardware: List<DecoderCandidate>,
     ): List<VideoCodecType> = when (preference) {
         VideoCodec.H264 -> listOf(VideoCodecType.H264)
-        VideoCodec.HEVC -> listOf(VideoCodecType.HEVC, VideoCodecType.H264, VideoCodecType.AV1)
+        VideoCodec.HEVC -> listOf(VideoCodecType.HEVC, VideoCodecType.AV1, VideoCodecType.H264)
         VideoCodec.AV1 -> listOf(VideoCodecType.AV1, VideoCodecType.HEVC, VideoCodecType.H264)
-        VideoCodec.AUTO -> autoLadder(usable)
+        VideoCodec.AUTO -> autoLadder(hardware)
     }
 
     /**
-     * `Auto` promotes AV1 to the front only when a hardware AV1 decoder handles the full requested
-     * size *and* rate. Anything less and AV1 drops to last resort.
+     * The `Auto` ladder.
+     *
+     * AV1 leads when a hardware AV1 decoder covers the requested size **and** frame rate — spec
+     * §7.2 step 5 warns that AV1 hardware decode at low latency is spotty, so "probes clean" is
+     * the bar. When it does not, AV1 drops behind HEVC but stays ahead of H.264: H.264 is the last
+     * resort in every ladder, because it is the only codec with no 10-bit profile in this protocol
+     * and defaulting to it would quietly foreclose HDR.
      */
-    private fun autoLadder(usable: List<DecoderCandidate>): List<VideoCodecType> {
-        val av1ProbesClean = usable.any {
-            it.codec == VideoCodecType.AV1 && it.hardwareAccelerated && it.supportsRequestedFrameRate
+    private fun autoLadder(hardware: List<DecoderCandidate>): List<VideoCodecType> {
+        val av1ProbesClean = hardware.any {
+            it.codec == VideoCodecType.AV1 && it.supportsRequestedFrameRate
         }
         return if (av1ProbesClean) {
             listOf(VideoCodecType.AV1, VideoCodecType.HEVC, VideoCodecType.H264)
         } else {
-            listOf(VideoCodecType.HEVC, VideoCodecType.H264, VideoCodecType.AV1)
+            listOf(VideoCodecType.HEVC, VideoCodecType.AV1, VideoCodecType.H264)
         }
     }
 
     /**
-     * The best decoder for one codec: hardware first, then full rate support, then 10-bit when HDR
-     * was asked for, then the most concurrent instances as an arbitrary but stable tie-break.
+     * Every plain-language note the stream screen shows.
+     *
+     * The AV1 notes are the important ones. "This device has no hardware AV1 decoder; using HEVC
+     * instead" is worth more than the fallback it describes: without it, a user who asked for AV1
+     * and got HEVC has no way to know the request was refused, and no way to know why.
+     */
+    private fun buildNotes(
+        request: VideoFormatRequest,
+        chosen: DecoderCandidate,
+        usable: List<DecoderCandidate>,
+        usedSoftwareFallback: Boolean,
+    ): List<String> {
+        val notes = mutableListOf<String>()
+        val preferred = VideoCodecType.fromPreference(request.preferredCodec)
+
+        val softwareAv1Only = usable.any { it.codec == VideoCodecType.AV1 && !it.hardwareAccelerated } &&
+            usable.none { it.codec == VideoCodecType.AV1 && it.hardwareAccelerated }
+        val noAv1AtAll = usable.none { it.codec == VideoCodecType.AV1 }
+
+        if (chosen.codec != VideoCodecType.AV1) {
+            when {
+                softwareAv1Only -> notes += "This device has no hardware AV1 decoder — only a " +
+                    "software one, which cannot keep up with a live stream. Using " +
+                    "${chosen.codec.label} instead."
+                preferred == VideoCodecType.AV1 && noAv1AtAll ->
+                    notes += "This device has no AV1 decoder at all. Using ${chosen.codec.label} instead."
+            }
+        }
+
+        if (preferred != null && preferred != chosen.codec && preferred != VideoCodecType.AV1) {
+            notes += "${preferred.label} is not available on this device; using ${chosen.codec.label}."
+        }
+
+        if (usedSoftwareFallback) {
+            notes += "Only a software ${chosen.codec.label} decoder was found. Expect high " +
+                "latency and dropped frames; lowering the resolution helps most."
+        }
+
+        if (!chosen.supportsRequestedFrameRate) {
+            val advertised = if (chosen.maxFrameRateAtRequestedSize > 0) {
+                " (it advertises up to ${chosen.maxFrameRateAtRequestedSize} fps there)"
+            } else {
+                ""
+            }
+            notes += "This device does not advertise ${request.width}×${request.height} at " +
+                "${request.frameRate} fps$advertised. The stream will run, but frames may be dropped."
+        }
+
+        if (request.hdr && !(chosen.codec.tenBitCapable && chosen.supportsTenBit)) {
+            notes += if (chosen.codec == VideoCodecType.H264) {
+                "HDR needs a 10-bit codec and there is no 10-bit H.264 in this protocol. " +
+                    "Streaming in SDR."
+            } else {
+                "HDR needs a 10-bit profile, which ${chosen.name} does not report. Streaming in SDR."
+            }
+        }
+
+        return notes.toList()
+    }
+
+    /** The sentence shown when the ladder found nothing at all. */
+    private fun noDecoderSummary(
+        request: VideoFormatRequest,
+        usable: List<DecoderCandidate>,
+        inventory: List<CodecSupport>,
+    ): String {
+        if (VideoCodecType.fromPreference(request.preferredCodec) == VideoCodecType.H264) {
+            val h264 = inventory.firstOrNull { it.codec == VideoCodecType.H264 }
+            if (h264 == null || !h264.usableForRealTime) {
+                return "The Preferred Codec setting is fixed to H.264, and this device has no " +
+                    "hardware H.264 decoder for ${request.width}×${request.height}. Set Preferred " +
+                    "Codec to Auto in Settings."
+            }
+        }
+        val onlySoftwareAv1 = usable.isNotEmpty() &&
+            usable.all { it.codec == VideoCodecType.AV1 && !it.hardwareAccelerated }
+        if (onlySoftwareAv1) {
+            return "The only decoder this device offers for ${request.describe()} is a software " +
+                "AV1 decoder, which cannot decode a live stream fast enough to be usable."
+        }
+        return "No usable decoder was found for ${request.describe()}."
+    }
+
+    /**
+     * The best decoder for one codec: full rate support first, then 10-bit when HDR was asked for,
+     * then the most concurrent instances as an arbitrary but stable tie-break.
+     *
+     * Hardware-versus-software does not appear here because the caller has already partitioned on
+     * it — this is only ever called with a list that is entirely one or entirely the other.
      */
     private fun best(
-        usable: List<DecoderCandidate>,
+        candidates: List<DecoderCandidate>,
         codec: VideoCodecType,
         wantTenBit: Boolean,
-    ): DecoderCandidate? = usable
+    ): DecoderCandidate? = candidates
         .filter { it.codec == codec }
         .sortedWith(
-            compareByDescending<DecoderCandidate> { it.hardwareAccelerated }
-                .thenByDescending { it.supportsRequestedFrameRate }
+            compareByDescending<DecoderCandidate> { it.supportsRequestedFrameRate }
                 .thenByDescending { wantTenBit && it.supportsTenBit }
                 .thenByDescending { it.maxSupportedInstances }
                 .thenBy { it.name },
