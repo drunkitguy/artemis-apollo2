@@ -46,6 +46,10 @@ public class PreferenceConfiguration {
     public static final String BITRATE_PREF_STRING = "seekbar_bitrate_kbps";
     private static final String BITRATE_PREF_OLD_STRING = "seekbar_bitrate";
     private static final String METERED_BITRATE_PREF_STRING = "seekbar_metered_bitrate_kbps";
+    // New key. Controls the in-stream offer to reconnect at a reduced bitrate when the
+    // connection degrades. No existing key is touched: the reduced bitrate rides on the
+    // launch intent for one session and never overwrites BITRATE_PREF_STRING.
+    private static final String OFFER_REDUCED_BITRATE_RECONNECT_PREF_STRING = "checkbox_offer_reduced_bitrate_reconnect";
     private static final String ENABLE_ULTRA_LOW_LATENCY_PREF_STRING = "checkbox_ultra_low_latency";
     private static final String ENFORCE_DISPLAY_MODE_PREF_STRING = "checkbox_enforce_display_mode";
     private static final String USE_VIRTUAL_DISPLAY_PREF_STRING = "checkbox_use_virtual_display";
@@ -151,6 +155,7 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_RESUME_WITHOUT_CONFIRM = false;
     private static final boolean DEFAULT_SOPS = true;
     private static final boolean DEFAULT_DISABLE_TOASTS = false;
+    private static final boolean DEFAULT_OFFER_REDUCED_BITRATE_RECONNECT = true;
     private static final boolean DEFAULT_HOST_AUDIO = false;
     private static final int DEFAULT_DEADZONE = 5;
     private static final int DEFAULT_OPACITY = 90;
@@ -237,6 +242,7 @@ public class PreferenceConfiguration {
     public String customResolution;
     public String customRefreshRate;
     public int meteredBitrate;
+    public boolean offerReducedBitrateReconnect;
     public FormatOption videoFormat;
     public int framePacingWarpFactor = 0;
     public int deadzonePercentage;
@@ -879,6 +885,7 @@ private static int getFramePacingValue(Context context) {
 
         // Checkbox preferences
         config.disableWarnings = prefs.getBoolean(DISABLE_TOASTS_PREF_STRING, DEFAULT_DISABLE_TOASTS);
+        config.offerReducedBitrateReconnect = prefs.getBoolean(OFFER_REDUCED_BITRATE_RECONNECT_PREF_STRING, DEFAULT_OFFER_REDUCED_BITRATE_RECONNECT);
         config.enforceDisplayMode = prefs.getBoolean(ENFORCE_DISPLAY_MODE_PREF_STRING, DEFAULT_ENFORCE_DISPLAY_MODE);
         config.useVirtualDisplay = prefs.getBoolean(USE_VIRTUAL_DISPLAY_PREF_STRING, DEFAULT_USE_VIRTUAL_DISPLAY);
         config.enableUltraLowLatency = prefs.getBoolean(ENABLE_ULTRA_LOW_LATENCY_PREF_STRING, DEFAULT_ENABLE_ULTRA_LOW_LATENCY);

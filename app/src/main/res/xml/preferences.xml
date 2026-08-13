@@ -51,6 +51,12 @@
             android:summary="@string/summary_bitrate_test"
             android:title="@string/title_bitrate_test"
             app:iconSpaceReserved="false" />
+        <com.limelight.preferences.VlTogglePreference
+            android:defaultValue="true"
+            android:key="checkbox_offer_reduced_bitrate_reconnect"
+            android:summary="@string/summary_offer_reduced_bitrate_reconnect"
+            android:title="@string/title_offer_reduced_bitrate_reconnect"
+            app:iconSpaceReserved="false" />
         <com.limelight.preferences.SeekBarPreference
             android:dialogMessage="@string/summary_seekbar_metered_bitrate"
             android:key="seekbar_metered_bitrate_kbps"

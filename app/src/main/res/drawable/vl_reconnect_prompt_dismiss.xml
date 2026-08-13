@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Secondary action on the in-stream reconnect offer. Fixed colours: drawn over video. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#40FFFFFF" />
+            <corners android:radius="@dimen/vl_control_radius" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#24FFFFFF" />
+            <corners android:radius="@dimen/vl_control_radius" />
+        </shape>
+    </item>
+</selector>

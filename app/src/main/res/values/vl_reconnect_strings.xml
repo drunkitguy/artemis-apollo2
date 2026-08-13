@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connection-degraded reconnect offer. Prefixed to avoid collisions with the
+         existing Artemis string table. -->
+
+    <string name="vl_reconnect_title">Connection is struggling</string>
+    <!-- %1$s is a formatted bitrate, e.g. "12 Mbps". -->
+    <string name="vl_reconnect_message">Reconnect at %1$s?</string>
+    <string name="vl_reconnect_accept">Reconnect</string>
+    <string name="vl_reconnect_dismiss">Not now</string>
+    <string name="vl_reconnect_reconnecting">Reconnecting at %1$s…</string>
+
+    <!-- The preference that controls all of the above. -->
+    <string name="title_offer_reduced_bitrate_reconnect">Offer to reconnect at a lower bitrate</string>
+    <string name="summary_offer_reduced_bitrate_reconnect">If the connection stays poor for several seconds, offer once to restart the stream at about 60% of the current bitrate. Nothing changes unless you accept, and your saved bitrate is left alone.</string>
+</resources>

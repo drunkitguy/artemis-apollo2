@@ -28,6 +28,9 @@ import com.limelight.binding.video.CrashListener;
 import com.limelight.binding.video.MediaCodecDecoderRenderer;
 import com.limelight.binding.video.MediaCodecHelper;
 import com.limelight.binding.video.PerfOverlayListener;
+import com.limelight.binding.video.StreamCounters;
+import com.limelight.bitratetest.BitrateTestAnalyzer;
+import com.limelight.reconnect.ReconnectPromptPolicy;
 import com.limelight.nvstream.NvConnection;
 import com.limelight.nvstream.NvConnectionListener;
 import com.limelight.nvstream.StreamConfiguration;
@@ -82,6 +85,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.PersistableBundle;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Rational;
@@ -224,6 +228,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private boolean overlayToggleZoomButtonShown;
     private TextView notificationOverlayView;
     private int requestedNotificationOverlayVisibility = View.GONE;
+
+    // ---- Connection-degraded reconnect offer ----
+    // Detection is not done here: it hangs off the CONN_STATUS_POOR / CONN_STATUS_OKAY
+    // callback moonlight-common-c already delivers to connectionStatusUpdate(). Nothing
+    // below runs per frame or takes a lock.
+    private final ReconnectPromptPolicy reconnectPolicy = new ReconnectPromptPolicy();
+    private View reconnectPromptView;
+    private TextView reconnectPromptMessageView;
+    private StreamCounters poorEpisodeBaselineCounters;
+    private int activeBitrateKbps;
+    private boolean reconnectInProgress = false;
     private View performanceOverlayView;
 
     private TextView performanceOverlayLite;
@@ -267,6 +282,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     public static final String EXTRA_VDISPLAY = "VirtualDisplay";
     public static final String EXTRA_SERVER_COMMANDS = "ServerCommands";
     public static final String EXTRA_DISPLAY_ID = "DisplayID";
+    // Session-only bitrate for a stream relaunched by the reconnect offer below. It rides
+    // on the launch intent and is deliberately never written back to the saved bitrate
+    // preference, so quitting and starting again returns to the user's own setting.
+    public static final String EXTRA_BITRATE_OVERRIDE_KBPS = "BitrateOverrideKbps";
 
     public static final String CLIPBOARD_IDENTIFIER = "ArtemisStreaming";
 
@@ -574,6 +593,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         serverCommands = Game.this.getIntent().getStringArrayListExtra(EXTRA_SERVER_COMMANDS);
         boolean appSupportsHdr = Game.this.getIntent().getBooleanExtra(EXTRA_APP_HDR, false);
         byte[] derCertData = Game.this.getIntent().getByteArrayExtra(EXTRA_SERVER_CERT);
+        int bitrateOverrideKbps = Game.this.getIntent().getIntExtra(EXTRA_BITRATE_OVERRIDE_KBPS, 0);
 
         app = new NvApp(appName != null ? appName : "app", appUUID, appId, appSupportsHdr);
 
@@ -783,6 +803,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             chosenFrameRate *= prefConfig.framePacingWarpFactor;
         }
 
+        // The bitrate this session actually runs at. A relaunch from the reconnect offer
+        // supplies its own reduced value on the intent; otherwise this is exactly the
+        // number the stream used before this feature existed.
+        activeBitrateKbps = bitrateOverrideKbps > 0
+                ? bitrateOverrideKbps
+                : (isMetered ? prefConfig.meteredBitrate : prefConfig.bitrate);
+
         StreamConfiguration config = new StreamConfiguration.Builder()
                 .setResolution(
                         displayWidth,
@@ -794,7 +821,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 .setResolutionScaleFactor(prefConfig.resolutionScaleFactor)
                 .setApp(app)
                 .setEnableUltraLowLatency(prefConfig.enableUltraLowLatency)
-                .setBitrate(isMetered ? prefConfig.meteredBitrate: prefConfig.bitrate)
+                .setBitrate(activeBitrateKbps)
                 .setEnableSops(prefConfig.enableSops)
                 .enableLocalAudioPlayback(prefConfig.playHostAudio)
                 .setMaxPacketSize(1392)
@@ -814,6 +841,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 httpsPort, uniqueId, config,
                 PlatformBinding.getCryptoProvider(this), serverCert);
         controllerHandler = new ControllerHandler(this, conn, this, prefConfig);
+
+        initReconnectPrompt(bitrateOverrideKbps > 0);
+
         keyboardTranslator = new KeyboardTranslator(prefConfig);
 
         InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
@@ -1709,7 +1739,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     protected void onDestroy() {
         super.onDestroy();
 
-        instance = null;
+        // A reconnect relaunches Game, and the new instance's onCreate runs before this
+        // one's onDestroy. Only clear the static if it still points at us.
+        if (instance == this) {
+            instance = null;
+        }
         timerHandler.removeCallbacksAndMessages(null);
 
         if (prefConfig.enableFullExDisplay) handleDisplayRemoved();
@@ -1770,6 +1804,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         SpinnerDialog.closeDialogs(this);
         Dialog.closeDialogs();
+
+        // The session is going away below, so the reconnect offer goes with it. This also
+        // covers the user quitting while the prompt is on screen.
+        hideReconnectPrompt();
+        timerHandler.removeCallbacks(evaluateReconnectOffer);
 
         if (virtualController != null) {
             virtualController.hide();
@@ -3640,6 +3679,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                // The reconnect offer hangs off this same signal. It is handled before the
+                // warning check on purpose: "disable warning messages" hides the on-screen
+                // banner, and the offer has its own preference to turn it off.
+                handleConnectionStatusForReconnectOffer(connectionStatus);
+
                 if (prefConfig.disableWarnings) {
                     return;
                 }
@@ -3665,6 +3709,207 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         });
     }
 
+    // ------------------------------------------------------------------------------
+    // Connection-degraded reconnect offer.
+    //
+    // There is no way to change the bitrate of a running session in this protocol: no
+    // client-to-host bitrate message, no RTSP verb to renegotiate one, and ANNOUNCE sets
+    // minimumBitrateKbps == maximumBitrateKbps precisely so the host does not adapt by
+    // itself. The only actuator is tearing the session down and launching it again, which
+    // is far too disruptive to do behind the user's back -- and automatic bitrate scaling
+    // in this protocol family was removed once already because it oscillated.
+    //
+    // So this is not a control loop. It is one offer, made at most once per session, that
+    // the user either takes or does not. Detection reuses the CONN_STATUS_POOR signal
+    // moonlight-common-c already delivers; the only extra work is a single delayed
+    // Runnable per degradation episode and two reads of counters the renderer already
+    // keeps. Nothing here runs on the decode or render path.
+    // ------------------------------------------------------------------------------
+
+    private void initReconnectPrompt(boolean isReducedBitrateSession) {
+        reconnectPromptView = findViewById(R.id.reconnectPromptOverlay);
+        reconnectPromptMessageView = findViewById(R.id.reconnectPromptMessage);
+
+        // Reasons never to offer:
+        //  - the user turned the feature off;
+        //  - this session is itself the result of a reconnect. That is what keeps a single
+        //    offer from turning into a hunt: one reduction per launch, then nothing;
+        //  - the stream is on an external display, where the launch is carried by
+        //    ActivityOptions this relaunch cannot reproduce, so a reconnect would move the
+        //    session to the wrong screen.
+        reconnectPolicy.setEnabled(prefConfig.offerReducedBitrateReconnect
+                && !isReducedBitrateSession
+                && !onExternelDisplay);
+
+        if (reconnectPromptView == null) {
+            reconnectPolicy.setEnabled(false);
+            return;
+        }
+
+        View accept = findViewById(R.id.reconnectPromptAccept);
+        if (accept != null) {
+            accept.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    hideReconnectPrompt();
+                    reconnectAtReducedBitrate();
+                }
+            });
+        }
+
+        View dismiss = findViewById(R.id.reconnectPromptDismiss);
+        if (dismiss != null) {
+            dismiss.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    // Dismissed means dismissed: the policy has already spent its one
+                    // offer, so this session will not ask again.
+                    hideReconnectPrompt();
+                }
+            });
+        }
+    }
+
+    /**
+     * Called from connectionStatusUpdate() on the UI thread. Arms exactly one delayed
+     * check per degradation episode -- no polling, no background thread.
+     */
+    private void handleConnectionStatusForReconnectOffer(int connectionStatus) {
+        if (!reconnectPolicy.isEnabled() || reconnectInProgress) {
+            return;
+        }
+
+        long now = SystemClock.uptimeMillis();
+
+        if (connectionStatus == MoonBridge.CONN_STATUS_POOR) {
+            if (reconnectPolicy.connectionPoor(now)) {
+                // Leading edge of an episode. Take the counter baseline we will difference
+                // when the delay expires. This is the same read-only snapshot the bitrate
+                // test uses; it takes no lock and costs a handful of field reads.
+                poorEpisodeBaselineCounters = decoderRenderer != null ? decoderRenderer.snapshotCounters() : null;
+
+                timerHandler.removeCallbacks(evaluateReconnectOffer);
+                timerHandler.postDelayed(evaluateReconnectOffer, reconnectPolicy.evaluationDelayMs(now));
+            }
+        }
+        else if (connectionStatus == MoonBridge.CONN_STATUS_OKAY) {
+            // Recovered before the delay expired: this was a blip, so drop the whole
+            // episode. Nothing was shown and nothing is remembered.
+            reconnectPolicy.connectionOkay(now);
+            poorEpisodeBaselineCounters = null;
+            timerHandler.removeCallbacks(evaluateReconnectOffer);
+        }
+    }
+
+    private final Runnable evaluateReconnectOffer = new Runnable() {
+        @Override
+        public void run() {
+            long now = SystemClock.uptimeMillis();
+
+            // Anything that means the user is not sitting in front of a live stream right
+            // now cancels the offer outright rather than deferring it. Backgrounding
+            // already ends the session in onStop(), so `connected` covers that too.
+            if (!connected || connecting || reconnectInProgress || isFinishing() || isHidingOverlays) {
+                return;
+            }
+
+            if (!reconnectPolicy.shouldOffer(now)) {
+                return;
+            }
+
+            // Nothing to offer if the reduction would be pointless or trivial.
+            if (!ReconnectPromptPolicy.isReductionWorthwhile(activeBitrateKbps)) {
+                return;
+            }
+
+            // Corroborate the host's verdict against the renderer's own counters before
+            // interrupting anyone. If the decoder never gave us a baseline we fall back to
+            // trusting the connection status on its own.
+            StreamCounters baseline = poorEpisodeBaselineCounters;
+            if (baseline != null && decoderRenderer != null) {
+                StreamCounters delta = decoderRenderer.snapshotCounters().minus(baseline);
+                if (!ReconnectPromptPolicy.degradationCorroborated(delta.framesReceived, delta.framesLost)) {
+                    return;
+                }
+            }
+
+            showReconnectPrompt();
+        }
+    };
+
+    private final Runnable autoDismissReconnectPrompt = new Runnable() {
+        @Override
+        public void run() {
+            hideReconnectPrompt();
+        }
+    };
+
+    private void showReconnectPrompt() {
+        int reducedKbps = ReconnectPromptPolicy.reducedBitrateKbps(activeBitrateKbps);
+
+        if (reconnectPromptMessageView != null) {
+            reconnectPromptMessageView.setText(getResources().getString(
+                    R.string.vl_reconnect_message, BitrateTestAnalyzer.mbps(reducedKbps)));
+        }
+        reconnectPromptView.setVisibility(View.VISIBLE);
+
+        // Spend the offer the moment it is shown. Accepted, dismissed or ignored, this
+        // session will not ask a second time.
+        reconnectPolicy.offerMade();
+        poorEpisodeBaselineCounters = null;
+
+        timerHandler.removeCallbacks(autoDismissReconnectPrompt);
+        timerHandler.postDelayed(autoDismissReconnectPrompt, ReconnectPromptPolicy.AUTO_DISMISS_MS);
+    }
+
+    private void hideReconnectPrompt() {
+        if (timerHandler != null) {
+            timerHandler.removeCallbacks(autoDismissReconnectPrompt);
+        }
+        if (reconnectPromptView != null) {
+            reconnectPromptView.setVisibility(View.GONE);
+        }
+    }
+
+    /**
+     * Relaunches this stream at the reduced bitrate. Nothing bespoke happens here: the
+     * activity finishes, which runs the ordinary onStop() teardown (stopConnection(), and
+     * no quitApp() because quitOnStop is false), and a fresh Game activity starts the
+     * session through the same path it always does. The two are serialised by
+     * NvConnection's static connectionAllowed semaphore, so the new connection cannot
+     * begin before the old one has finished stopping.
+     *
+     * If the relaunched session fails to connect, it fails through the normal
+     * stageFailed() / connectionTerminated() handling. It cannot loop, because a session
+     * started with EXTRA_BITRATE_OVERRIDE_KBPS never offers again.
+     */
+    private void reconnectAtReducedBitrate() {
+        if (reconnectInProgress || isFinishing()) {
+            return;
+        }
+        if (!ReconnectPromptPolicy.isReductionWorthwhile(activeBitrateKbps)) {
+            return;
+        }
+
+        int reducedKbps = ReconnectPromptPolicy.reducedBitrateKbps(activeBitrateKbps);
+        reconnectInProgress = true;
+
+        // Session only. The saved bitrate preference (seekbar_bitrate_kbps) is left exactly
+        // as the user set it -- the reduced number lives on this intent and dies with it.
+        Intent relaunch = new Intent(getIntent());
+        relaunch.putExtra(EXTRA_BITRATE_OVERRIDE_KBPS, reducedKbps);
+
+        Toast.makeText(this, getResources().getString(
+                R.string.vl_reconnect_reconnecting, BitrateTestAnalyzer.mbps(reducedKbps)),
+                Toast.LENGTH_SHORT).show();
+
+        // finish() first: Game is a singleTask activity, and a finishing instance is not a
+        // candidate for reuse, so the relaunch creates a new one instead of arriving at
+        // this one's (unimplemented) onNewIntent.
+        finish();
+        startActivity(relaunch);
+    }
+
     @Override
     public void connectionStarted() {
         runOnUiThread(new Runnable() {
@@ -3678,6 +3923,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 connected = true;
                 connecting = false;
                 updatePipAutoEnter();
+
+                // Start the reconnect offer's startup grace period here rather than in
+                // onCreate: the first seconds of an actual stream are the noisy ones.
+                reconnectPolicy.sessionStarted(SystemClock.uptimeMillis());
 
                 // Hide the mouse cursor now after a short delay.
                 // Doing it before dismissing the spinner seems to be undone
