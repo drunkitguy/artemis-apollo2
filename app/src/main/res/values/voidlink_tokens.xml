@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    VoidLink design tokens (light / default).
+    Dark-mode overrides for the colors live in res/values-night/voidlink_tokens.xml.
+    This file is additive: it does not modify colors.xml, dimens.xml or styles.xml.
+-->
+<resources>
+
+    <!-- ==================== Colors ==================== -->
+    <color name="vl_background">#FFF2F2F7</color>
+    <color name="vl_card">#FFFFFFFF</color>
+    <color name="vl_accent">#FF0A84FF</color>
+    <color name="vl_accent_fill">#FFE8F1FE</color>
+    <color name="vl_label">#FF000000</color>
+    <color name="vl_secondary_label">#FF6E6E73</color>
+    <color name="vl_separator">#FFE5E5EA</color>
+    <color name="vl_online">#FF30D158</color>
+    <color name="vl_offline">#FF8E8E93</color>
+    <color name="vl_neutral_fill">#FFEFEFF4</color>
+    <color name="vl_scrim">#66000000</color>
+
+    <!-- Supporting colors used by the shared drawables below.
+         Cards are borderless in light mode and get a hairline border at night. -->
+    <color name="vl_card_stroke">#00000000</color>
+    <color name="vl_accent_fill_pressed">#FFD2E4FD</color>
+    <color name="vl_neutral_fill_pressed">#FFE1E1E8</color>
+
+    <!-- ==================== Dimens ==================== -->
+    <dimen name="vl_card_radius">26dp</dimen>
+    <dimen name="vl_tile_radius">18dp</dimen>
+    <dimen name="vl_control_radius">10dp</dimen>
+
+    <dimen name="vl_space_xs">4dp</dimen>
+    <dimen name="vl_space_s">8dp</dimen>
+    <dimen name="vl_space_m">12dp</dimen>
+    <dimen name="vl_space_l">16dp</dimen>
+    <dimen name="vl_space_xl">20dp</dimen>
+    <dimen name="vl_space_xxl">24dp</dimen>
+
+    <!-- ==================== Text styles ==================== -->
+    <style name="VlText" parent="" />
+
+    <style name="VlText.Display">
+        <item name="android:textSize">34sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/vl_label</item>
+    </style>
+
+    <style name="VlText.CardTitle">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/vl_label</item>
+    </style>
+
+    <style name="VlText.Body">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/vl_label</item>
+    </style>
+
+    <style name="VlText.Caption">
+        <item name="android:textSize">13sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/vl_secondary_label</item>
+    </style>
+
+    <style name="VlText.Button">
+        <item name="android:textSize">17sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/vl_accent</item>
+    </style>
+
+</resources>

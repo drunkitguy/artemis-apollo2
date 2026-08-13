@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings introduced by the VoidLink restyle. Kept in their own file so the
+     translated strings.xml is untouched. -->
+<resources>
+    <string name="vl_hosts_title">Hosts</string>
+    <string name="vl_action_connect">Connect</string>
+    <string name="vl_action_pair_with_pin">Pair with PIN</string>
+    <string name="vl_action_wake_with_lan">Wake with LAN</string>
+    <string name="vl_action_refreshing">Refreshing…</string>
+</resources>

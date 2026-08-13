@@ -317,6 +317,12 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
         findViewById(R.id.profilesButton)
             .setOnClickListener(v -> startActivity(new Intent(this, ProfilesActivity.class)));
 
+        // Leading nav bar action returns to the host list
+        View backButton = findViewById(R.id.appViewBackButton);
+        if (backButton != null) {
+            backButton.setOnClickListener(v -> finish());
+        }
+
         showHiddenApps = getIntent().getBooleanExtra(SHOW_HIDDEN_APPS_EXTRA, false);
         uuidString = getIntent().getStringExtra(UUID_EXTRA);
 

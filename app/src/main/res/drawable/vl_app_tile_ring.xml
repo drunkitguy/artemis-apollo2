@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Accent ring drawn over the box art tile of the currently running app -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <stroke
+        android:width="3dp"
+        android:color="@color/vl_accent" />
+    <corners android:radius="@dimen/vl_tile_radius" />
+</shape>

@@ -63,6 +63,7 @@ import android.widget.Toast;
 import android.widget.AdapterView.AdapterContextMenuInfo;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
 import org.xmlpull.v1.XmlPullParserException;
@@ -204,6 +205,42 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
             noPcFoundLayout.setVisibility(View.INVISIBLE);
         }
         pcGridAdapter.notifyDataSetChanged();
+
+        applyVoidLinkWindowChrome();
+    }
+
+    /**
+     * Paints the system bars and the window background with the VoidLink page
+     * background so the light Hosts screen isn't framed by dark bars. Done here
+     * rather than in the shared theme to keep the change scoped to this screen.
+     */
+    private void applyVoidLinkWindowChrome() {
+        int background = ContextCompat.getColor(this, R.color.vl_background);
+
+        getWindow().setBackgroundDrawableResource(R.color.vl_background);
+        getWindow().setStatusBarColor(background);
+        getWindow().setNavigationBarColor(background);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            boolean nightMode = (getResources().getConfiguration().uiMode &
+                    Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+
+            View decorView = getWindow().getDecorView();
+            int visibility = decorView.getSystemUiVisibility();
+            if (nightMode) {
+                visibility &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    visibility &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
+            }
+            else {
+                visibility |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    visibility |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
+            }
+            decorView.setSystemUiVisibility(visibility);
+        }
     }
 
     @Override
@@ -279,6 +316,27 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
                 Service.BIND_AUTO_CREATE);
 
         pcGridAdapter = new PcGridAdapter(this, PreferenceConfiguration.readPreferences(this));
+        pcGridAdapter.setHostActionListener(new PcGridAdapter.HostActionListener() {
+            @Override
+            public void onHostActionClicked(ComputerObject computer, View anchorView) {
+                ComputerDetails details = computer.details;
+
+                if (details.state == ComputerDetails.State.UNKNOWN) {
+                    // We don't know what we can do with this PC yet, so show the
+                    // context menu just like tapping the card does.
+                    anchorView.showContextMenu();
+                }
+                else if (details.state == ComputerDetails.State.OFFLINE) {
+                    doWakeOnLan(details);
+                }
+                else if (details.pairState != PairState.PAIRED) {
+                    doPair(details, null, null);
+                }
+                else {
+                    doAppList(details, false, false);
+                }
+            }
+        });
 
         initializeViews();
     }

@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Responsive host grid: ~320dp minimum per card, so phones get one column
+     and tablets get two or more. -->
 <GridView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/fragmentView"
     android:layout_width="fill_parent"
     android:layout_height="fill_parent"
     android:numColumns="auto_fit"
-    android:columnWidth="160dp"
-    android:stretchMode="spacingWidthUniform"
+    android:columnWidth="320dp"
+    android:stretchMode="columnWidth"
     android:focusable="true"
     android:focusableInTouchMode="true"
     android:nextFocusLeft="@id/settingsButton"
     android:clipToPadding="false"
-    android:gravity="center"/>
+    android:paddingLeft="@dimen/vl_space_s"
+    android:paddingTop="@dimen/vl_space_s"
+    android:paddingRight="@dimen/vl_space_s"
+    android:paddingBottom="@dimen/vl_space_xxl"
+    android:gravity="center" />

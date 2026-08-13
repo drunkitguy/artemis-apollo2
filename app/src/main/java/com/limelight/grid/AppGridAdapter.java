@@ -28,8 +28,8 @@ import java.util.Set;
 @SuppressWarnings("unchecked")
 public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
     private static final int ART_WIDTH_PX = 300;
-    private static final int SMALL_WIDTH_DP = 110;
-    private static final int LARGE_WIDTH_DP = 170;
+    private static final int SMALL_WIDTH_DP = 116;
+    private static final int LARGE_WIDTH_DP = 172;
 
     private final ComputerDetails computer;
     private final String uniqueId;
@@ -167,20 +167,51 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
         allApps.clear();
     }
 
+    private static String getInitial(String name) {
+        if (name == null) {
+            return "";
+        }
+
+        String trimmedName = name.trim();
+        if (trimmedName.isEmpty()) {
+            return "";
+        }
+
+        // Use the whole code point so we don't split surrogate pairs
+        int codePoint = trimmedName.codePointAt(0);
+        return new String(Character.toChars(Character.toUpperCase(codePoint)));
+    }
+
     @Override
     public void populateView(View parentView, ImageView imgView, RelativeLayout gridMask, ProgressBar prgView, TextView txtView, ImageView overlayView, AppView.AppObject obj) {
         // Let the cached asset loader handle it
         loader.populateImageView(obj.app, imgView, txtView);
 
-        if (obj.isRunning) {
-            // Show the play button overlay
-            overlayView.setImageResource(R.drawable.ic_play);
-            overlayView.setVisibility(View.VISIBLE);
-            gridMask.setBackgroundColor(0x66000000);
+        // The asset loader puts the full app name in the placeholder text view and
+        // manages its visibility. In the VoidLink style, the placeholder shows just
+        // the app's initial over a neutral fill, and the full name always appears
+        // on the scrim at the bottom of the tile.
+        txtView.setText(getInitial(obj.app.getAppName()));
+
+        TextView nameView = parentView.findViewById(R.id.grid_name);
+        if (nameView != null) {
+            nameView.setText(obj.app.getAppName());
         }
-        else {
+
+        // The running app gets an accent ring around the tile (the grid mask carries
+        // the ring drawable in the layout) plus a small "Running" pill.
+        int runningVisibility = obj.isRunning ? View.VISIBLE : View.GONE;
+
+        gridMask.setVisibility(runningVisibility);
+
+        View runningPill = parentView.findViewById(R.id.grid_running_pill);
+        if (runningPill != null) {
+            runningPill.setVisibility(runningVisibility);
+        }
+
+        // The play overlay is replaced by the ring and pill treatment above
+        if (overlayView != null) {
             overlayView.setVisibility(View.GONE);
-            gridMask.setBackgroundColor(0x00000000);
         }
 
         if (obj.isHidden) {

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- VoidLink design tokens: dark mode color overrides only.
+     Dimens and text styles are inherited from res/values/voidlink_tokens.xml. -->
+<resources>
+
+    <color name="vl_background">#FF000000</color>
+    <color name="vl_card">#FF1C1C1E</color>
+    <color name="vl_accent">#FF0A84FF</color>
+    <color name="vl_accent_fill">#FF0A2540</color>
+    <color name="vl_label">#FFFFFFFF</color>
+    <color name="vl_secondary_label">#FFA1A1A6</color>
+    <color name="vl_separator">#FF38383A</color>
+    <color name="vl_online">#FF30D158</color>
+    <color name="vl_offline">#FF8E8E93</color>
+    <color name="vl_neutral_fill">#FF2C2C2E</color>
+    <color name="vl_scrim">#66000000</color>
+
+    <!-- Subtle hairline border around cards at night -->
+    <color name="vl_card_stroke">#FF38383A</color>
+    <color name="vl_accent_fill_pressed">#FF12365C</color>
+    <color name="vl_neutral_fill_pressed">#FF3A3A3C</color>
+
+</resources>

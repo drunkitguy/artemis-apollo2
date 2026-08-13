@@ -1,47 +1,116 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+    VoidLink-style box art tile.
+
+    Sizing: 172dp x 224dp outer with 8dp padding leaves a 156dp x 208dp
+    card, which is exactly 3:4 portrait box art.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="170dp"
-    android:layout_height="220dp">
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="172dp"
+    android:layout_height="224dp"
+    android:padding="@dimen/vl_space_s">
 
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_margin="10dp"
-        app:cardCornerRadius="12dp"
-        app:cardElevation="8dp"
-        app:cardMaxElevation="8dp">
+        app:cardBackgroundColor="@color/vl_card"
+        app:cardCornerRadius="@dimen/vl_tile_radius"
+        app:cardElevation="0dp"
+        app:cardMaxElevation="0dp"
+        app:cardPreventCornerOverlap="false"
+        app:cardUseCompatPadding="false">
 
         <ImageView
             android:id="@+id/grid_image"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:contentDescription="@null"
             android:cropToPadding="false"
             android:scaleType="centerCrop" />
 
-        <RelativeLayout
-            android:id="@+id/grid_mask"
+        <!--
+            Placeholder shown by the asset loader when there is no real box
+            art. It covers the whole tile with a neutral fill and shows the
+            app's initial letter (set by AppGridAdapter).
+        -->
+        <TextView
+            android:id="@+id/grid_text"
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
+            android:layout_height="match_parent"
+            android:background="@color/vl_neutral_fill"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:textColor="@color/vl_secondary_label"
+            android:textSize="52sp"
+            android:textStyle="bold" />
 
-            <ImageView
-                android:id="@+id/grid_overlay"
-                android:layout_width="50dp"
-                android:layout_height="50dp"
-                android:layout_centerHorizontal="true"
-                android:layout_marginTop="50dp" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="92dp"
+            android:layout_gravity="bottom"
+            android:background="@drawable/vl_app_tile_scrim" />
 
-            <TextView
-                android:id="@+id/grid_text"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_below="@id/grid_overlay"
-                android:layout_margin="5dp"
-                android:gravity="center|center_vertical"
-                android:background="#00FFFFFF"
-                android:textAlignment="center"
-                android:textSize="18sp" />
-        </RelativeLayout>
+        <TextView
+            android:id="@+id/grid_name"
+            style="@style/VlText.Caption"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:paddingLeft="@dimen/vl_space_s"
+            android:paddingTop="@dimen/vl_space_xs"
+            android:paddingRight="@dimen/vl_space_s"
+            android:paddingBottom="@dimen/vl_space_s"
+            android:textColor="@android:color/white" />
 
     </androidx.cardview.widget.CardView>
-</RelativeLayout>
+
+    <!--
+        Accent ring sized to the card. AppGridAdapter makes this visible
+        while this app is the one running on the host.
+    -->
+    <RelativeLayout
+        android:id="@+id/grid_mask"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/vl_app_tile_ring"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/grid_overlay"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_centerInParent="true"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+    </RelativeLayout>
+
+    <TextView
+        android:id="@+id/grid_running_pill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="@dimen/vl_space_s"
+        android:background="@drawable/vl_app_running_pill"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:paddingLeft="8dp"
+        android:paddingTop="3dp"
+        android:paddingRight="8dp"
+        android:paddingBottom="3dp"
+        android:text="Running"
+        android:textColor="@android:color/white"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        tools:ignore="HardcodedText" />
+
+</FrameLayout>

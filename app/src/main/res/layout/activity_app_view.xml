@@ -1,47 +1,68 @@
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/vl_background"
+    android:orientation="vertical"
     tools:context=".AppView">
+
+    <!-- VoidLink-style nav bar: leading action, centred host name, trailing action -->
+    <LinearLayout
+        android:id="@+id/appTopBar"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="@dimen/vl_space_s"
+        android:paddingRight="@dimen/vl_space_s">
+
+        <ImageButton
+            android:id="@+id/appViewBackButton"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/menu_button"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_menu"
+            android:tint="@color/vl_label" />
+
+        <TextView
+            android:id="@+id/appListText"
+            style="@style/VlText.CardTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:paddingLeft="@dimen/vl_space_s"
+            android:paddingRight="@dimen/vl_space_s"
+            android:preferKeepClear="true"
+            android:singleLine="true"
+            android:textColor="@color/vl_label" />
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/profilesButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:contentDescription="@string/profile_manager_choose_profile"
+            android:textColor="@color/vl_accent"
+            app:backgroundTint="@color/vl_accent_fill"
+            app:elevation="0dp"
+            app:icon="@drawable/ic_computer"
+            app:iconSize="20dp"
+            app:iconTint="@color/vl_accent" />
+
+    </LinearLayout>
 
     <FrameLayout
         android:id="@+id/appFragmentContainer"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
-        android:layout_below="@+id/appListText"
-        android:layout_alignParentStart="true"
-        android:layout_alignParentLeft="true"
-        android:layout_alignParentEnd="true"
-        android:layout_alignParentRight="true"
-        android:layout_alignParentBottom="true"
-        android:gravity="center" >
-    </FrameLayout>
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
 
-    <TextView
-        android:id="@+id/appListText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentTop="true"
-        android:layout_centerHorizontal="true"
-        android:gravity="center"
-        android:paddingTop="5dp"
-        android:paddingBottom="5dp"
-        android:preferKeepClear="true"
-        android:textSize="28sp" />
-
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/profilesButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_alignParentEnd="true"
-        android:layout_alignParentRight="true"
-        android:layout_marginBottom="24dp"
-        android:layout_marginEnd="24dp"
-        android:layout_marginRight="24dp"
-        android:contentDescription="@string/profile_manager_choose_profile"
-        android:layout_margin="16dp"
-        app:icon="@drawable/ic_profiles" />
-
-</RelativeLayout>
+</LinearLayout>
