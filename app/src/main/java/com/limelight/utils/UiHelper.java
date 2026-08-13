@@ -175,7 +175,13 @@ public class UiHelper {
                 }
             });
 
-            activity.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+            // Preserve any flags the theme already applied to the decor view (in
+            // particular the light status/navigation bar flags that back
+            // windowLightStatusBar and windowLightNavigationBar), otherwise the
+            // light system bar icons would be cleared here on Q+.
+            View decorView = activity.getWindow().getDecorView();
+            decorView.setSystemUiVisibility(decorView.getSystemUiVisibility()
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         }
     }
 

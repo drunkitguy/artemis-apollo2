@@ -6,9 +6,8 @@ import android.util.AttributeSet;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.preference.CheckBoxPreference;
 
-public class SmallIconCheckboxPreference extends CheckBoxPreference {
+public class SmallIconCheckboxPreference extends VlTogglePreference {
     public SmallIconCheckboxPreference(@NonNull Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
     }

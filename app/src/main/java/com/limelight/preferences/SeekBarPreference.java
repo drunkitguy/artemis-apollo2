@@ -7,8 +7,10 @@ import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.preference.Preference;
+import androidx.preference.PreferenceViewHolder;
 
 import com.limelight.R;
 
@@ -36,6 +38,9 @@ public class SeekBarPreference extends Preference
     private int currentValue;
 
     private final int seekbarMax;
+
+    // Whether the inline row is currently revealing its summary (the circled-i affordance).
+    private boolean summaryExpanded;
 
     public SeekBarPreference(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -67,6 +72,106 @@ public class SeekBarPreference extends Preference
         divisor = attrs.getAttributeIntValue(SEEKBAR_SCHEMA_URL, "divisor", 1);
         keyStepSize = attrs.getAttributeIntValue(SEEKBAR_SCHEMA_URL, "keyStep", 0);
         seekbarMax = maxValue - minValue;
+
+        setLayoutResource(R.layout.vl_settings_row_slider);
+    }
+
+    /** Formats a raw value the same way the dialog does, e.g. "23.0 Mbps" or "100%". */
+    private String formatValue(int value) {
+        String text;
+        if (divisor != 1) {
+            text = String.format((Locale)null, "%.1f", value / (float)divisor);
+        }
+        else {
+            text = String.valueOf(value);
+        }
+        return suffix == null ? text : text.concat(suffix.length() > 1 ? " " + suffix : suffix);
+    }
+
+    private int roundToStep(int value) {
+        int step = stepSize <= 0 ? 1 : stepSize;
+        int rounded = Math.round((float)value / step) * step;
+        if (rounded < minValue) {
+            rounded = minValue;
+        }
+        else if (rounded > maxValue) {
+            rounded = maxValue;
+        }
+        return rounded;
+    }
+
+    private int toSeekBarProgress(int value) {
+        int progress = value - minValue;
+        if (progress < 0) {
+            return 0;
+        }
+        return Math.min(progress, seekbarMax);
+    }
+
+    private void commitInlineValue(int value, SeekBar inlineBar) {
+        if (value == currentValue) {
+            return;
+        }
+        if (!callChangeListener(value)) {
+            inlineBar.setProgress(toSeekBarProgress(currentValue));
+            return;
+        }
+        currentValue = value;
+        if (shouldPersist()) {
+            persistInt(value);
+        }
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull PreferenceViewHolder holder) {
+        super.onBindViewHolder(holder);
+
+        if (shouldPersist()) {
+            currentValue = getPersistedInt(defaultValue);
+        }
+
+        final TextView inlineValueText = (TextView) holder.findViewById(R.id.vl_settings_slider_value);
+        if (inlineValueText != null) {
+            inlineValueText.setText(formatValue(currentValue));
+        }
+
+        final SeekBar inlineBar = (SeekBar) holder.findViewById(R.id.vl_settings_seekbar);
+        if (inlineBar != null) {
+            // Detach first: this view may be recycled from another row.
+            inlineBar.setOnSeekBarChangeListener(null);
+            inlineBar.setMax(seekbarMax);
+            if (keyStepSize != 0) {
+                inlineBar.setKeyProgressIncrement(keyStepSize);
+            }
+            inlineBar.setProgress(toSeekBarProgress(currentValue));
+            inlineBar.setEnabled(isEnabled());
+            inlineBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                    int value = roundToStep(progress + minValue);
+                    if (value - minValue != progress) {
+                        bar.setProgress(toSeekBarProgress(value));
+                        return;
+                    }
+                    if (inlineValueText != null) {
+                        inlineValueText.setText(formatValue(value));
+                    }
+                }
+
+                @Override
+                public void onStartTrackingTouch(SeekBar bar) {}
+
+                @Override
+                public void onStopTrackingTouch(SeekBar bar) {
+                    commitInlineValue(roundToStep(bar.getProgress() + minValue), bar);
+                }
+            });
+        }
+
+        VlSettingsRowBinder.bindRow(this, holder, summaryExpanded, v -> {
+            summaryExpanded = !summaryExpanded;
+            notifyChanged();
+        });
     }
 
     protected AlertDialog getDialog() {
@@ -151,6 +256,9 @@ public class SeekBarPreference extends Preference
                 currentValue = seekBar.getProgress() + minValue;
                 persistInt(currentValue);
                 callChangeListener(currentValue);
+
+                // Refresh the inline slider row with the value chosen in the dialog.
+                notifyChanged();
             }
 
             dialog.dismiss();

@@ -15,6 +15,9 @@
     <color name="vl_neutral_fill">#FF2C2C2E</color>
     <color name="vl_scrim">#66000000</color>
 
+    <!-- Dark background: keep the light system bar icons -->
+    <bool name="vl_light_system_bars">false</bool>
+
     <!-- Subtle hairline border around cards at night -->
     <color name="vl_card_stroke">#FF38383A</color>
     <color name="vl_accent_fill_pressed">#FF12365C</color>

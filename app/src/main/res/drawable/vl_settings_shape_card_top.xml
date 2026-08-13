@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/vl_card" />
+    <corners
+        android:topLeftRadius="@dimen/vl_card_radius"
+        android:topRightRadius="@dimen/vl_card_radius"
+        android:bottomLeftRadius="0dp"
+        android:bottomRightRadius="0dp" />
+</shape>

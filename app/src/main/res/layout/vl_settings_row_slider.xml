@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- VoidLink slider row: label left, current value in accent right, slider underneath. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="@dimen/vl_space_l"
+    android:layout_marginEnd="@dimen/vl_space_l"
+    android:background="@drawable/vl_settings_bg_card_middle"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/vl_space_l"
+    android:paddingEnd="@dimen/vl_space_s"
+    android:paddingTop="@dimen/vl_space_m"
+    android:paddingBottom="@dimen/vl_space_s">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@android:id/title"
+            style="@style/VlText.Body"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="2" />
+
+        <TextView
+            android:id="@+id/vl_settings_slider_value"
+            style="@style/VlText.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/vl_space_s"
+            android:maxLines="1"
+            android:textColor="@color/vl_accent" />
+
+        <ImageView
+            android:id="@+id/vl_settings_info"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="@dimen/vl_space_xs"
+            android:layout_marginEnd="@dimen/vl_space_xs"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/vl_settings_more_info"
+            android:padding="8dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/vl_settings_ic_info" />
+
+    </LinearLayout>
+
+    <SeekBar
+        android:id="@+id/vl_settings_seekbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/vl_space_xs"
+        android:layout_marginEnd="@dimen/vl_space_s"
+        android:progressBackgroundTint="@color/vl_neutral_fill"
+        android:progressTint="@color/vl_accent"
+        android:thumbTint="@color/vl_accent" />
+
+    <TextView
+        android:id="@android:id/summary"
+        style="@style/VlText.Caption"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/vl_space_xs"
+        android:layout_marginBottom="@dimen/vl_space_s"
+        android:layout_marginEnd="@dimen/vl_space_s"
+        android:visibility="gone" />
+
+</LinearLayout>

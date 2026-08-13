@@ -19,6 +19,29 @@
         <!-- All customizations that are NOT specific to a particular API-level can go here. -->
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <!-- VoidLink: light page chrome. The matching dark values are resolved
+             automatically from res/values-night/voidlink_tokens.xml. -->
+        <item name="android:statusBarColor">@color/vl_background</item>
+        <item name="android:navigationBarColor">@color/vl_background</item>
+        <!-- Deliberately left dark: AppBaseTheme is a *dark* Material theme, so
+             dialogs, popup menus and the host context menu draw light text on
+             ?android:colorBackground. Flipping this to a light color would make
+             those unreadable. Screen backgrounds use @color/vl_background. -->
+        <item name="android:colorBackground">#1A1A1A</item>
+        <item name="android:windowBackground">@color/vl_background</item>
+    </style>
+
+    <!--
+        Pre-restyle dark chrome. Applied to the screens that have not been
+        converted to the VoidLink light palette yet, so they keep rendering
+        exactly as they did before AppTheme went light. Its parent is
+        AppBaseTheme (not AppTheme), so it never inherits the light system bar
+        flags. Drop the android:theme from the manifest entry once a screen is
+        restyled.
+    -->
+    <style name="LegacyDarkTheme" parent="AppBaseTheme">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:statusBarColor">#1A1A1A</item>
         <item name="android:navigationBarColor">#1A1A1A</item>
         <item name="android:colorBackground">#1A1A1A</item>

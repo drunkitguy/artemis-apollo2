@@ -25,6 +25,12 @@
     <color name="vl_accent_fill_pressed">#FFD2E4FD</color>
     <color name="vl_neutral_fill_pressed">#FFE1E1E8</color>
 
+    <!-- ==================== System bars ==================== -->
+    <!-- true = dark icons in the status / navigation bar (needed on the light
+         background). Overridden to false in res/values-night. Consumed by
+         AppTheme in res/values-v23 and res/values-v27. -->
+    <bool name="vl_light_system_bars">true</bool>
+
     <!-- ==================== Dimens ==================== -->
     <dimen name="vl_card_radius">26dp</dimen>
     <dimen name="vl_tile_radius">18dp</dimen>

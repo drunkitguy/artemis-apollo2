@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- VoidLink collapsible settings section header: leading glyph, title, chevron. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="@dimen/vl_space_l"
+    android:layout_marginEnd="@dimen/vl_space_l"
+    android:layout_marginTop="@dimen/vl_space_m"
+    android:background="@drawable/vl_settings_bg_card_full"
+    android:baselineAligned="false"
+    android:gravity="center_vertical"
+    android:minHeight="60dp"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/vl_space_l"
+    android:paddingEnd="@dimen/vl_space_l"
+    android:paddingTop="@dimen/vl_space_m"
+    android:paddingBottom="@dimen/vl_space_m">
+
+    <ImageView
+        android:id="@android:id/icon"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_marginEnd="@dimen/vl_space_m"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter" />
+
+    <TextView
+        android:id="@android:id/title"
+        style="@style/VlText.CardTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textSize="18sp" />
+
+    <ImageView
+        android:id="@+id/vl_settings_section_chevron"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_marginStart="@dimen/vl_space_s"
+        android:contentDescription="@string/vl_settings_section_toggle"
+        android:scaleType="fitCenter"
+        android:src="@drawable/vl_settings_ic_chevron" />
+
+</LinearLayout>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A single segment inside a VoidLink segmented control. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/VlText.Button"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:ellipsize="end"
+    android:gravity="center"
+    android:maxLines="1"
+    android:minWidth="56dp"
+    android:paddingStart="@dimen/vl_space_m"
+    android:paddingEnd="@dimen/vl_space_m"
+    android:paddingTop="@dimen/vl_space_s"
+    android:paddingBottom="@dimen/vl_space_s"
+    android:textSize="15sp" />

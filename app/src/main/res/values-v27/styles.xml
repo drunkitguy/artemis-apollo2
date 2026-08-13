@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    API 27+ additionally supports dark icons in the navigation bar. As in
+    res/values-v23/styles.xml, the full style has to be repeated because a more
+    specific configuration replaces the whole style resource.
+-->
+<resources>
+
+    <style name="AppTheme" parent="AppBaseTheme">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:statusBarColor">@color/vl_background</item>
+        <item name="android:navigationBarColor">@color/vl_background</item>
+        <item name="android:colorBackground">#1A1A1A</item>
+        <item name="android:windowBackground">@color/vl_background</item>
+        <item name="android:windowLightStatusBar">@bool/vl_light_system_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/vl_light_system_bars</item>
+    </style>
+
+    <style name="ExternalDisplayControllerTheme" parent="AppTheme">
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+</resources>

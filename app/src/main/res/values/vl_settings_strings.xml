@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- VoidLink settings panel chrome. Prefixed to avoid collisions with the
+         existing Artemis string table. -->
+    <string name="vl_settings_title">Settings</string>
+    <string name="vl_settings_nav_back">Back</string>
+    <string name="vl_settings_overflow">More options</string>
+    <string name="vl_settings_expand_all">Expand all sections</string>
+    <string name="vl_settings_collapse_all">Collapse all sections</string>
+    <string name="vl_settings_more_info">More information</string>
+    <string name="vl_settings_section_toggle">Expand or collapse section</string>
+</resources>

@@ -6,6 +6,19 @@
         <item name="android:forceDarkAllowed">false</item>
     </style>
 
+    <!--
+        SettingsTheme inherits from AppTheme here, so it would have picked up the
+        light VoidLink chrome. The settings / profile screens have not been
+        restyled yet and still draw light text, so pin them to the values they
+        rendered with before the restyle. Whoever restyles those screens should
+        switch these to @color/vl_background + @bool/vl_light_system_bars.
+    -->
     <style name="SettingsTheme" parent="AppTheme">
+        <item name="android:statusBarColor">#1A1A1A</item>
+        <item name="android:navigationBarColor">#1A1A1A</item>
+        <item name="android:colorBackground">#1A1A1A</item>
+        <item name="android:windowBackground">#1A1A1A</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

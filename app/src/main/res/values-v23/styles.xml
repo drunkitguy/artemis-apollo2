@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    API 23+ can draw dark icons in the status bar, which the light VoidLink
+    background requires. A style resource is *replaced* (not merged) by a more
+    specific configuration, so the rest of AppTheme is repeated verbatim from
+    res/values/styles.xml. Keep the two in sync.
+-->
+<resources>
+
+    <style name="AppTheme" parent="AppBaseTheme">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:statusBarColor">@color/vl_background</item>
+        <item name="android:navigationBarColor">@color/vl_background</item>
+        <item name="android:colorBackground">#1A1A1A</item>
+        <item name="android:windowBackground">@color/vl_background</item>
+        <!-- false in res/values-night so the icons stay light on the dark background -->
+        <item name="android:windowLightStatusBar">@bool/vl_light_system_bars</item>
+    </style>
+
+    <!-- The external display controller stays black, so it must opt back out
+         of the light status bar icons it would otherwise inherit. -->
+    <style name="ExternalDisplayControllerTheme" parent="AppTheme">
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+</resources>

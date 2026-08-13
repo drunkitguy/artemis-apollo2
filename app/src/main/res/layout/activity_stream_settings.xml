@@ -1,8 +1,63 @@
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8"?>
+<!-- VoidLink settings panel: title bar with a navigation button and an overflow
+     button, above the preference list container (@id/stream_settings). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/stream_settings"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/vl_background"
+    android:orientation="vertical"
     tools:context=".preferences.StreamSettings">
 
-</RelativeLayout>
+    <LinearLayout
+        android:id="@+id/vl_settings_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/vl_space_s"
+        android:paddingEnd="@dimen/vl_space_s"
+        android:paddingTop="@dimen/vl_space_l"
+        android:paddingBottom="@dimen/vl_space_s">
+
+        <ImageView
+            android:id="@+id/vl_settings_nav"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/vl_settings_nav_back"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/vl_settings_ic_back" />
+
+        <TextView
+            android:id="@+id/vl_settings_heading"
+            style="@style/VlText.Display"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/vl_space_s"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/vl_settings_title" />
+
+        <ImageView
+            android:id="@+id/vl_settings_overflow"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/vl_settings_overflow"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/vl_settings_ic_more" />
+
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/stream_settings"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+</LinearLayout>

@@ -53,6 +53,7 @@
                     android:layout_height="28dp"
                     android:layout_gravity="center"
                     android:indeterminate="true"
+                    android:indeterminateTint="@color/vl_accent"
                     android:visibility="gone" />
 
                 <ImageView
