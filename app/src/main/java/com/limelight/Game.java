@@ -689,18 +689,25 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
 // --- latency profile selection ---
         try {
+            // Note: framePacing is deliberately NOT overridden here.
+            //
+            // Both branches used to assign FRAME_PACING_BALANCED, which discarded the user's
+            // frame pacing choice before it was ever read. Worse, it left the renderer running
+            // a mixture of two display paths: whether a given frame took the latest-frame path
+            // or the Choreographer-queued path depended on where the renderer thread happened
+            // to be, so consecutive frames could be presented with different latency. That is
+            // self-inflicted jitter, which is exactly what a low latency client must not add.
             if (prefConfig != null && prefConfig.preferLowerDelays) {
-                // Intermediate: more responsive than Balanced but not 0 µs
+                // Intermediate: more responsive than Balanced but not 0 us
                 decoderRenderer.setPreferLowerDelays(true);
                 decoderRenderer.setPreferLowerDelaysTimeoutUs(500);  // 0.5 ms
-                prefConfig.framePacing = PreferenceConfiguration.FRAME_PACING_BALANCED;
-                LimeLog.info("PreferLowerDelays: preferLowerDelays=true, timeout=500us, pacing=BALANCED");
+                LimeLog.info("PreferLowerDelays: preferLowerDelays=true, timeout=500us, pacing="
+                        + prefConfig.framePacing);
             } else {
-                // Balanced default
                 decoderRenderer.setPreferLowerDelays(false);
                 decoderRenderer.setPreferLowerDelaysTimeoutUs(2000); // 2 ms
-                prefConfig.framePacing = PreferenceConfiguration.FRAME_PACING_BALANCED;
-                LimeLog.info("Balanced: preferLowerDelays=false, timeout=2000us, pacing=BALANCED");
+                LimeLog.info("Balanced: preferLowerDelays=false, timeout=2000us, pacing="
+                        + (prefConfig != null ? prefConfig.framePacing : -1));
             }
         } catch (Throwable ignored) {}
 

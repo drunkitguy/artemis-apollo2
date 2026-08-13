@@ -1282,8 +1282,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
                             // Render the latest frame now if frame pacing isn't in balanced mode
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
-                                // Get the last output buffer in the queue
-                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, getOutputDequeueTimeoutUs())) >= 0) {
+                                // Get the last output buffer in the queue.
+                                //
+                                // This is a "is there a newer frame already waiting?" probe, so it
+                                // must not block: it runs for every frame presented, and a blocking
+                                // timeout here adds that delay to every single frame. Upstream
+                                // moonlight-android passes 0 for exactly this reason.
+                                while ((outIndex = videoDecoder.dequeueOutputBuffer(info, 0)) >= 0) {
                                     videoDecoder.releaseOutputBuffer(lastIndex, false);
                                     frameDropped = true; // we're discarding the oldest one
 

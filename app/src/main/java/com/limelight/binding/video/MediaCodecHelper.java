@@ -552,7 +552,15 @@ public class MediaCodecHelper {
 
             // If this decoder officially supports FEATURE_LowLatency, we will just use that alone
             // for try 0. Otherwise, we'll include it as best effort with other options.
-            if (!ultraLowLatency && decoderSupportsAndroidRLowLatency(decoderInfo, videoFormat.getString(MediaFormat.KEY_MIME))) {
+            //
+            // Qualcomm is excluded from that shortcut. Its decoders advertise FEATURE_LowLatency,
+            // so returning here skipped every vendor option below - including the software
+            // fencing flags that the notes in this file call the most important latency setting
+            // on recent Snapdragons. The tryNumber fallback already recovers if configure() is
+            // rejected, so offering the vendor keys first costs nothing but a retry.
+            if (!ultraLowLatency
+                    && !isQualcommDecoder(decoderInfo.getName())
+                    && decoderSupportsAndroidRLowLatency(decoderInfo, videoFormat.getString(MediaFormat.KEY_MIME))) {
                 return true;
             }
 
