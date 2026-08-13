@@ -6,14 +6,19 @@
         <item name="android:forceDarkAllowed">false</item>
     </style>
 
-    <!--
-        SettingsTheme inherits from AppTheme here, so it would have picked up the
-        light VoidLink chrome. The settings / profile screens have not been
-        restyled yet and still draw light text, so pin them to the values they
-        rendered with before the restyle. Whoever restyles those screens should
-        switch these to @color/vl_background + @bool/vl_light_system_bars.
-    -->
+    <!-- Inherits AppTheme, so the settings screens follow the VoidLink light
+         chrome along with the rest of the app. -->
     <style name="SettingsTheme" parent="AppTheme">
+    </style>
+
+    <!--
+        Exactly what SettingsTheme resolved to on API 29+ before AppTheme went
+        light. Used by ProfilesActivity, which still draws hardcoded light text
+        and would be unreadable on a light background.
+    -->
+    <style name="LegacyProfilesTheme" parent="AppBaseTheme">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:statusBarColor">#1A1A1A</item>
         <item name="android:navigationBarColor">#1A1A1A</item>
         <item name="android:colorBackground">#1A1A1A</item>

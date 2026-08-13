@@ -113,9 +113,9 @@
         android:layout_marginEnd="24dp"
         android:contentDescription="@string/profile_manager_choose_profile"
         android:layout_margin="16dp"
-        android:textColor="@color/vl_card"
+        android:textColor="@android:color/white"
         app:backgroundTint="@color/vl_accent"
-        app:iconTint="@color/vl_card"
+        app:iconTint="@android:color/white"
         app:icon="@drawable/ic_profiles" />
 
 </RelativeLayout>
