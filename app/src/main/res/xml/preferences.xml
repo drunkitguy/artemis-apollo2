@@ -46,6 +46,11 @@
             seekbar:keyStep="1000"
             seekbar:min="500"
             seekbar:step="500" />
+        <com.limelight.preferences.VlActionPreference
+            android:key="pref_bitrate_test"
+            android:summary="@string/summary_bitrate_test"
+            android:title="@string/title_bitrate_test"
+            app:iconSpaceReserved="false" />
         <com.limelight.preferences.SeekBarPreference
             android:dialogMessage="@string/summary_seekbar_metered_bitrate"
             android:key="seekbar_metered_bitrate_kbps"

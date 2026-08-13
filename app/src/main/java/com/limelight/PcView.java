@@ -7,6 +7,7 @@ import java.net.UnknownHostException;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.limelight.binding.PlatformBinding;
 import com.limelight.binding.crypto.AndroidCryptoProvider;
+import com.limelight.bitratetest.BitrateTestActivity;
 import com.limelight.computers.ComputerManagerListener;
 import com.limelight.computers.ComputerManagerService;
 import com.limelight.grid.PcGridAdapter;
@@ -136,6 +137,7 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
     private final static int GAMESTREAM_EOL_ID = 11;
     private final static int OPEN_MANAGEMENT_PAGE_ID = 20;
     private final static int PAIR_ID_OTP = 21;
+    private final static int BITRATE_TEST_ID = 22;
 
     private void initializeViews() {
         setContentView(R.layout.activity_pc_view);
@@ -473,6 +475,11 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
             }
 
             menu.add(Menu.NONE, FULL_APP_LIST_ID, 4, getResources().getString(R.string.pcview_menu_app_list));
+        }
+
+        if (computer.details.state != ComputerDetails.State.OFFLINE
+                && computer.details.pairState == PairState.PAIRED) {
+            menu.add(Menu.NONE, BITRATE_TEST_ID, 5, getResources().getString(R.string.pcview_menu_bitrate_test));
         }
 
         menu.add(Menu.NONE, TEST_NETWORK_ID, 5, getResources().getString(R.string.pcview_menu_test_network));
@@ -820,6 +827,13 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
             case VIEW_DETAILS_ID:
                 Dialog.displayDialog(PcView.this, getResources().getString(R.string.title_details), computer.details.toString(), false);
                 return true;
+
+            case BITRATE_TEST_ID: {
+                Intent bitrateTestIntent = new Intent(PcView.this, BitrateTestActivity.class);
+                bitrateTestIntent.putExtra(BitrateTestActivity.EXTRA_PC_UUID, computer.details.uuid);
+                startActivity(bitrateTestIntent);
+                return true;
+            }
 
             case TEST_NETWORK_ID:
                 ServerHelper.doNetworkTest(PcView.this);

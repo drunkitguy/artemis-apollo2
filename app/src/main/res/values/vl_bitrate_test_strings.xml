@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connection test / optimal bitrate finder. Prefixed to avoid collisions with the
+         existing Artemis string table. -->
+
+    <string name="vl_bt_title">Connection test</string>
+    <string name="vl_bt_subtitle">Streams the Desktop entry on your PC for a few seconds at each of several bitrates, then recommends the highest one that stayed clean.</string>
+
+    <string name="vl_bt_status_preparing">Preparing</string>
+    <string name="vl_bt_status_finding_host">Looking for a PC</string>
+    <string name="vl_bt_status_checking">Checking %1$s</string>
+    <string name="vl_bt_status_connecting">Connecting at %1$s</string>
+    <string name="vl_bt_status_settling">Letting the encoder settle at %1$s</string>
+    <string name="vl_bt_status_measuring">Measuring %1$s</string>
+    <string name="vl_bt_status_stopping">Ending the test session</string>
+    <string name="vl_bt_status_done">Test complete</string>
+    <string name="vl_bt_status_cancelled">Test cancelled</string>
+    <string name="vl_bt_status_stage">%1$s</string>
+
+    <string name="vl_bt_step_of">Step %1$d of %2$d</string>
+    <string name="vl_bt_seconds_remaining">%1$d s left in this step</string>
+    <string name="vl_bt_readings">Loss %1$.2f%%   Decode %2$.1f ms   Host %3$s   Frames %4$s</string>
+    <string name="vl_bt_unavailable">n/a</string>
+
+    <string name="vl_bt_cancel">Cancel</string>
+    <string name="vl_bt_close">Close</string>
+    <string name="vl_bt_apply">Apply</string>
+
+    <string name="vl_bt_recommended">Recommended: %1$s</string>
+    <string name="vl_bt_factor_network">Limited by the network</string>
+    <string name="vl_bt_factor_decoder">Limited by this device\'s decoder</string>
+    <string name="vl_bt_factor_host">Limited by the host\'s encoder</string>
+    <string name="vl_bt_factor_stream_failure">The stream did not hold</string>
+    <string name="vl_bt_factor_none">Nothing gave out</string>
+    <string name="vl_bt_factor_no_data">No usable measurements</string>
+
+    <string name="vl_bt_ladder_header">What each step measured</string>
+    <string name="vl_bt_ladder_row">%1$s  loss %2$.2f%%, decode %3$.1f ms, host %4$s, received %5$s</string>
+    <string name="vl_bt_ladder_row_failed">%1$s  did not stream</string>
+    <string name="vl_bt_applied">Bitrate set to %1$s</string>
+
+    <string name="vl_bt_error_heading">The test could not run</string>
+    <string name="vl_bt_error_no_pc">No paired, reachable PC was found. Pair a PC first, then run the test from that PC\'s menu.</string>
+    <string name="vl_bt_error_pc_unknown">That PC is not in the list any more.</string>
+    <string name="vl_bt_error_offline">%1$s is not reachable right now. Wake it or check the network, then try again.</string>
+    <string name="vl_bt_error_not_paired">%1$s is not paired with this device. Pair it first, then run the test.</string>
+    <string name="vl_bt_error_game_running">A game is already running on %1$s. Running the test would close it, so nothing was started. Quit the game first.</string>
+    <string name="vl_bt_error_no_desktop">%1$s has no Desktop entry in its app list, so there is nothing low risk to stream for the test.</string>
+    <string name="vl_bt_error_applist">Could not read the app list from %1$s: %2$s</string>
+    <string name="vl_bt_error_no_decoder">This device has no usable H.264 decoder, so there is nothing to measure.</string>
+    <string name="vl_bt_error_timeout">%1$s did not start the stream in time.</string>
+    <string name="vl_bt_error_refused">%1$s refused the session at %2$s. %3$s</string>
+    <string name="vl_bt_error_no_surface">The video surface never became available.</string>
+    <string name="vl_bt_error_manager">The computer manager service is not running.</string>
+    <string name="vl_bt_host_picker_title">Test which PC?</string>
+
+    <!-- Settings entry -->
+    <string name="title_bitrate_test">Test connection / find optimal bitrate</string>
+    <string name="summary_bitrate_test">Runs a short real stream of the host Desktop at a ladder of bitrates and recommends the highest one that stayed clean, naming what limited it.</string>
+    <!-- Host context menu entry -->
+    <string name="pcview_menu_bitrate_test">Test connection</string>
+</resources>

@@ -56,6 +56,7 @@ import com.limelight.PcView;
 import com.limelight.R;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardControllerConfigurationLoader;
 import com.limelight.binding.video.MediaCodecHelper;
+import com.limelight.bitratetest.BitrateTestActivity;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.FileUriUtils;
 import com.limelight.utils.PerformanceDataTracker;
@@ -907,6 +908,18 @@ public class StreamSettings extends AppCompatActivity {
                         intent.putExtra(Intent.EXTRA_STREAM, uri);
                         intent.setType("application/json");
                         startActivity(Intent.createChooser(intent,getString(R.string.pref_save_keyboard_profile)));
+                        return false;
+                    }
+                });
+            }
+
+            _pref = findPreference("pref_bitrate_test");
+            if (_pref != null) {
+                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(@NonNull Preference preference) {
+                        // No PC is known from here, so the test asks which one to use.
+                        startActivity(new Intent(requireActivity(), BitrateTestActivity.class));
                         return false;
                     }
                 });

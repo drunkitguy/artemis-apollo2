@@ -240,6 +240,17 @@
             android:theme="@style/LegacyDarkTheme"
             android:launchMode="singleTask"/>
 
+        <!-- Connection test / optimal bitrate finder. Streams the host's Desktop entry for
+             a few seconds per bitrate; not exported, never launched from outside. -->
+        <activity
+            android:name=".bitratetest.BitrateTestActivity"
+            android:exported="false"
+            android:label="@string/vl_bt_title"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection"
+            android:theme="@style/SettingsTheme" />
+
         <!-- 无障碍 实体键盘 屏蔽某些快捷键 -->
         <service
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

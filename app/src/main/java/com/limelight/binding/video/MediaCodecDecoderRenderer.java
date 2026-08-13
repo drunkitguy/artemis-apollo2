@@ -2233,6 +2233,30 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         return capabilities;
     }
 
+    /**
+     * Read-only snapshot of the cumulative video counters this renderer already maintains
+     * for the performance overlay. Added for the connection / bitrate test, which measures
+     * a step by differencing two snapshots.
+     *
+     * The counters are written on the video receive and render threads and read here
+     * without locking, exactly as the overlay does: a value that is a frame or two stale
+     * makes no difference to a measurement several seconds long, and taking a lock on the
+     * decode path would be far worse than the imprecision.
+     */
+    public StreamCounters snapshotCounters() {
+        VideoStats global = globalVideoStats;
+        VideoStats active = activeWindowVideoStats;
+        return new StreamCounters(
+                (long) global.totalFrames + active.totalFrames,
+                (long) global.totalFramesReceived + active.totalFramesReceived,
+                (long) global.totalFramesRendered + active.totalFramesRendered,
+                (long) global.framesLost + active.framesLost,
+                (long) global.frameLossEvents + active.frameLossEvents,
+                global.decoderTimeMs + active.decoderTimeMs,
+                (long) global.totalHostProcessingLatency + active.totalHostProcessingLatency,
+                (long) global.framesWithHostProcessingLatency + active.framesWithHostProcessingLatency);
+    }
+
     public int getAverageEndToEndLatency() {
         if (globalVideoStats.totalFramesReceived == 0) {
             return 0;
