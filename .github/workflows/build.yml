@@ -61,9 +61,15 @@ jobs:
           VERSION="$(grep -oP 'versionName\s+"\K[^"]+' app/build.gradle | head -1)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           find app/build/outputs/apk -name "*.apk" -print
-          for apk in $(find app/build/outputs/apk -name "*.apk"); do
-            cp "$apk" "dist/artemis-${VERSION}-b${GITHUB_RUN_NUMBER}-$(basename "$apk")"
-          done
+          # Publish only the 64-bit ARM build. That is what every current Android
+          # handheld runs; armeabi-v7a is 32-bit and the x86 splits are for
+          # emulators, so shipping all four only makes the right one harder to find.
+          APK="$(find app/build/outputs/apk -name "*arm64-v8a*.apk" | head -1)"
+          if [ -z "$APK" ]; then
+            echo "No arm64-v8a APK produced" >&2
+            exit 1
+          fi
+          cp "$APK" "dist/artemis-${VERSION}-b${GITHUB_RUN_NUMBER}-arm64.apk"
           ls -lh dist
 
       - name: Upload APK artifacts
