@@ -72,11 +72,33 @@
         <item name="colorButtonNormal">@android:color/white</item>
     </style>
 
-    <style name="SettingsTheme" parent="Theme.AppCompat.NoActionBar">
+    <!--
+        The settings page itself is light and token-driven, but preference
+        dialogs and popup menus inherit the *activity* theme. Without these the
+        list, text-entry and slider dialogs render dark AppCompat chrome on top
+        of a light page. Defined once here; it is not overridden per API level,
+        so it resolves everywhere SettingsTheme is used.
+    -->
+    <style name="VlAlertDialogTheme" parent="Theme.AppCompat.Light.Dialog.Alert">
+        <item name="colorAccent">@color/vl_accent</item>
+        <item name="android:textColorPrimary">@color/vl_label</item>
+        <item name="android:textColorSecondary">@color/vl_secondary_label</item>
+    </style>
+
+    <style name="VlPopupOverlay" parent="ThemeOverlay.AppCompat.Light">
+        <item name="colorAccent">@color/vl_accent</item>
+    </style>
+
+    <style name="SettingsTheme" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:colorBackground">@android:color/transparent</item>
         <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="colorAccent">@color/vl_accent</item>
+        <item name="alertDialogTheme">@style/VlAlertDialogTheme</item>
+        <item name="android:alertDialogTheme">@style/VlAlertDialogTheme</item>
+        <item name="popupTheme">@style/VlPopupOverlay</item>
+        <item name="actionBarPopupTheme">@style/VlPopupOverlay</item>
     </style>
 
     <!--

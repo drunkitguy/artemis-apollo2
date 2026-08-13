@@ -9,6 +9,13 @@
     <!-- Inherits AppTheme, so the settings screens follow the VoidLink light
          chrome along with the rest of the app. -->
     <style name="SettingsTheme" parent="AppTheme">
+        <!-- AppTheme descends from a dark Material base, so preference dialogs
+             and popup menus would draw dark chrome over the light settings
+             page. Same overlays as the pre-29 variant. -->
+        <item name="alertDialogTheme">@style/VlAlertDialogTheme</item>
+        <item name="android:alertDialogTheme">@style/VlAlertDialogTheme</item>
+        <item name="popupTheme">@style/VlPopupOverlay</item>
+        <item name="actionBarPopupTheme">@style/VlPopupOverlay</item>
     </style>
 
     <!--
