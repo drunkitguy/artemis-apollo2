@@ -51,6 +51,16 @@ jobs:
         run: |
           sdkmanager --install "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
 
+      - name: Run soft keyboard unit tests
+        # Scoped to the pure JVM suites rather than the whole test source set:
+        # the rest of it is Robolectric and pulls in a device-shaped world that
+        # has nothing to do with these, and a flake there must not stop an APK.
+        run: |
+          ./gradlew --no-daemon testNonRoot_gameDebugUnitTest \
+            --tests 'com.limelight.binding.input.softkeyboard.*' \
+            --tests 'com.limelight.reconnect.*' \
+            --tests 'com.limelight.bitratetest.*'
+
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleNonRoot_gameDebug
 
