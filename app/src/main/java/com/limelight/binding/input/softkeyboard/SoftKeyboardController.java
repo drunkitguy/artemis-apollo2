@@ -50,8 +50,22 @@ public class SoftKeyboardController {
     private static final float TRIGGER_THRESHOLD = 0.5f;
     /** Quiet for this long and the panel goes back to black on its own. */
     private static final long IDLE_RELEASE_MS = 6000;
-    /** Both bumpers within this window counts as the open-the-keyboard chord. */
-    private static final long CHORD_WINDOW_MS = 400;
+    /**
+     * How long both sticks must be held clicked to open the keyboard.
+     *
+     * Long enough that it cannot be reached by playing. Clicking both sticks
+     * at once already takes a deliberate grip, and holding that still for half
+     * a second is not something any game asks for.
+     */
+    private static final long CHORD_HOLD_MS = 500;
+    /**
+     * Grace for a keyboard that has just opened but has not been typed on.
+     *
+     * Shorter than the normal idle so that a keyboard opened by accident gives
+     * the pad back almost immediately, rather than costing the player several
+     * seconds of a game they were in the middle of.
+     */
+    private static final long IDLE_UNUSED_MS = 2500;
     /** Where the last used page is remembered between sessions. */
     private static final String STATE_PREFS = "soft_keyboard_state";
     private static final String LAST_PAGE_KEY = "last_page_is_keypad";
@@ -97,8 +111,16 @@ public class SoftKeyboardController {
      */
     private final java.util.Set<Integer> consumedKeys = new java.util.HashSet<>();
 
-    private long leftBumperAt;
-    private long rightBumperAt;
+    private boolean leftStickClicked;
+    private boolean rightStickClicked;
+    private final Runnable openOnChord = new Runnable() {
+        @Override
+        public void run() {
+            if (leftStickClicked && rightStickClicked && shown && !capturing) {
+                openPage(lastUsedPage());
+            }
+        }
+    };
     /**
      * Cached because the chord is checked on every gamepad press while the
      * game is being played. Re-reading the whole preference set there would
@@ -192,7 +214,9 @@ public class SoftKeyboardController {
             if (view != null) {
                 view.setHint(context.getString(hintFor(getPage(), true)));
             }
-            idleHandler.postDelayed(releaseOnIdle, IDLE_RELEASE_MS);
+            // Nothing typed yet, so hand the pad back quickly if this turns out
+            // to have been opened by accident.
+            idleHandler.postDelayed(releaseOnIdle, IDLE_UNUSED_MS);
         } else {
             // Done typing means the keys go away, not that they sit there
             // faded. On a second screen that leaves a dark panel; over the
@@ -207,6 +231,9 @@ public class SoftKeyboardController {
      */
     private void rest() {
         refreshCachedPreferences();
+        idleHandler.removeCallbacks(openOnChord);
+        leftStickClicked = false;
+        rightStickClicked = false;
         idleHandler.removeCallbacks(releaseOnIdle);
         capturing = false;
         heldDirection = null;
@@ -309,6 +336,9 @@ public class SoftKeyboardController {
 
     /** Any activity postpones handing the pad back. */
     private void touchIdleTimer() {
+        if (!capturing) {
+            return;
+        }
         idleHandler.removeCallbacks(releaseOnIdle);
         idleHandler.postDelayed(releaseOnIdle, IDLE_RELEASE_MS);
     }
@@ -603,12 +633,11 @@ public class SoftKeyboardController {
      *         must not see it
      */
     public boolean handleKeyDown(KeyEvent event) {
-        if (shown && !capturing && noticeBumperChord(event)) {
-            // Deliberately falls through rather than returning: the game still
-            // gets both bumpers. Opening the keyboard costs the user nothing
-            // they did not already spend, and a panel that lit up by accident
-            // goes back to black on its own a few seconds later.
-            openPage(lastUsedPage());
+        if (shown && !capturing) {
+            // Watched, never consumed. While the panel is resting every button
+            // belongs to the game, including the two this chord is made of.
+            trackOpenChord(event, true);
+            return false;
         }
 
         if (!shown || !capturing) {
@@ -678,45 +707,42 @@ public class SoftKeyboardController {
     }
 
     /**
-     * Both bumpers within a short window, while the panel is resting.
+     * Opens the keyboard when both sticks are held clicked together.
      *
      * This exists because the second screen on a handheld may not be a
-     * touchscreen at all, in which case the buttons on the resting panel are
-     * unpressable and there would be no way to start typing without going back
-     * out to the menu. Both bumpers together is rare as a deliberate game
-     * action, and because the presses are still forwarded, a false positive
-     * costs a panel that lights up rather than an input the game never saw.
+     * touchscreen, in which case the buttons on the resting panel cannot be
+     * pressed and there is no way to start typing short of the menu.
      *
-     * @return true when this press completed the chord
+     * It must not be reachable by playing. An earlier version used both
+     * bumpers pressed within a window, which was wrong: L1 then R1 in quick
+     * succession is ordinary in plenty of games, and because opening the
+     * keyboard also takes the pad, a false trigger cost several seconds of
+     * control in the middle of whatever was being played. Both sticks clicked
+     * and held is a grip nothing asks for by accident.
+     *
+     * Nothing here consumes the event. The game receives both stick clicks
+     * whether or not the chord completes.
      */
-    private boolean noticeBumperChord(KeyEvent event) {
+    private void trackOpenChord(KeyEvent event, boolean down) {
         if (!padShortcutEnabled()) {
-            return false;
+            return;
         }
 
-        long now = android.os.SystemClock.uptimeMillis();
         switch (event.getKeyCode()) {
-            case KeyEvent.KEYCODE_BUTTON_L1:
-                leftBumperAt = now;
+            case KeyEvent.KEYCODE_BUTTON_THUMBL:
+                leftStickClicked = down;
                 break;
-            case KeyEvent.KEYCODE_BUTTON_R1:
-                rightBumperAt = now;
+            case KeyEvent.KEYCODE_BUTTON_THUMBR:
+                rightStickClicked = down;
                 break;
             default:
-                return false;
+                return;
         }
 
-        if (leftBumperAt == 0 || rightBumperAt == 0) {
-            return false;
+        idleHandler.removeCallbacks(openOnChord);
+        if (leftStickClicked && rightStickClicked) {
+            idleHandler.postDelayed(openOnChord, CHORD_HOLD_MS);
         }
-        if (Math.abs(leftBumperAt - rightBumperAt) > CHORD_WINDOW_MS) {
-            return false;
-        }
-
-        // Spend the chord so holding both does not reopen it every repeat.
-        leftBumperAt = 0;
-        rightBumperAt = 0;
-        return true;
     }
 
     /** Key ups are swallowed to match whatever {@link #handleKeyDown} consumed. */
@@ -726,6 +752,12 @@ public class SoftKeyboardController {
         if (consumedKeys.remove(event.getKeyCode())) {
             return true;
         }
+        if (shown && !capturing) {
+            // Releasing either stick cancels a chord in progress.
+            trackOpenChord(event, false);
+            return false;
+        }
+
         if (!shown || !capturing) {
             return false;
         }
@@ -861,6 +893,9 @@ public class SoftKeyboardController {
             sendKeyCode(press.keyCode, press.shift);
             recordEcho(press);
         }
+        // Something was actually typed, so this is a real session rather than
+        // an accidental open: allow the longer pause before giving the pad back.
+        touchIdleTimer();
         view.refresh();
     }
 
