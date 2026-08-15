@@ -168,6 +168,14 @@ public class SoftKeyboardView extends LinearLayout {
         }
     }
 
+    /**
+     * Fades the keyboard while it is not holding the pad, so a glance at the
+     * second screen says whether typing or the game has the controller.
+     */
+    public void setDimmed(boolean dimmed) {
+        setAlpha(dimmed ? 0.45f : 1f);
+    }
+
     public void setHint(CharSequence hint) {
         hintView.setText(hint);
     }

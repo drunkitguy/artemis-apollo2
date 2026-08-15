@@ -48,6 +48,8 @@ public class SoftKeyboardController {
     private static final float STICK_RECENTRE = 0.3f;
     /** Triggers report 0..1; treat over half pull as a press. */
     private static final float TRIGGER_THRESHOLD = 0.5f;
+    /** Quiet for this long and the pad goes back to the game on its own. */
+    private static final long IDLE_RELEASE_MS = 12000;
 
     private final Game game;
     private final FrameLayout root;
@@ -59,11 +61,36 @@ public class SoftKeyboardController {
     private DisplayManager.DisplayListener displayListener;
     private int presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
     private boolean shown;
+    /**
+     * True only while the keyboard owns the gamepad.
+     *
+     * This is separate from {@link #shown} on purpose. A keyboard that is
+     * permanently visible on a second screen must not permanently swallow the
+     * pad, or the game gets no input at all. Visible but not capturing is the
+     * resting state: touch still types, and the pad still plays the game.
+     */
+    private boolean capturing;
     /** What the last attempt to show the keyboard actually did, for the report. */
     private String lastOutcome;
+    private final android.os.Handler idleHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable releaseOnIdle = new Runnable() {
+        @Override
+        public void run() {
+            setCapturing(false);
+        }
+    };
 
     /** Local mirror of what has been typed, purely so the user can see it. */
     private final StringBuilder echo = new StringBuilder();
+
+    /**
+     * Key codes whose press the keyboard consumed.
+     *
+     * Without this, releasing the pad mid-press leaks the matching key up to
+     * the game: Start hands the pad back on the way down, and the way up would
+     * then land in whatever is being streamed and open its menu.
+     */
+    private final java.util.Set<Integer> consumedKeys = new java.util.HashSet<>();
 
     private SoftKeyboardModel.Direction heldDirection;
     private long nextRepeatAt;
@@ -114,6 +141,65 @@ public class SoftKeyboardController {
         return wantKeypad == haveKeypad;
     }
 
+    /**
+     * Takes or releases the gamepad.
+     *
+     * Entered by touching a key, or by opening the keyboard from the menu.
+     * Left by Start, the on-screen close key, or going quiet for a while, so
+     * the pad returns to the game without the user having to think about it.
+     */
+    public void setCapturing(boolean capture) {
+        idleHandler.removeCallbacks(releaseOnIdle);
+
+        if (capturing == capture) {
+            if (capture) {
+                idleHandler.postDelayed(releaseOnIdle, IDLE_RELEASE_MS);
+            }
+            return;
+        }
+
+        capturing = capture;
+        heldDirection = null;
+        // Any still-held key keeps its entry so the release is swallowed.
+
+        if (view != null) {
+            view.setDimmed(!capture);
+            view.setHint(context.getString(hintFor(getPage(), capture)));
+        }
+        if (capture) {
+            idleHandler.postDelayed(releaseOnIdle, IDLE_RELEASE_MS);
+        }
+    }
+
+    public boolean isCapturing() {
+        return capturing;
+    }
+
+    /** Any activity postpones handing the pad back. */
+    private void touchIdleTimer() {
+        idleHandler.removeCallbacks(releaseOnIdle);
+        idleHandler.postDelayed(releaseOnIdle, IDLE_RELEASE_MS);
+    }
+
+    /**
+     * Opens the keyboard on stream start when the user has asked for it and
+     * there is a screen to put it on that is not the one being streamed to.
+     *
+     * It comes up resting: visible, dimmed, not holding the pad. Nothing about
+     * the game changes until a key is actually touched.
+     */
+    public void showAutomaticallyIfConfigured() {
+        if (shown || !prefersSecondScreen() || !autoShowEnabled()) {
+            return;
+        }
+        if (chooseDisplay() == null) {
+            // With no second screen this would dock over the game uninvited.
+            return;
+        }
+        show(SoftKeyboardLayouts.Page.LETTERS);
+        setCapturing(false);
+    }
+
     public void show(SoftKeyboardLayouts.Page page) {
         hide();
 
@@ -122,6 +208,9 @@ public class SoftKeyboardController {
         view.setOnKeyPressListener(new SoftKeyboardView.OnKeyPressListener() {
             @Override
             public void onKeyPress(int row, int column) {
+                // A finger on a key means the user is typing, so the pad comes
+                // over too rather than making them ask for it separately.
+                setCapturing(true);
                 model.setFocus(row, column);
                 pressFocusedKey();
             }
@@ -134,12 +223,16 @@ public class SoftKeyboardController {
         attach(view, page);
         watchDisplays();
         shown = true;
+        capturing = false;
+        setCapturing(true);
         heldDirection = null;
         leftTriggerDown = false;
         rightTriggerDown = false;
     }
 
     public void hide() {
+        idleHandler.removeCallbacks(releaseOnIdle);
+        capturing = false;
         unwatchDisplays();
         detach();
         view = null;
@@ -333,9 +426,20 @@ public class SoftKeyboardController {
     }
 
     private void applyHint() {
-        view.setHint(context.getString(getPage() == SoftKeyboardLayouts.Page.PIN
+        view.setHint(context.getString(hintFor(getPage(), capturing)));
+    }
+
+    private static int hintFor(SoftKeyboardLayouts.Page page, boolean capturing) {
+        if (!capturing) {
+            return R.string.soft_keyboard_hint_resting;
+        }
+        return page == SoftKeyboardLayouts.Page.PIN
                 ? R.string.soft_keyboard_hint_keypad
-                : R.string.soft_keyboard_hint_letters));
+                : R.string.soft_keyboard_hint_letters;
+    }
+
+    private boolean autoShowEnabled() {
+        return PreferenceConfiguration.readPreferences(context).softKeyboardAutoShow;
     }
 
     // ------------------------------------------------------------ gamepad in
@@ -345,9 +449,11 @@ public class SoftKeyboardController {
      *         must not see it
      */
     public boolean handleKeyDown(KeyEvent event) {
-        if (!shown) {
+        if (!shown || !capturing) {
             return false;
         }
+        touchIdleTimer();
+        consumedKeys.add(event.getKeyCode());
 
         switch (event.getKeyCode()) {
             case KeyEvent.KEYCODE_DPAD_UP:
@@ -394,7 +500,10 @@ public class SoftKeyboardController {
 
             case KeyEvent.KEYCODE_BUTTON_START:
             case KeyEvent.KEYCODE_BACK:
-                hide();
+                // Done typing. The keyboard stays on its own screen; only the
+                // pad goes back to the game, which is what "done" means when
+                // the keys are not covering anything.
+                setCapturing(false);
                 return true;
 
             default:
@@ -408,7 +517,12 @@ public class SoftKeyboardController {
 
     /** Key ups are swallowed to match whatever {@link #handleKeyDown} consumed. */
     public boolean handleKeyUp(KeyEvent event) {
-        if (!shown) {
+        // Checked before the capture gate: a key whose press we took must have
+        // its release taken too, even if we have since handed the pad back.
+        if (consumedKeys.remove(event.getKeyCode())) {
+            return true;
+        }
+        if (!shown || !capturing) {
             return false;
         }
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
@@ -419,7 +533,7 @@ public class SoftKeyboardController {
 
     /** Sticks navigate, with a hold to repeat. Triggers swap the page. */
     public boolean handleMotionEvent(MotionEvent event) {
-        if (!shown || !isFromGamepad(event.getDevice())) {
+        if (!shown || !capturing || !isFromGamepad(event.getDevice())) {
             return false;
         }
 
@@ -512,7 +626,13 @@ public class SoftKeyboardController {
 
         switch (press.key.action) {
             case CLOSE:
-                hide();
+                if (presentation != null) {
+                    // On its own screen there is nothing to get out of the way
+                    // of, so closing just means giving the pad back.
+                    setCapturing(false);
+                } else {
+                    hide();
+                }
                 return;
 
             case CLIPBOARD:
@@ -584,6 +704,9 @@ public class SoftKeyboardController {
         rebuilt.setOnKeyPressListener(new SoftKeyboardView.OnKeyPressListener() {
             @Override
             public void onKeyPress(int row, int column) {
+                // A finger on a key means the user is typing, so the pad comes
+                // over too rather than making them ask for it separately.
+                setCapturing(true);
                 model.setFocus(row, column);
                 pressFocusedKey();
             }
@@ -592,6 +715,7 @@ public class SoftKeyboardController {
         view = rebuilt;
         attach(view, model.getPage());
         applyHint();
+        view.setDimmed(!capturing);
         view.setEcho(echo.toString());
         view.refresh();
     }

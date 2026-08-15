@@ -4056,6 +4056,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 // Update GameManager state to indicate we're in game
                 UiHelper.notifyStreamConnected(Game.this);
 
+                // Bring up the keyboard on its own screen if there is one. It
+                // arrives resting: visible but not holding the pad, so nothing
+                // about playing the game changes until a key is touched.
+                softKeyboardController().showAutomaticallyIfConfigured();
+
                 // Sync local clipboard to host
                 handleFocusChange(true);
 

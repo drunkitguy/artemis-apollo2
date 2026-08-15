@@ -736,6 +736,9 @@
     <string name="game_menu_toggle_gamepad_keyboard">Toggle Gamepad keyboard</string>
     <string name="game_menu_toggle_number_pad">Toggle Number pad</string>
     <string name="game_menu_keyboard_screen_info">Keyboard screen info</string>
+    <string name="soft_keyboard_hint_resting">Tap any key to start typing · the controller is playing the game</string>
+    <string name="title_soft_keyboard_auto_show">Open the keyboard automatically</string>
+    <string name="summary_soft_keyboard_auto_show">When a stream starts and there is a second screen, put the keyboard on it straight away. It rests there dimmed and does not touch the controller until you tap a key, so there is no menu trip when you need to type.</string>
     <string name="title_soft_keyboard_second_screen">Keyboard on the second screen</string>
     <string name="summary_soft_keyboard_second_screen">On a dual screen handheld, show the gamepad keyboard and number pad on the smaller screen so they never cover the game. Falls back to an overlay when there is only one screen.</string>
 </resources>
