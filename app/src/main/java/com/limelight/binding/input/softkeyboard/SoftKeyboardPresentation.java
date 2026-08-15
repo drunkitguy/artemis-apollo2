@@ -9,10 +9,6 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
-import androidx.core.content.ContextCompat;
-
-import com.limelight.R;
-
 /**
  * Hosts the keyboard on a second screen.
  *
@@ -28,18 +24,30 @@ import com.limelight.R;
  */
 public class SoftKeyboardPresentation extends Presentation {
 
-    private final SoftKeyboardView keyboard;
-    private final boolean keypad;
+    private View content;
+    private boolean keypad;
+    private FrameLayout container;
 
     public SoftKeyboardPresentation(Context outerContext, Display display,
-                                    SoftKeyboardView keyboard, boolean keypad) {
+                                    View content, boolean keypad) {
         super(outerContext, display);
-        this.keyboard = keyboard;
+        this.content = content;
         this.keypad = keypad;
     }
 
-    public SoftKeyboardView getKeyboard() {
-        return keyboard;
+    /**
+     * Replaces what the screen is showing without tearing the window down.
+     *
+     * Swapping between the resting screen and a keyboard happens often enough
+     * that rebuilding the presentation each time would flash the panel.
+     */
+    public void swapContent(View newContent, boolean keypadLayout) {
+        this.content = newContent;
+        this.keypad = keypadLayout;
+        if (container != null) {
+            container.removeAllViews();
+            fill();
+        }
     }
 
     @Override
@@ -52,27 +60,40 @@ public class SoftKeyboardPresentation extends Presentation {
                     WindowManager.LayoutParams.MATCH_PARENT);
         }
 
-        FrameLayout container = new FrameLayout(getContext());
-        container.setBackgroundColor(ContextCompat.getColor(getContext(), R.color.vl_background));
+        container = new FrameLayout(getContext());
+        // Black rather than the app background: when nothing is being typed
+        // this panel should read as off, not as a lit blank page next to the
+        // game.
+        container.setBackgroundColor(android.graphics.Color.BLACK);
+        fill();
+        setContentView(container);
+    }
+
+    private void fill() {
+        boolean resting = content instanceof SoftKeyboardLauncherView;
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT);
-        // A second screen is the keyboard's own screen, so it gets the whole
-        // width rather than being docked the way an overlay is. Letters still
-        // sit low, where a phone keyboard lives and the thumbs already are;
-        // the keypad centres, because it is the only thing on the screen.
-        params.gravity = keypad ? Gravity.CENTER : (Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM);
+                resting ? FrameLayout.LayoutParams.MATCH_PARENT
+                        : FrameLayout.LayoutParams.WRAP_CONTENT);
 
-        int margin = Math.round(8f * getContext().getResources().getDisplayMetrics().density);
-        params.leftMargin = margin;
-        params.rightMargin = margin;
-        params.topMargin = margin;
-        params.bottomMargin = margin;
+        // The resting screen fills the panel so a tap anywhere is meaningful.
+        // A keyboard gets the whole width but not the height: letters sit low,
+        // where a phone keyboard lives and the thumbs already are, and the
+        // keypad centres because it is the only thing on the screen.
+        params.gravity = resting ? Gravity.CENTER
+                : (keypad ? Gravity.CENTER : (Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM));
 
-        detachFromParent(keyboard);
-        container.addView(keyboard, params);
-        setContentView(container);
+        if (!resting) {
+            int margin = Math.round(8f * getContext().getResources().getDisplayMetrics().density);
+            params.leftMargin = margin;
+            params.rightMargin = margin;
+            params.topMargin = margin;
+            params.bottomMargin = margin;
+        }
+
+        detachFromParent(content);
+        container.addView(content, params);
     }
 
     /** A view can only live in one hierarchy, and it may have been an overlay first. */

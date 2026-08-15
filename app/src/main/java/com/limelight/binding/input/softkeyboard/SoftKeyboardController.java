@@ -124,6 +124,18 @@ public class SoftKeyboardController {
     }
 
     private void toggle(SoftKeyboardLayouts.Page page) {
+        if (presentation != null) {
+            // The second screen is already claimed. Asking for the page that is
+            // already being typed on means "I am done"; anything else means
+            // "switch to this one".
+            if (capturing && samePresentation(page)) {
+                setCapturing(false);
+            } else {
+                openPage(page);
+            }
+            return;
+        }
+
         if (shown && samePresentation(page)) {
             hide();
         } else {
@@ -162,13 +174,83 @@ public class SoftKeyboardController {
         heldDirection = null;
         // Any still-held key keeps its entry so the release is swallowed.
 
-        if (view != null) {
-            view.setDimmed(!capture);
-            view.setHint(context.getString(hintFor(getPage(), capture)));
-        }
         if (capture) {
+            if (view != null) {
+                view.setHint(context.getString(hintFor(getPage(), true)));
+            }
             idleHandler.postDelayed(releaseOnIdle, IDLE_RELEASE_MS);
+        } else {
+            // Done typing means the keys go away, not that they sit there
+            // faded. On a second screen that leaves a dark panel; over the
+            // stream it leaves nothing at all.
+            rest();
         }
+    }
+
+    /**
+     * Puts the second screen back to black with the two choices on it, or
+     * takes the overlay away entirely when there is no second screen.
+     */
+    private void rest() {
+        idleHandler.removeCallbacks(releaseOnIdle);
+        capturing = false;
+        heldDirection = null;
+        echo.setLength(0);
+
+        if (presentation == null) {
+            // Docked over the game: resting has to mean gone, because a black
+            // panel across the bottom of the stream is worse than no keyboard.
+            hide();
+            return;
+        }
+
+        view = null;
+        presentation.swapContent(newLauncher(), false);
+        lastOutcome = "resting on screen " + presentationDisplayId;
+    }
+
+    private SoftKeyboardLauncherView newLauncher() {
+        SoftKeyboardLauncherView launcher = new SoftKeyboardLauncherView(context);
+        launcher.setOnPickListener(new SoftKeyboardLauncherView.OnPickListener() {
+            @Override
+            public void onPick(SoftKeyboardLayouts.Page page) {
+                openPage(page);
+            }
+        });
+        return launcher;
+    }
+
+    /** Brings up one of the keyboards on a screen that is currently resting. */
+    private void openPage(SoftKeyboardLayouts.Page page) {
+        if (presentation == null) {
+            show(page);
+            return;
+        }
+
+        model = new SoftKeyboardModel(page);
+        view = buildView();
+        presentation.swapContent(view, page == SoftKeyboardLayouts.Page.PIN);
+
+        echo.setLength(0);
+        view.setEcho("");
+        capturing = false;
+        setCapturing(true);
+        applyHint();
+        view.refresh();
+        lastOutcome = "typing on screen " + presentationDisplayId;
+    }
+
+    private SoftKeyboardView buildView() {
+        SoftKeyboardView built = new SoftKeyboardView(context, model);
+        built.setOnKeyPressListener(new SoftKeyboardView.OnKeyPressListener() {
+            @Override
+            public void onKeyPress(int row, int column) {
+                setCapturing(true);
+                model.setFocus(row, column);
+                pressFocusedKey();
+            }
+        });
+        return built;
     }
 
     public boolean isCapturing() {
@@ -192,12 +274,31 @@ public class SoftKeyboardController {
         if (shown || !prefersSecondScreen() || !autoShowEnabled()) {
             return;
         }
-        if (chooseDisplay() == null) {
+        Display target = chooseDisplay();
+        if (target == null) {
             // With no second screen this would dock over the game uninvited.
             return;
         }
-        show(SoftKeyboardLayouts.Page.LETTERS);
-        setCapturing(false);
+
+        // Claim the screen but put nothing on it. The panel stays black until
+        // the user says they want to type, and says which kind.
+        try {
+            SoftKeyboardPresentation shownOn =
+                    new SoftKeyboardPresentation(game, target, newLauncher(), false);
+            shownOn.show();
+            presentation = shownOn;
+            presentationDisplayId = target.getDisplayId();
+            shown = true;
+            capturing = false;
+            watchDisplays();
+            lastOutcome = "resting on screen " + target.getDisplayId();
+            LimeLog.info("Soft keyboard " + lastOutcome);
+        } catch (RuntimeException e) {
+            presentation = null;
+            presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
+            lastOutcome = "could not claim a second screen: " + e.getClass().getSimpleName();
+            LimeLog.warning("Soft keyboard " + lastOutcome);
+        }
     }
 
     public void show(SoftKeyboardLayouts.Page page) {
@@ -698,24 +799,20 @@ public class SoftKeyboardController {
      * which {@link SoftKeyboardModel#setPage} already decided.
      */
     private void rebuildForPage() {
-        detach();
+        SoftKeyboardView rebuilt = buildView();
 
-        SoftKeyboardView rebuilt = new SoftKeyboardView(context, model);
-        rebuilt.setOnKeyPressListener(new SoftKeyboardView.OnKeyPressListener() {
-            @Override
-            public void onKeyPress(int row, int column) {
-                // A finger on a key means the user is typing, so the pad comes
-                // over too rather than making them ask for it separately.
-                setCapturing(true);
-                model.setFocus(row, column);
-                pressFocusedKey();
-            }
-        });
+        if (presentation != null) {
+            // Swap inside the existing window. Tearing the presentation down to
+            // change page would blank the second screen on every L2 press.
+            view = rebuilt;
+            presentation.swapContent(view, model.getPage() == SoftKeyboardLayouts.Page.PIN);
+        } else {
+            detach();
+            view = rebuilt;
+            attach(view, model.getPage());
+        }
 
-        view = rebuilt;
-        attach(view, model.getPage());
         applyHint();
-        view.setDimmed(!capturing);
         view.setEcho(echo.toString());
         view.refresh();
     }
