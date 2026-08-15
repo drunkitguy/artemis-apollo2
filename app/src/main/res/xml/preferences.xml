@@ -647,6 +647,12 @@
         app:iconSpaceReserved="false"
         android:icon="@drawable/vl_settings_ic_keyboard">
         <com.limelight.preferences.VlTogglePreference
+            android:defaultValue="true"
+            android:key="checkbox_soft_keyboard_second_screen"
+            android:summary="@string/summary_soft_keyboard_second_screen"
+            android:title="@string/title_soft_keyboard_second_screen"
+            app:iconSpaceReserved="false" />
+        <com.limelight.preferences.VlTogglePreference
             android:defaultValue="false"
             android:key="checkbox_enable_keyboard"
             android:summary="@string/summary_show_virtual_key"

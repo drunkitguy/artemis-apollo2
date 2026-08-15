@@ -1554,6 +1554,25 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         return onExternelDisplay;
     }
 
+    /**
+     * The screen the stream is being rendered on.
+     *
+     * The soft keyboard uses this to pick a different one, so it must reflect
+     * where the activity actually ended up rather than where it was asked to
+     * go: external display mode moves the stream, and the keyboard has to move
+     * the other way.
+     */
+    public int getStreamDisplayId() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Display display = getDisplay();
+            if (display != null) {
+                return display.getDisplayId();
+            }
+        }
+        Display fallback = getWindowManager().getDefaultDisplay();
+        return fallback != null ? fallback.getDisplayId() : Display.DEFAULT_DISPLAY;
+    }
+
     private float prepareDisplayForRendering(Display currentDisplay) {
         WindowManager.LayoutParams windowLayoutParams = getWindow().getAttributes();
         float displayRefreshRate;

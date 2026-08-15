@@ -3,6 +3,11 @@ package com.limelight.binding.input.softkeyboard;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Point;
+import android.hardware.display.DisplayManager;
+import android.os.Build;
+import android.view.Display;
+import android.view.WindowManager;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -11,7 +16,12 @@ import android.view.View;
 import android.widget.FrameLayout;
 
 import com.limelight.Game;
+import com.limelight.LimeLog;
+import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.R;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * A gamepad first on screen keyboard.
@@ -45,6 +55,9 @@ public class SoftKeyboardController {
 
     private SoftKeyboardModel model;
     private SoftKeyboardView view;
+    private SoftKeyboardPresentation presentation;
+    private DisplayManager.DisplayListener displayListener;
+    private int presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
     private boolean shown;
 
     /** Local mirror of what has been typed, purely so the user can see it. */
@@ -116,7 +129,8 @@ public class SoftKeyboardController {
         applyHint();
         view.setEcho("");
 
-        root.addView(view, layoutParamsFor(page));
+        attach(view, page);
+        watchDisplays();
         shown = true;
         heldDirection = null;
         leftTriggerDown = false;
@@ -124,12 +138,152 @@ public class SoftKeyboardController {
     }
 
     public void hide() {
-        if (view != null) {
-            root.removeView(view);
-            view = null;
-        }
+        unwatchDisplays();
+        detach();
+        view = null;
         shown = false;
         heldDirection = null;
+    }
+
+    // ------------------------------------------------------ where it is shown
+
+    /**
+     * Puts the keyboard on a second screen when there is one, and falls back
+     * to an overlay on the streaming screen when there is not.
+     *
+     * The fallback is not an error path. Most devices have one screen, and a
+     * docked overlay is the right answer there; the second screen is a bonus
+     * for handhelds that have one.
+     */
+    private void attach(SoftKeyboardView keyboard, SoftKeyboardLayouts.Page page) {
+        Display target = chooseDisplay();
+        if (target != null) {
+            try {
+                SoftKeyboardPresentation shownOn = new SoftKeyboardPresentation(
+                        game, target, keyboard, page == SoftKeyboardLayouts.Page.PIN);
+                shownOn.show();
+                presentation = shownOn;
+                presentationDisplayId = target.getDisplayId();
+                return;
+            } catch (WindowManager.InvalidDisplayException e) {
+                // The screen went away between choosing it and showing on it.
+                LimeLog.warning("Soft keyboard display vanished: " + e.getMessage());
+            } catch (RuntimeException e) {
+                // A vendor screen that will not host a presentation is not a
+                // reason to leave the user without a keyboard.
+                LimeLog.warning("Soft keyboard could not use the second screen: " + e);
+            }
+            presentation = null;
+            presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
+        }
+
+        root.addView(keyboard, layoutParamsFor(page));
+    }
+
+    private void detach() {
+        if (presentation != null) {
+            try {
+                presentation.dismiss();
+            } catch (RuntimeException ignored) {
+                // Dismissing a presentation whose screen is already gone throws.
+            }
+            presentation = null;
+            presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
+        }
+        if (view != null && view.getParent() == root) {
+            root.removeView(view);
+        }
+    }
+
+    /** @return the screen to use, or null to fall back to an overlay */
+    private Display chooseDisplay() {
+        if (!prefersSecondScreen()) {
+            return null;
+        }
+
+        DisplayManager displays = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+        if (displays == null) {
+            return null;
+        }
+
+        Display[] all = displays.getDisplays();
+        if (all == null || all.length < 2) {
+            return null;
+        }
+
+        List<KeyboardDisplayChooser.Candidate> candidates = new ArrayList<>(all.length);
+        for (Display display : all) {
+            Point size = sizeOf(display);
+            candidates.add(new KeyboardDisplayChooser.Candidate(
+                    display.getDisplayId(), size.x, size.y,
+                    display.getState() != Display.STATE_OFF));
+        }
+
+        int chosen = KeyboardDisplayChooser.choose(candidates, game.getStreamDisplayId());
+        return chosen == KeyboardDisplayChooser.NO_DISPLAY ? null : displays.getDisplay(chosen);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Point sizeOf(Display display) {
+        Point size = new Point();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Display.Mode mode = display.getMode();
+            if (mode != null && mode.getPhysicalWidth() > 0) {
+                size.set(mode.getPhysicalWidth(), mode.getPhysicalHeight());
+                return size;
+            }
+        }
+        display.getRealSize(size);
+        return size;
+    }
+
+    private boolean prefersSecondScreen() {
+        return PreferenceConfiguration.readPreferences(context).softKeyboardOnSecondScreen;
+    }
+
+    /**
+     * A second screen can be unplugged or folded away with the keyboard on it.
+     * When that happens the keys are rebuilt as an overlay rather than
+     * vanishing, because the user is mid sentence.
+     */
+    private void watchDisplays() {
+        if (displayListener != null) {
+            return;
+        }
+        final DisplayManager displays =
+                (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+        if (displays == null) {
+            return;
+        }
+
+        displayListener = new DisplayManager.DisplayListener() {
+            @Override
+            public void onDisplayAdded(int displayId) {
+            }
+
+            @Override
+            public void onDisplayRemoved(int displayId) {
+                if (shown && displayId == presentationDisplayId) {
+                    rebuildForPage();
+                }
+            }
+
+            @Override
+            public void onDisplayChanged(int displayId) {
+            }
+        };
+        displays.registerDisplayListener(displayListener, null);
+    }
+
+    private void unwatchDisplays() {
+        if (displayListener == null) {
+            return;
+        }
+        DisplayManager displays = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+        if (displays != null) {
+            displays.unregisterDisplayListener(displayListener);
+        }
+        displayListener = null;
     }
 
     /**
@@ -407,7 +561,7 @@ public class SoftKeyboardController {
      * which {@link SoftKeyboardModel#setPage} already decided.
      */
     private void rebuildForPage() {
-        root.removeView(view);
+        detach();
 
         SoftKeyboardView rebuilt = new SoftKeyboardView(context, model);
         rebuilt.setOnKeyPressListener(new SoftKeyboardView.OnKeyPressListener() {
@@ -419,7 +573,7 @@ public class SoftKeyboardController {
         });
 
         view = rebuilt;
-        root.addView(view, layoutParamsFor(model.getPage()));
+        attach(view, model.getPage());
         applyHint();
         view.setEcho(echo.toString());
         view.refresh();
