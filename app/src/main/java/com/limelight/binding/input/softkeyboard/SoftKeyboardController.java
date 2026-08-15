@@ -59,6 +59,8 @@ public class SoftKeyboardController {
     private DisplayManager.DisplayListener displayListener;
     private int presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
     private boolean shown;
+    /** What the last attempt to show the keyboard actually did, for the report. */
+    private String lastOutcome;
 
     /** Local mirror of what has been typed, purely so the user can see it. */
     private final StringBuilder echo = new StringBuilder();
@@ -164,20 +166,35 @@ public class SoftKeyboardController {
                 shownOn.show();
                 presentation = shownOn;
                 presentationDisplayId = target.getDisplayId();
+                lastOutcome = "shown on screen " + target.getDisplayId();
+                LimeLog.info("Soft keyboard " + lastOutcome);
                 return;
             } catch (WindowManager.InvalidDisplayException e) {
                 // The screen went away between choosing it and showing on it.
-                LimeLog.warning("Soft keyboard display vanished: " + e.getMessage());
+                lastOutcome = "screen " + target.getDisplayId() + " refused the window ("
+                        + e.getClass().getSimpleName() + "), fell back to an overlay";
+                LimeLog.warning("Soft keyboard " + lastOutcome);
             } catch (RuntimeException e) {
                 // A vendor screen that will not host a presentation is not a
                 // reason to leave the user without a keyboard.
-                LimeLog.warning("Soft keyboard could not use the second screen: " + e);
+                lastOutcome = "screen " + target.getDisplayId() + " failed with "
+                        + e.getClass().getSimpleName() + ", fell back to an overlay";
+                LimeLog.warning("Soft keyboard " + lastOutcome + ": " + e.getMessage());
             }
             presentation = null;
             presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
+        } else {
+            lastOutcome = "docked over the stream (no separate second screen)";
+            LimeLog.info("Soft keyboard " + lastOutcome);
         }
 
         root.addView(keyboard, layoutParamsFor(page));
+    }
+
+    /** A plain language account of what the keyboard did, for the screen report. */
+    public String describe() {
+        return SoftKeyboardDiagnostics.report(
+                context, game.getStreamDisplayId(), prefersSecondScreen(), lastOutcome);
     }
 
     private void detach() {

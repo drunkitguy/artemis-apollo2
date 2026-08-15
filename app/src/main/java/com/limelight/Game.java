@@ -1153,6 +1153,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         softKeyboardController().toggleKeypad();
     }
 
+    /** Plain language account of the device's screens and where the keyboard went. */
+    public String describeSoftKeyboardScreens() {
+        return softKeyboardController().describe();
+    }
+
     public boolean isSoftKeyboardShown() {
         return softKeyboardController != null && softKeyboardController.isShown();
     }

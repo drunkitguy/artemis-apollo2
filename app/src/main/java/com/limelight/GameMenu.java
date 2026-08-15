@@ -12,6 +12,8 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.widget.ArrayAdapter;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.limelight.binding.input.GameInputDevice;
@@ -257,6 +259,25 @@ public class GameMenu implements Game.GameMenuCallbacks {
         options.add(new MenuOption(getString(R.string.game_menu_toggle_virtual_keyboard_model), true, game::toggleFullKeyboard));
         options.add(new MenuOption(getString(R.string.game_menu_toggle_gamepad_keyboard), true, game::toggleGamepadKeyboard));
         options.add(new MenuOption(getString(R.string.game_menu_toggle_number_pad), true, game::toggleNumberPad));
+        options.add(new MenuOption(getString(R.string.game_menu_keyboard_screen_info), true,
+                () -> {
+                    int themeResId = game.getApplicationInfo().theme;
+                    Context themedContext = new ContextThemeWrapper(dialogScreenContext, themeResId);
+                    TextView report = new TextView(themedContext);
+                    report.setText(game.describeSoftKeyboardScreens());
+                    report.setTextIsSelectable(true);
+                    report.setTypeface(android.graphics.Typeface.MONOSPACE);
+                    report.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f);
+                    int pad = Math.round(16f * game.getResources().getDisplayMetrics().density);
+                    report.setPadding(pad, pad, pad, pad);
+                    ScrollView scroller = new ScrollView(themedContext);
+                    scroller.addView(report);
+                    new AlertDialog.Builder(themedContext)
+                            .setTitle(R.string.game_menu_keyboard_screen_info)
+                            .setView(scroller)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show();
+                }));
         options.add(new MenuOption(getString(R.string.game_menu_task_manager), true, () -> sendKeys(new short[]{KeyboardTranslator.VK_LCONTROL, KeyboardTranslator.VK_LSHIFT, KeyboardTranslator.VK_ESCAPE})));
 
         // **FIXED:** This is a UI navigation action, so it should not use withGameFocus.
