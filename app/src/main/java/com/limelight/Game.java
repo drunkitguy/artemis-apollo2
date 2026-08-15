@@ -22,6 +22,7 @@ import com.limelight.binding.input.evdev.EvdevListener;
 import com.limelight.binding.input.touch.TouchContext;
 import com.limelight.binding.input.touch.TrackpadContext;
 import com.limelight.binding.input.virtual_controller.VirtualController;
+import com.limelight.binding.input.softkeyboard.SoftKeyboardController;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardController;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardLayoutController;
 import com.limelight.binding.video.CrashListener;
@@ -179,6 +180,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private KeyBoardController keyBoardController;
 
     private KeyBoardLayoutController keyBoardLayoutController;
+
+    private SoftKeyboardController softKeyboardController;
 
     private PreferenceConfiguration prefConfig;
     private SharedPreferences tombstonePrefs;
@@ -1131,6 +1134,68 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         keyBoardController.show();
     }
 
+    // ---------------------------------------------------- gamepad keyboard
+
+    private SoftKeyboardController softKeyboardController() {
+        if (softKeyboardController == null) {
+            softKeyboardController = new SoftKeyboardController(this, (FrameLayout) rootView);
+        }
+        return softKeyboardController;
+    }
+
+    /** Shows or hides the gamepad navigable letter keyboard. */
+    public void toggleGamepadKeyboard() {
+        softKeyboardController().toggleKeyboard();
+    }
+
+    /** Shows or hides the numeric keypad, for host fields that only take digits. */
+    public void toggleNumberPad() {
+        softKeyboardController().toggleKeypad();
+    }
+
+    public boolean isSoftKeyboardShown() {
+        return softKeyboardController != null && softKeyboardController.isShown();
+    }
+
+    /**
+     * Taps one key on the host, with shift held around it when asked.
+     *
+     * This does not go through the normal key path because the soft keyboard
+     * has no real input device behind it: there is no scan code and no device
+     * id to look a layout up with, so the translation is done directly with a
+     * neutral device id.
+     */
+    public void sendSoftKeyboardKey(int androidKeyCode, boolean shift) {
+        if (!connected || conn == null || keyboardTranslator == null) {
+            return;
+        }
+
+        short translated = keyboardTranslator.translate(androidKeyCode, 0, -1);
+        if (translated == 0) {
+            return;
+        }
+
+        byte modifier = shift ? KeyboardPacket.MODIFIER_SHIFT : 0;
+        if (shift) {
+            conn.sendKeyboardInput((short) KeyboardTranslator.VK_LSHIFT,
+                    KeyboardPacket.KEY_DOWN, (byte) 0, (byte) 0);
+        }
+        conn.sendKeyboardInput(translated, KeyboardPacket.KEY_DOWN, modifier, (byte) 0);
+        conn.sendKeyboardInput(translated, KeyboardPacket.KEY_UP, modifier, (byte) 0);
+        if (shift) {
+            conn.sendKeyboardInput((short) KeyboardTranslator.VK_LSHIFT,
+                    KeyboardPacket.KEY_UP, (byte) 0, (byte) 0);
+        }
+    }
+
+    /** Sends literal text, used for pasting the clipboard into the host. */
+    public void sendSoftKeyboardText(String text) {
+        if (!connected || conn == null || text == null || text.isEmpty()) {
+            return;
+        }
+        conn.sendUtf8Text(text);
+    }
+
     public Boolean isKeyboardLayoutVisible() {
         return keyBoardLayoutController != null && keyBoardLayoutController.shown;
     }
@@ -1751,6 +1816,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (controllerHandler != null) {
             controllerHandler.destroy();
         }
+        if (softKeyboardController != null) {
+            softKeyboardController.hide();
+            softKeyboardController = null;
+        }
+
         if (keyboardTranslator != null) {
             InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
             inputManager.unregisterInputDeviceListener(keyboardTranslator);
@@ -2079,6 +2149,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return false;
         }
 
+        // The gamepad keyboard owns the pad while it is up, so nothing below
+        // this point reaches the host or the controller handler.
+        if (softKeyboardController != null && softKeyboardController.handleKeyDown(event)) {
+            return true;
+        }
+
         int deviceId = event.getDeviceId();
         if (prefConfig.ignoreSynthEvents && deviceId <= 0) {
             return false;
@@ -2168,6 +2244,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
+        }
+
+        if (softKeyboardController != null && softKeyboardController.handleKeyUp(event)) {
+            return true;
         }
 
         int deviceId = event.getDeviceId();
@@ -2800,6 +2880,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     // Returns true if the event was consumed
     // NB: View is only present if called from a view callback
     public boolean handleMotionEvent(View view, MotionEvent event) {
+        // Sticks drive the focus ring while the gamepad keyboard is up. Only
+        // joystick sources are taken, so touch and mouse still work normally.
+        if (softKeyboardController != null && softKeyboardController.handleMotionEvent(event)) {
+            return true;
+        }
+
         // Pass through mouse/touch/joystick input if we're not grabbing
         if (!grabbedInput) {
             return false;

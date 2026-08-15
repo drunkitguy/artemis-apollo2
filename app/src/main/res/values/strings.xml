@@ -729,4 +729,10 @@
 
     <string name="title_checkbox_full_screen">Enable Full Screen</string>
     <string name="summary_checkbox_full_screen">Hide system bars with immersive mode</string>
+
+    <!-- Gamepad navigable on-screen keyboard -->
+    <string name="soft_keyboard_hint_letters">Typing on the PC · A select · B delete · X space · Y shift · L2/R2 symbols · L1/R1 number pad · Start done</string>
+    <string name="soft_keyboard_hint_keypad">Number pad · A select · B delete · L1/R1 letters · Start done</string>
+    <string name="game_menu_toggle_gamepad_keyboard">Toggle Gamepad keyboard</string>
+    <string name="game_menu_toggle_number_pad">Toggle Number pad</string>
 </resources>
