@@ -48,8 +48,13 @@ public class SoftKeyboardController {
     private static final float STICK_RECENTRE = 0.3f;
     /** Triggers report 0..1; treat over half pull as a press. */
     private static final float TRIGGER_THRESHOLD = 0.5f;
-    /** Quiet for this long and the pad goes back to the game on its own. */
-    private static final long IDLE_RELEASE_MS = 12000;
+    /** Quiet for this long and the panel goes back to black on its own. */
+    private static final long IDLE_RELEASE_MS = 6000;
+    /** Both bumpers within this window counts as the open-the-keyboard chord. */
+    private static final long CHORD_WINDOW_MS = 400;
+    /** Where the last used page is remembered between sessions. */
+    private static final String STATE_PREFS = "soft_keyboard_state";
+    private static final String LAST_PAGE_KEY = "last_page_is_keypad";
 
     private final Game game;
     private final FrameLayout root;
@@ -91,6 +96,15 @@ public class SoftKeyboardController {
      * then land in whatever is being streamed and open its menu.
      */
     private final java.util.Set<Integer> consumedKeys = new java.util.HashSet<>();
+
+    private long leftBumperAt;
+    private long rightBumperAt;
+    /**
+     * Cached because the chord is checked on every gamepad press while the
+     * game is being played. Re-reading the whole preference set there would
+     * put a file parse on the input path.
+     */
+    private boolean padShortcut = true;
 
     private SoftKeyboardModel.Direction heldDirection;
     private long nextRepeatAt;
@@ -192,6 +206,7 @@ public class SoftKeyboardController {
      * takes the overlay away entirely when there is no second screen.
      */
     private void rest() {
+        refreshCachedPreferences();
         idleHandler.removeCallbacks(releaseOnIdle);
         capturing = false;
         heldDirection = null;
@@ -210,7 +225,8 @@ public class SoftKeyboardController {
     }
 
     private SoftKeyboardLauncherView newLauncher() {
-        SoftKeyboardLauncherView launcher = new SoftKeyboardLauncherView(context);
+        SoftKeyboardLauncherView launcher =
+                new SoftKeyboardLauncherView(context, lastUsedPage(), padShortcutEnabled());
         launcher.setOnPickListener(new SoftKeyboardLauncherView.OnPickListener() {
             @Override
             public void onPick(SoftKeyboardLayouts.Page page) {
@@ -220,8 +236,42 @@ public class SoftKeyboardController {
         return launcher;
     }
 
+    /**
+     * Which keyboard to reopen when the user just wants the one from last time.
+     *
+     * Kept across sessions because the answer is a property of what the person
+     * does with their PC, not of this particular stream.
+     */
+    private SoftKeyboardLayouts.Page lastUsedPage() {
+        boolean keypad = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                .getBoolean(LAST_PAGE_KEY, false);
+        return keypad ? SoftKeyboardLayouts.Page.PIN : SoftKeyboardLayouts.Page.LETTERS;
+    }
+
+    private void rememberPage(SoftKeyboardLayouts.Page page) {
+        if (page == SoftKeyboardLayouts.Page.SYMBOLS) {
+            // The symbol page is a detour off the letters page, not a choice
+            // anyone makes from cold.
+            return;
+        }
+        context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(LAST_PAGE_KEY, page == SoftKeyboardLayouts.Page.PIN)
+                .apply();
+    }
+
+    private boolean padShortcutEnabled() {
+        return padShortcut;
+    }
+
+    /** Re-read the preferences that are consulted on the input path. */
+    private void refreshCachedPreferences() {
+        padShortcut = PreferenceConfiguration.readPreferences(context).softKeyboardPadShortcut;
+    }
+
     /** Brings up one of the keyboards on a screen that is currently resting. */
     private void openPage(SoftKeyboardLayouts.Page page) {
+        rememberPage(page);
         if (presentation == null) {
             show(page);
             return;
@@ -280,6 +330,8 @@ public class SoftKeyboardController {
             return;
         }
 
+        refreshCachedPreferences();
+
         // Claim the screen but put nothing on it. The panel stays black until
         // the user says they want to type, and says which kind.
         try {
@@ -303,6 +355,7 @@ public class SoftKeyboardController {
 
     public void show(SoftKeyboardLayouts.Page page) {
         hide();
+        refreshCachedPreferences();
 
         model = new SoftKeyboardModel(page);
         view = new SoftKeyboardView(context, model);
@@ -550,6 +603,14 @@ public class SoftKeyboardController {
      *         must not see it
      */
     public boolean handleKeyDown(KeyEvent event) {
+        if (shown && !capturing && noticeBumperChord(event)) {
+            // Deliberately falls through rather than returning: the game still
+            // gets both bumpers. Opening the keyboard costs the user nothing
+            // they did not already spend, and a panel that lit up by accident
+            // goes back to black on its own a few seconds later.
+            openPage(lastUsedPage());
+        }
+
         if (!shown || !capturing) {
             return false;
         }
@@ -614,6 +675,48 @@ public class SoftKeyboardController {
                 // looking at.
                 return isFromGamepad(event.getDevice());
         }
+    }
+
+    /**
+     * Both bumpers within a short window, while the panel is resting.
+     *
+     * This exists because the second screen on a handheld may not be a
+     * touchscreen at all, in which case the buttons on the resting panel are
+     * unpressable and there would be no way to start typing without going back
+     * out to the menu. Both bumpers together is rare as a deliberate game
+     * action, and because the presses are still forwarded, a false positive
+     * costs a panel that lights up rather than an input the game never saw.
+     *
+     * @return true when this press completed the chord
+     */
+    private boolean noticeBumperChord(KeyEvent event) {
+        if (!padShortcutEnabled()) {
+            return false;
+        }
+
+        long now = android.os.SystemClock.uptimeMillis();
+        switch (event.getKeyCode()) {
+            case KeyEvent.KEYCODE_BUTTON_L1:
+                leftBumperAt = now;
+                break;
+            case KeyEvent.KEYCODE_BUTTON_R1:
+                rightBumperAt = now;
+                break;
+            default:
+                return false;
+        }
+
+        if (leftBumperAt == 0 || rightBumperAt == 0) {
+            return false;
+        }
+        if (Math.abs(leftBumperAt - rightBumperAt) > CHORD_WINDOW_MS) {
+            return false;
+        }
+
+        // Spend the chord so holding both does not reopen it every repeat.
+        leftBumperAt = 0;
+        rightBumperAt = 0;
+        return true;
     }
 
     /** Key ups are swallowed to match whatever {@link #handleKeyDown} consumed. */
