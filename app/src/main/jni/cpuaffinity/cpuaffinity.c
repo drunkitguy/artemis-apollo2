@@ -12,6 +12,11 @@
 // Every failure path is a no-op. A device that will not report its topology,
 // or refuses the call, keeps whatever scheduling it already had.
 
+// cpu_set_t, CPU_SET and CPU_ISSET are GNU extensions. Bionic hides them
+// behind __USE_GNU, which sys/cdefs.h only sets when _GNU_SOURCE is defined,
+// so this must come before any include that reaches sched.h.
+#define _GNU_SOURCE 1
+
 #include <jni.h>
 #include <sched.h>
 #include <stdio.h>
