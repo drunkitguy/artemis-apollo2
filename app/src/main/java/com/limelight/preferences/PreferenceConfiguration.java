@@ -53,6 +53,7 @@ public class PreferenceConfiguration {
     private static final String SOFT_KEYBOARD_SECOND_SCREEN_PREF_STRING = "checkbox_soft_keyboard_second_screen";
     private static final String SOFT_KEYBOARD_AUTO_SHOW_PREF_STRING = "checkbox_soft_keyboard_auto_show";
     private static final String SOFT_KEYBOARD_PAD_SHORTCUT_PREF_STRING = "checkbox_soft_keyboard_pad_shortcut";
+    private static final String PIN_THREADS_FAST_CORES_PREF_STRING = "checkbox_pin_threads_fast_cores";
     private static final String ENABLE_ULTRA_LOW_LATENCY_PREF_STRING = "checkbox_ultra_low_latency";
     private static final String ENFORCE_DISPLAY_MODE_PREF_STRING = "checkbox_enforce_display_mode";
     private static final String USE_VIRTUAL_DISPLAY_PREF_STRING = "checkbox_use_virtual_display";
@@ -162,6 +163,9 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_SOFT_KEYBOARD_SECOND_SCREEN = true;
     private static final boolean DEFAULT_SOFT_KEYBOARD_AUTO_SHOW = true;
     private static final boolean DEFAULT_SOFT_KEYBOARD_PAD_SHORTCUT = true;
+    // Off by default: pinning trades power and heat for scheduling certainty,
+    // and which way that lands depends on the device and the session length.
+    private static final boolean DEFAULT_PIN_THREADS_FAST_CORES = false;
     private static final boolean DEFAULT_HOST_AUDIO = false;
     private static final int DEFAULT_DEADZONE = 5;
     private static final int DEFAULT_OPACITY = 90;
@@ -252,6 +256,7 @@ public class PreferenceConfiguration {
     public boolean softKeyboardOnSecondScreen;
     public boolean softKeyboardAutoShow;
     public boolean softKeyboardPadShortcut;
+    public boolean pinThreadsToFastCores;
     public FormatOption videoFormat;
     public int framePacingWarpFactor = 0;
     public int deadzonePercentage;
@@ -898,6 +903,7 @@ private static int getFramePacingValue(Context context) {
         config.softKeyboardOnSecondScreen = prefs.getBoolean(SOFT_KEYBOARD_SECOND_SCREEN_PREF_STRING, DEFAULT_SOFT_KEYBOARD_SECOND_SCREEN);
         config.softKeyboardAutoShow = prefs.getBoolean(SOFT_KEYBOARD_AUTO_SHOW_PREF_STRING, DEFAULT_SOFT_KEYBOARD_AUTO_SHOW);
         config.softKeyboardPadShortcut = prefs.getBoolean(SOFT_KEYBOARD_PAD_SHORTCUT_PREF_STRING, DEFAULT_SOFT_KEYBOARD_PAD_SHORTCUT);
+        config.pinThreadsToFastCores = prefs.getBoolean(PIN_THREADS_FAST_CORES_PREF_STRING, DEFAULT_PIN_THREADS_FAST_CORES);
         config.enforceDisplayMode = prefs.getBoolean(ENFORCE_DISPLAY_MODE_PREF_STRING, DEFAULT_ENFORCE_DISPLAY_MODE);
         config.useVirtualDisplay = prefs.getBoolean(USE_VIRTUAL_DISPLAY_PREF_STRING, DEFAULT_USE_VIRTUAL_DISPLAY);
         config.enableUltraLowLatency = prefs.getBoolean(ENABLE_ULTRA_LOW_LATENCY_PREF_STRING, DEFAULT_ENABLE_ULTRA_LOW_LATENCY);

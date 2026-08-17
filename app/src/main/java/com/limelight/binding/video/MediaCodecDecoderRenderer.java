@@ -1160,6 +1160,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 // Boost thread priority to reduce decoding latency
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
 
+                // Priority alone does not stop a big.LITTLE scheduler parking
+                // this thread on a little core, and a frame that lands there
+                // arrives late. Off by default because pinning costs power.
+                if (prefs != null && prefs.pinThreadsToFastCores) {
+                    com.limelight.utils.CpuAffinity.pinCurrentThread("video renderer");
+                }
+
                 // Compute display refresh and vsync period once (fallback 60 Hz if unavailable)
                 long vsyncPeriodNs;
                 float displayHz = 60f;

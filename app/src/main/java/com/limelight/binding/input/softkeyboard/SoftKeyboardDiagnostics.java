@@ -84,6 +84,17 @@ public final class SoftKeyboardDiagnostics {
                 .append(lastOutcome == null ? "not opened yet this session" : lastOutcome)
                 .append('\n');
 
+        out.append('\n');
+        out.append("Fast core pinning: ");
+        if (!com.limelight.utils.CpuAffinity.isSupported()) {
+            out.append("not available on this device\n");
+        } else {
+            out.append(com.limelight.utils.CpuAffinity.fastCoreCount())
+                    .append(" fast cores (mask 0x")
+                    .append(Integer.toHexString(com.limelight.utils.CpuAffinity.fastCoreMask()))
+                    .append(")\n");
+        }
+
         if (all != null && all.length < 2) {
             out.append("\nOnly one screen is reported. On this device the second panel is\n")
                     .append("not a separate Android screen, so no window can be sent to it.\n")

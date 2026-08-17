@@ -185,8 +185,44 @@ public class AndroidAudioRenderer implements AudioRenderer {
         return 0;
     }
 
+    /**
+     * Raised once on the thread that actually delivers audio.
+     *
+     * The call has to happen here rather than in start(), because this is the
+     * first point at which the streaming core's audio thread runs our code.
+     * It is guarded rather than repeated: the version this came from called
+     * setThreadPriority on every write, which is a syscall per audio packet
+     * for a property that only needs setting once.
+     */
+    private boolean audioThreadPrepared = false;
+
+    private void prepareAudioThread() {
+        audioThreadPrepared = true;
+
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
+        } catch (Throwable e) {
+            LimeLog.warning("Could not raise audio thread priority: " + e);
+        }
+
+        boolean pin = false;
+        try {
+            pin = com.limelight.preferences.PreferenceConfiguration
+                    .readPreferences(context).pinThreadsToFastCores;
+        } catch (Throwable e) {
+            LimeLog.warning("Could not read the fast core preference: " + e);
+        }
+        if (pin) {
+            com.limelight.utils.CpuAffinity.pinCurrentThread("audio renderer");
+        }
+    }
+
     @Override
     public void playDecodedAudio(short[] audioData) {
+        if (!audioThreadPrepared) {
+            prepareAudioThread();
+        }
+
         // Only queue up to 40 ms of pending audio data in addition to what AudioTrack is buffering for us.
         if (MoonBridge.getPendingAudioDuration() < 40) {
             // This will block until the write is completed. That can cause a backlog

@@ -739,6 +739,8 @@
     <string name="soft_keyboard_hint_resting">Tap any key to start typing · the controller is playing the game</string>
     <string name="soft_keyboard_launcher_caption">Tap anywhere to type · or pick one</string>
     <string name="soft_keyboard_launcher_caption_pad">Tap anywhere, or hold both stick clicks, to type</string>
+    <string name="title_pin_threads_fast_cores">Pin streaming threads to fast cores</string>
+    <string name="summary_pin_threads_fast_cores">Keeps the video and audio threads on the device\'s fast CPU cores instead of letting the scheduler move them to slower ones. Can shave a millisecond or two of jitter, but draws more power and runs warmer, so a long session may throttle instead. Try it both ways and keep whichever is steadier. Does nothing on devices whose cores are all the same speed.</string>
     <string name="title_soft_keyboard_pad_shortcut">Open the keyboard with both stick clicks</string>
     <string name="summary_soft_keyboard_pad_shortcut">Hold both stick clicks together for half a second to open the keyboard without touching the screen, for second screens that are not touch capable. The game still receives the clicks, and no other button is ever taken while the panel is black.</string>
     <string name="soft_keyboard_launcher_letters">ABC</string>
