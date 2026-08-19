@@ -252,15 +252,74 @@ public class SoftKeyboardController {
     }
 
     private SoftKeyboardLauncherView newLauncher() {
-        SoftKeyboardLauncherView launcher =
-                new SoftKeyboardLauncherView(context, lastUsedPage(), padShortcutEnabled());
+        SoftKeyboardLauncherView launcher = new SoftKeyboardLauncherView(
+                context, lastUsedPage(), padShortcutEnabled(), trackpadSensitivity());
         launcher.setOnPickListener(new SoftKeyboardLauncherView.OnPickListener() {
             @Override
             public void onPick(SoftKeyboardLayouts.Page page) {
                 openPage(page);
             }
         });
+
+        launcher.getTrackpad().setListener(
+                new com.limelight.binding.input.trackpad.SoftTrackpadView.Listener() {
+            @Override
+            public void onPointerMove(int dx, int dy) {
+                game.sendSoftTrackpadMove(dx, dy);
+            }
+
+            @Override
+            public void onScroll(int clicks) {
+                game.sendSoftTrackpadScroll(clicks);
+            }
+
+            @Override
+            public void onLeftClick() {
+                game.sendSoftTrackpadClick(false);
+            }
+
+            @Override
+            public void onRightClick() {
+                game.sendSoftTrackpadClick(true);
+            }
+        });
+
         return launcher;
+    }
+
+    /**
+     * Finger travel to pointer travel.
+     *
+     * The panel is small, so one to one would make crossing a 1080p screen an
+     * unreasonable amount of swiping. Scaled by the ratio of the streamed
+     * width to the panel width, so a swipe across the pad is roughly a swipe
+     * across the picture whatever size the second screen turns out to be.
+     */
+    private float trackpadSensitivity() {
+        int panelWidth = context.getResources().getDisplayMetrics().widthPixels;
+        if (presentationDisplayId != KeyboardDisplayChooser.NO_DISPLAY) {
+            DisplayManager displays =
+                    (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+            if (displays != null) {
+                Display panel = displays.getDisplay(presentationDisplayId);
+                if (panel != null) {
+                    Point size = sizeOf(panel);
+                    if (size.x > 0) {
+                        panelWidth = size.x;
+                    }
+                }
+            }
+        }
+
+        int streamWidth = PreferenceConfiguration.readPreferences(context).width;
+        if (panelWidth <= 0 || streamWidth <= 0) {
+            return 1.5f;
+        }
+
+        // Clamped so an unusually shaped panel cannot produce a pointer that is
+        // either unusable or impossible to aim.
+        float ratio = (float) streamWidth / (float) panelWidth;
+        return Math.max(0.8f, Math.min(3.0f, ratio));
     }
 
     /**

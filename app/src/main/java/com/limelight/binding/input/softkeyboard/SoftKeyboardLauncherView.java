@@ -33,9 +33,10 @@ public class SoftKeyboardLauncherView extends LinearLayout {
 
     private OnPickListener listener;
     private final SoftKeyboardLayouts.Page lastUsed;
+    private final com.limelight.binding.input.trackpad.SoftTrackpadView trackpad;
 
     public SoftKeyboardLauncherView(Context context, SoftKeyboardLayouts.Page lastUsed,
-                                    boolean padShortcutEnabled) {
+                                    boolean padShortcutEnabled, float trackpadSensitivity) {
         super(context);
         this.lastUsed = lastUsed;
 
@@ -43,33 +44,21 @@ public class SoftKeyboardLauncherView extends LinearLayout {
         setGravity(Gravity.CENTER);
         setBackgroundColor(Color.BLACK);
 
-        // Anywhere that is not a button reopens what was used last.
-        setClickable(true);
-        setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                pick(SoftKeyboardLauncherView.this.lastUsed);
-            }
-        });
-
-        TextView caption = new TextView(context);
-        caption.setText(padShortcutEnabled
-                ? R.string.soft_keyboard_launcher_caption_pad
-                : R.string.soft_keyboard_launcher_caption);
-        caption.setTextColor(ContextCompat.getColor(context, R.color.vl_secondary_label));
-        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        caption.setGravity(Gravity.CENTER);
-        caption.setPadding(dp(16f), 0, dp(16f), 0);
-        LayoutParams captionParams = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        captionParams.bottomMargin = dp(20f);
-        addView(caption, captionParams);
+        // The panel is otherwise doing nothing while nobody types, so most of
+        // it is a trackpad. The keyboard buttons become a strip along the
+        // bottom rather than the whole screen.
+        trackpad = new com.limelight.binding.input.trackpad.SoftTrackpadView(context, trackpadSensitivity);
+        LayoutParams padParams = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
+        addView(trackpad, padParams);
 
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(HORIZONTAL);
         row.setGravity(Gravity.CENTER);
         LayoutParams rowParams = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        rowParams.leftMargin = dp(24f);
-        rowParams.rightMargin = dp(24f);
+        rowParams.leftMargin = dp(16f);
+        rowParams.rightMargin = dp(16f);
+        rowParams.bottomMargin = dp(12f);
+        rowParams.topMargin = dp(8f);
         addView(row, rowParams);
 
         row.addView(button(context, R.string.soft_keyboard_launcher_letters,
@@ -78,6 +67,10 @@ public class SoftKeyboardLauncherView extends LinearLayout {
         row.addView(button(context, R.string.soft_keyboard_launcher_digits,
                         SoftKeyboardLayouts.Page.PIN),
                 buttonParams(true));
+    }
+
+    public com.limelight.binding.input.trackpad.SoftTrackpadView getTrackpad() {
+        return trackpad;
     }
 
     public void setOnPickListener(OnPickListener listener) {
@@ -96,11 +89,11 @@ public class SoftKeyboardLauncherView extends LinearLayout {
         TextView view = new TextView(context);
         view.setText(labelRes);
         view.setGravity(Gravity.CENTER);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30f);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
         view.setTextColor(preferred
                 ? Color.WHITE
                 : ContextCompat.getColor(context, R.color.vl_label));
-        view.setPadding(dp(12f), dp(30f), dp(12f), dp(30f));
+        view.setPadding(dp(12f), dp(14f), dp(12f), dp(14f));
 
         GradientDrawable shape = new GradientDrawable();
         shape.setShape(GradientDrawable.RECTANGLE);

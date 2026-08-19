@@ -1193,6 +1193,48 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
     }
 
+    /**
+     * Relative pointer movement from the second screen trackpad.
+     *
+     * Goes straight to the connection rather than through the touch handling
+     * used for the streamed surface: that path has to reason about where on
+     * the video a finger landed, and a trackpad on a different screen has no
+     * such position to map.
+     */
+    public void sendSoftTrackpadMove(int dx, int dy) {
+        if (!connected || conn == null || (dx == 0 && dy == 0)) {
+            return;
+        }
+        conn.sendMouseMove((short) dx, (short) dy);
+    }
+
+    public void sendSoftTrackpadScroll(int clicks) {
+        if (!connected || conn == null || clicks == 0) {
+            return;
+        }
+        conn.sendMouseScroll((byte) (-clicks));
+    }
+
+    public void sendSoftTrackpadClick(boolean rightButton) {
+        if (!connected || conn == null) {
+            return;
+        }
+        final byte button = rightButton
+                ? MouseButtonPacket.BUTTON_RIGHT
+                : MouseButtonPacket.BUTTON_LEFT;
+        conn.sendMouseButtonDown(button);
+        // A press and release in the same instant is sometimes coalesced by
+        // the host, so the release is given its own turn on the handler.
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                if (connected && conn != null) {
+                    conn.sendMouseButtonUp(button);
+                }
+            }
+        });
+    }
+
     /** Sends literal text, used for pasting the clipboard into the host. */
     public void sendSoftKeyboardText(String text) {
         if (!connected || conn == null || text == null || text.isEmpty()) {
