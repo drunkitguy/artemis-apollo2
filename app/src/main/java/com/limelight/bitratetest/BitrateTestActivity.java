@@ -77,6 +77,11 @@ public class BitrateTestActivity extends AppCompatActivity
 
     /** Optional: the UUID of the PC to test. Without it the user is asked which PC. */
     public static final String EXTRA_PC_UUID = "PcUuid";
+    /**
+     * Name of a {@link com.limelight.sweep.SweepPlan.Depth} to run a settings
+     * sweep instead of the bitrate ladder. Absent means the ladder.
+     */
+    public static final String EXTRA_SWEEP_DEPTH = "SweepDepth";
 
     /** Discarded at the start of each step so the encoder has settled before we look. */
     private static final long SETTLE_MS = 2000;
@@ -117,6 +122,16 @@ public class BitrateTestActivity extends AppCompatActivity
     // --- Configuration ---
     private PreferenceConfiguration prefConfig;
     private PreferenceConfiguration decoderPrefs;
+    /**
+     * Set while a sweep step is running, null during the plain bitrate ladder.
+     *
+     * runStep consults this rather than taking another parameter, so the
+     * working ladder path is untouched.
+     */
+    private com.limelight.sweep.SweepVariant activeVariant;
+
+    /** Null for the bitrate ladder, set for a sweep. */
+    private com.limelight.sweep.SweepPlan.Depth sweepDepth;
     private String glRenderer = "";
     private boolean meteredNetwork;
 
@@ -188,6 +203,15 @@ public class BitrateTestActivity extends AppCompatActivity
         // A second copy for the decoder, with the performance overlay switched off. The
         // raw counters we read are accumulated either way; this only avoids building
         // overlay strings we would throw away.
+        String depthName = getIntent().getStringExtra(EXTRA_SWEEP_DEPTH);
+        if (depthName != null) {
+            try {
+                sweepDepth = com.limelight.sweep.SweepPlan.Depth.valueOf(depthName);
+            } catch (IllegalArgumentException e) {
+                LimeLog.warning("Unknown sweep depth '" + depthName + "', running the bitrate ladder");
+            }
+        }
+
         decoderPrefs = PreferenceConfiguration.readPreferences(this);
         decoderPrefs.enablePerfOverlay = false;
         decoderPrefs.enablePerfLogging = false;
@@ -410,6 +434,11 @@ public class BitrateTestActivity extends AppCompatActivity
             return;
         }
 
+        if (sweepDepth != null) {
+            runSweep(computer, uniqueId, desktop);
+            return;
+        }
+
         int[] ladder = BitrateLadder.build(prefConfig.width, prefConfig.height, prefConfig.fps);
         List<BitrateStepMeasurement> results = new ArrayList<>();
 
@@ -442,6 +471,95 @@ public class BitrateTestActivity extends AppCompatActivity
         showResults(results, BitrateTestAnalyzer.analyze(results, prefConfig.fps));
     }
 
+    /**
+     * Walks every configuration in the plan, measuring each one several times.
+     *
+     * Unlike the bitrate ladder this never stops early. The ladder can stop at
+     * the first dirty rung because bitrate is monotonic; a sweep's axes are
+     * not, and abandoning it partway would leave some configurations with
+     * fewer repeats than others, which is exactly the comparison the analyzer
+     * is trying to make fair.
+     */
+    private void runSweep(ComputerDetails computer, String uniqueId, NvApp app) {
+        MediaCodecDecoderRenderer probe;
+        try {
+            probe = new MediaCodecDecoderRenderer(this, decoderPrefs, crashListener, 0,
+                    meteredNetwork, false, false, glRenderer, this);
+        } catch (Throwable t) {
+            showError(getString(R.string.vl_bt_error_no_decoder));
+            return;
+        }
+
+        List<com.limelight.sweep.SweepPlan.Codec> codecs = new ArrayList<>();
+        codecs.add(new com.limelight.sweep.SweepPlan.Codec(MoonBridge.VIDEO_FORMAT_H264, "H.264"));
+        if (probe.isHevcSupported()) {
+            codecs.add(new com.limelight.sweep.SweepPlan.Codec(MoonBridge.VIDEO_FORMAT_H265, "HEVC"));
+        }
+        if (probe.isAv1Supported()) {
+            codecs.add(new com.limelight.sweep.SweepPlan.Codec(MoonBridge.VIDEO_FORMAT_AV1_MAIN8, "AV1"));
+        }
+
+        List<com.limelight.sweep.SweepPlan.Pacing> pacings = new ArrayList<>();
+        pacings.add(new com.limelight.sweep.SweepPlan.Pacing(
+                PreferenceConfiguration.FRAME_PACING_MIN_LATENCY, "min latency"));
+        pacings.add(new com.limelight.sweep.SweepPlan.Pacing(
+                PreferenceConfiguration.FRAME_PACING_BALANCED, "balanced"));
+
+        // Bitrate only becomes an axis at the deepest setting. Around the
+        // configured value rather than from zero: the ladder already found the
+        // ceiling, and the question here is how each codec behaves near it.
+        List<Integer> bitrates = new ArrayList<>();
+        bitrates.add(prefConfig.bitrate);
+        if (sweepDepth == com.limelight.sweep.SweepPlan.Depth.EXHAUSTIVE) {
+            bitrates.add(Math.max(500, prefConfig.bitrate / 2));
+            bitrates.add(prefConfig.bitrate * 3 / 2);
+        }
+
+        List<com.limelight.sweep.SweepVariant> plan = com.limelight.sweep.SweepPlan.build(
+                codecs, bitrates, pacings,
+                com.limelight.utils.CpuAffinity.isSupported(), sweepDepth);
+
+        List<com.limelight.sweep.SweepAnalyzer.Run> runs = new ArrayList<>();
+
+        for (int i = 0; i < plan.size(); i++) {
+            if (cancelled) {
+                break;
+            }
+
+            com.limelight.sweep.SweepVariant variant = plan.get(i);
+            activeVariant = variant;
+            BitrateStepMeasurement measurement;
+            try {
+                measurement = runStep(computer, uniqueId, app, variant.bitrateKbps, i, plan.size());
+            } finally {
+                activeVariant = null;
+            }
+
+            if (measurement == null) {
+                // Cancelled, or already reported. A sweep that lost a run still
+                // has the runs it did complete, so keep them.
+                break;
+            }
+
+            runs.add(new com.limelight.sweep.SweepAnalyzer.Run(
+                    variant,
+                    measurement.getAverageDecodeTimeMs(),
+                    measurement.getFrameLossPercent(),
+                    measurement.getAverageHostProcessingLatencyMs(),
+                    measurement.isFailed()));
+        }
+
+        if (runs.isEmpty()) {
+            if (!cancelled) {
+                showError(getString(R.string.vl_bt_error_timeout,
+                        computer.name != null ? computer.name : ""));
+            }
+            return;
+        }
+
+        showSweepResults(runs);
+    }
+
     /** One rung: connect, settle, measure, tear down. Null means the run was aborted. */
     private BitrateStepMeasurement runStep(ComputerDetails computer, String uniqueId, NvApp app,
                                            int bitrateKbps, int index, int total) {
@@ -453,6 +571,15 @@ public class BitrateTestActivity extends AppCompatActivity
         setStatus(getString(R.string.vl_bt_status_connecting, label));
         setProgress(index, total, 0);
         setReadings("");
+
+        if (activeVariant != null) {
+            // decoderPrefs is this activity's own copy, so varying it per run
+            // never touches the user's saved settings.
+            decoderPrefs.pinThreadsToFastCores = activeVariant.pinCores;
+            if (activeVariant.framePacing >= 0) {
+                decoderPrefs.framePacing = activeVariant.framePacing;
+            }
+        }
 
         MediaCodecDecoderRenderer decoder;
         try {
@@ -484,6 +611,12 @@ public class BitrateTestActivity extends AppCompatActivity
         }
         if (decoder.isAv1Supported()) {
             supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_AV1_MAIN8;
+        }
+
+        if (activeVariant != null) {
+            // Offer only the one codec, which is how a client forces the host
+            // to encode with it.
+            supportedVideoFormats = activeVariant.videoFormatMask;
         }
 
         StreamConfiguration config = new StreamConfiguration.Builder()
@@ -1057,6 +1190,82 @@ public class BitrateTestActivity extends AppCompatActivity
                 applyButton.setEnabled(false);
                 cancelButton.setEnabled(true);
                 cancelButton.setText(R.string.vl_bt_close);
+            }
+        });
+    }
+
+    /**
+     * Renders the sweep as a ranked table.
+     *
+     * Deliberately reports the spread alongside each median, and refuses to
+     * name a winner when the gap between the best two is smaller than how much
+     * their own repeats disagreed. A confident looking ranking of differences
+     * that are inside the noise is worse than saying it could not tell.
+     */
+    private void showSweepResults(final List<com.limelight.sweep.SweepAnalyzer.Run> runs) {
+        final List<com.limelight.sweep.SweepAnalyzer.Summary> summaries =
+                com.limelight.sweep.SweepAnalyzer.summarize(runs);
+
+        java.util.Collections.sort(summaries,
+                new java.util.Comparator<com.limelight.sweep.SweepAnalyzer.Summary>() {
+            @Override
+            public int compare(com.limelight.sweep.SweepAnalyzer.Summary a,
+                               com.limelight.sweep.SweepAnalyzer.Summary b) {
+                if (a.isDisqualified() != b.isDisqualified()) {
+                    return a.isDisqualified() ? 1 : -1;
+                }
+                return Double.compare(a.medianDecodeMs, b.medianDecodeMs);
+            }
+        });
+
+        final com.limelight.sweep.SweepAnalyzer.Summary best =
+                com.limelight.sweep.SweepAnalyzer.best(summaries);
+        final boolean conclusive = com.limelight.sweep.SweepAnalyzer.isConclusive(summaries);
+
+        final StringBuilder report = new StringBuilder();
+        report.append(runs.size()).append(" runs across ")
+                .append(summaries.size()).append(" configurations\n\n");
+
+        if (best == null) {
+            report.append("No configuration completed cleanly. Every one either failed to\n")
+                    .append("connect or lost more than 0.5% of frames, so there is nothing\n")
+                    .append("here worth adopting.\n\n");
+        } else if (conclusive) {
+            report.append("Best: ").append(best.variant.label()).append('\n');
+            report.append("It is clear of the runner up by more than its own repeats vary,\n")
+                    .append("so this is a real difference.\n\n");
+        } else {
+            report.append("Closest: ").append(best.variant.label()).append('\n');
+            report.append("But the gap to the next one is smaller than the spread of its own\n")
+                    .append("repeats, so this is not a real difference. Treat these as tied\n")
+                    .append("and pick on other grounds.\n\n");
+        }
+
+        for (com.limelight.sweep.SweepAnalyzer.Summary s : summaries) {
+            report.append(s.variant.label()).append('\n');
+            if (s.isDisqualified()) {
+                report.append("    unusable (")
+                        .append(s.anyFailed ? "a run failed" : String.format(java.util.Locale.US,
+                                "%.2f%% frame loss", s.medianLossPercent))
+                        .append(")\n");
+                continue;
+            }
+            report.append(String.format(java.util.Locale.US,
+                    "    decode %.2f +/- %.2f ms   loss %.2f%%   host %.1f ms   (%d runs)\n",
+                    s.medianDecodeMs, s.decodeSpreadMs, s.medianLossPercent,
+                    s.medianHostLatencyMs, s.runs));
+        }
+
+        report.append("\nDecode time is measured from submitting a frame to the decoder to\n")
+                .append("getting it back. It is not glass to glass latency, which the client\n")
+                .append("cannot see, so this ranks decoding rather than what you feel.\n");
+
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                setStatus("");
+                setStep("");
+                setReadings(report.toString());
             }
         });
     }

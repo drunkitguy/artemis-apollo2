@@ -925,6 +925,40 @@ public class StreamSettings extends AppCompatActivity {
                 });
             }
 
+            _pref = findPreference("pref_settings_sweep");
+            if (_pref != null) {
+                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(@NonNull Preference preference) {
+                        // Depth is asked for up front because the difference
+                        // between them is minutes against most of an hour.
+                        final String[] depths = {
+                                com.limelight.sweep.SweepPlan.Depth.QUICK.name(),
+                                com.limelight.sweep.SweepPlan.Depth.STANDARD.name(),
+                                com.limelight.sweep.SweepPlan.Depth.THOROUGH.name(),
+                                com.limelight.sweep.SweepPlan.Depth.EXHAUSTIVE.name()};
+                        CharSequence[] labels = {
+                                getString(R.string.sweep_depth_quick),
+                                getString(R.string.sweep_depth_standard),
+                                getString(R.string.sweep_depth_thorough),
+                                getString(R.string.sweep_depth_exhaustive)};
+
+                        new android.app.AlertDialog.Builder(requireActivity())
+                                .setTitle(R.string.title_settings_sweep)
+                                .setItems(labels, new android.content.DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(android.content.DialogInterface dialog, int which) {
+                                        Intent i = new Intent(requireActivity(), BitrateTestActivity.class);
+                                        i.putExtra(BitrateTestActivity.EXTRA_SWEEP_DEPTH, depths[which]);
+                                        startActivity(i);
+                                    }
+                                })
+                                .show();
+                        return false;
+                    }
+                });
+            }
+
             _pref = findPreference("pref_debug_info");
             if (_pref != null) {
                 _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
