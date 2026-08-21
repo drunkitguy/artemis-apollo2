@@ -737,6 +737,7 @@
     <string name="game_menu_toggle_number_pad">Toggle Number pad</string>
     <string name="game_menu_keyboard_screen_info">Keyboard screen info</string>
     <string name="soft_keyboard_hint_resting">Tap any key to start typing · the controller is playing the game</string>
+    <string name="resolution_native_dynamic">Native (follows the display in use)</string>
     <string name="soft_trackpad_hint">Drag to move the pointer · tap to click · two fingers to right-click or scroll</string>
     <string name="soft_keyboard_launcher_caption">Tap anywhere to type · or pick one</string>
     <string name="soft_keyboard_launcher_caption_pad">Tap anywhere, or hold both stick clicks, to type</string>

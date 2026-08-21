@@ -488,6 +488,64 @@ public class PreferenceConfiguration {
         }
     }
 
+    /** True when the resolution preference means "whatever is attached". */
+    public static boolean isNativeResolution(String resString) {
+        return RES_NATIVE.equalsIgnoreCase(resString);
+    }
+
+    /**
+     * The real size of the display the stream will be rendered on.
+     *
+     * Deliberately the active display rather than the largest one attached. A
+     * TV plugged in for charging is not where the picture is going unless
+     * external display mode says so, and streaming at its resolution would
+     * mean encoding pixels that get scaled away on the way to the panel the
+     * user is actually looking at.
+     */
+    private static int[] resolveNativeResolution(Context context, SharedPreferences prefs) {
+        try {
+            Display display = null;
+
+            // Read the raw flag rather than the parsed config: this runs while
+            // that config is still being built.
+            if (prefs.getBoolean("checkbox_enable_fullexdisplay", false)) {
+                display = com.limelight.utils.ServerHelper.getSecondaryDisplay(context);
+            }
+
+            if (display == null) {
+                android.hardware.display.DisplayManager manager =
+                        (android.hardware.display.DisplayManager)
+                                context.getSystemService(Context.DISPLAY_SERVICE);
+                if (manager != null) {
+                    display = manager.getDisplay(Display.DEFAULT_DISPLAY);
+                }
+            }
+
+            if (display == null) {
+                return new int[] {NativeResolution.FALLBACK_WIDTH, NativeResolution.FALLBACK_HEIGHT};
+            }
+
+            int width;
+            int height;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && display.getMode() != null) {
+                // The mode's physical size, not the window size: the app is
+                // letterboxed and inset, and neither belongs in this answer.
+                width = display.getMode().getPhysicalWidth();
+                height = display.getMode().getPhysicalHeight();
+            } else {
+                android.graphics.Point size = new android.graphics.Point();
+                display.getRealSize(size);
+                width = size.x;
+                height = size.y;
+            }
+
+            return NativeResolution.normalize(width, height);
+        } catch (Throwable t) {
+            com.limelight.LimeLog.warning("Could not resolve the native resolution: " + t);
+            return new int[] {NativeResolution.FALLBACK_WIDTH, NativeResolution.FALLBACK_HEIGHT};
+        }
+    }
+
     private static int getWidthFromResolutionString(String resString) {
         return Integer.parseInt(resString.split("x")[0]);
     }
@@ -515,6 +573,13 @@ public class PreferenceConfiguration {
     }
 
     public static int getDefaultBitrate(String resString, String fpsString) {
+        if (isNativeResolution(resString)) {
+            // No context here to ask a display with, and this only seeds the
+            // bitrate slider. 1080p is the honest middle: the slider is a
+            // starting point the user or the bitrate test then moves.
+            resString = RES_1080P;
+        }
+
         int width = getWidthFromResolutionString(resString);
         int height = getHeightFromResolutionString(resString);
         int fps = Math.round(Float.parseFloat(fpsString));
@@ -599,9 +664,15 @@ public class PreferenceConfiguration {
 
     public static int getDefaultBitrate(Context context) {
         SharedPreferences prefs = ProfilesManager.getInstance().getOverlayingSharedPreferences(context);
-        return getDefaultBitrate(
-                prefs.getString(RESOLUTION_PREF_STRING, DEFAULT_RESOLUTION),
-                prefs.getString(FPS_PREF_STRING, DEFAULT_FPS));
+        String resString = prefs.getString(RESOLUTION_PREF_STRING, DEFAULT_RESOLUTION);
+
+        // This overload has a context, so unlike the string only one it can
+        // ask what "native" actually means before sizing the bitrate.
+        if (isNativeResolution(resString)) {
+            resString = NativeResolution.toResolutionString(resolveNativeResolution(context, prefs));
+        }
+
+        return getDefaultBitrate(resString, prefs.getString(FPS_PREF_STRING, DEFAULT_FPS));
     }
 
     private static FormatOption getVideoFormatValue(Context context) {
@@ -816,8 +887,19 @@ private static int getFramePacingValue(Context context) {
                 prefs.edit().putString(RESOLUTION_PREF_STRING, resStr).apply();
             }
 
-            config.width = PreferenceConfiguration.getWidthFromResolutionString(resStr);
-            config.height = PreferenceConfiguration.getHeightFromResolutionString(resStr);
+            if (isNativeResolution(resStr)) {
+                // Resolved here rather than baked into the preference, so the
+                // answer follows whatever display is actually attached now.
+                // Artemis already offers the native size as a fixed entry, but
+                // that is a snapshot taken when the settings screen was opened
+                // and goes stale the moment the device is docked.
+                int[] native_ = resolveNativeResolution(context, prefs);
+                config.width = native_[0];
+                config.height = native_[1];
+            } else {
+                config.width = PreferenceConfiguration.getWidthFromResolutionString(resStr);
+                config.height = PreferenceConfiguration.getHeightFromResolutionString(resStr);
+            }
             config.fps = Float.parseFloat(prefs.getString(FPS_PREF_STRING, PreferenceConfiguration.DEFAULT_FPS));
         }
 

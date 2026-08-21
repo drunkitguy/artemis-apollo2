@@ -61,7 +61,8 @@ jobs:
             --tests 'com.limelight.reconnect.*' \
             --tests 'com.limelight.bitratetest.*' \
             --tests 'com.limelight.sweep.*' \
-            --tests 'com.limelight.binding.input.trackpad.*'
+            --tests 'com.limelight.binding.input.trackpad.*' \
+            --tests 'com.limelight.preferences.NativeResolutionTest'
 
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleNonRoot_gameDebug
