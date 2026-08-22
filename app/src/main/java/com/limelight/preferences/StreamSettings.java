@@ -332,19 +332,6 @@ public class StreamSettings extends AppCompatActivity {
             pref.setEntryValues(entryValues);
         }
 
-        private void resetBitrateToDefault(SharedPreferences prefs, String res, String fps) {
-            if (res == null) {
-                res = prefs.getString(PreferenceConfiguration.RESOLUTION_PREF_STRING, PreferenceConfiguration.DEFAULT_RESOLUTION);
-            }
-            if (fps == null) {
-                fps = prefs.getString(PreferenceConfiguration.FPS_PREF_STRING, PreferenceConfiguration.DEFAULT_FPS);
-            }
-
-            prefs.edit()
-                    .putInt(PreferenceConfiguration.BITRATE_PREF_STRING,
-                            PreferenceConfiguration.getDefaultBitrate(res, fps))
-                    .apply();
-        }
 
         @NonNull
         @Override
@@ -740,7 +727,6 @@ public class StreamSettings extends AppCompatActivity {
             findPreference(PreferenceConfiguration.RESOLUTION_PREF_STRING).setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
                 @Override
                 public boolean onPreferenceChange(Preference preference, Object newValue) {
-                    SharedPreferences prefs = getPrefs();
                     String valueStr = (String) newValue;
 
                     // Detect if this value is the native resolution option
@@ -762,8 +748,10 @@ public class StreamSettings extends AppCompatActivity {
                                 false);
                     }
 
-                    // Write the new bitrate value
-                    resetBitrateToDefault(prefs, valueStr, null);
+                    // The bitrate is deliberately left alone. It is a value the
+                    // user has usually tuned, or that the connection test
+                    // measured, and silently replacing it on a resolution
+                    // change throws that away with nothing to show for it.
 
                     // Allow the original preference change to take place
                     return true;
@@ -772,7 +760,6 @@ public class StreamSettings extends AppCompatActivity {
             findPreference(PreferenceConfiguration.FPS_PREF_STRING).setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
                 @Override
                 public boolean onPreferenceChange(Preference preference, Object newValue) {
-                    SharedPreferences prefs = getPrefs();
                     String valueStr = (String) newValue;
 
                     // If this is native frame rate, show the warning dialog
@@ -784,8 +771,7 @@ public class StreamSettings extends AppCompatActivity {
                                 false);
                     }
 
-                    // Write the new bitrate value
-                    resetBitrateToDefault(prefs, null, valueStr);
+                    // Left alone for the same reason as the resolution above.
 
                     // Allow the original preference change to take place
                     return true;
@@ -1079,9 +1065,12 @@ public class StreamSettings extends AppCompatActivity {
             removeValue(resolutionPrefString, entryToRemove, new Runnable() {
                 @Override
                 public void run() {
-                    SharedPreferences prefs = getPrefs();
+                    // The resolution is being lowered because the device cannot
+                    // manage the one that was set, so the bitrate is now higher
+                    // than it needs to be. That costs some efficiency and
+                    // nothing else, which is a far better failure than quietly
+                    // discarding a measured value.
                     setValue(resolutionPrefString, nextDefault);
-                    resetBitrateToDefault(prefs, null, null);
                 }
             });
         }
