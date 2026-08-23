@@ -85,6 +85,28 @@ public final class SoftKeyboardDiagnostics {
                 .append('\n');
 
         out.append('\n');
+        out.append("Native resolution would use: ");
+        try {
+            android.content.SharedPreferences prefs =
+                    com.limelight.profiles.ProfilesManager.getInstance()
+                            .getOverlayingSharedPreferences(context);
+            android.view.Display streamDisplay =
+                    com.limelight.preferences.PreferenceConfiguration.pickStreamDisplay(context, prefs);
+            if (streamDisplay == null) {
+                out.append("nothing usable, falling back to 1920x1080\n");
+            } else {
+                int[] real = com.limelight.preferences.PreferenceConfiguration.realSizeOf(streamDisplay);
+                int[] normalized = com.limelight.preferences.NativeResolution.normalize(real[0], real[1]);
+                out.append("screen ").append(streamDisplay.getDisplayId())
+                        .append(" (").append(real[0]).append('x').append(real[1])
+                        .append(") -> ").append(normalized[0]).append('x').append(normalized[1])
+                        .append('\n');
+            }
+        } catch (Throwable t) {
+            out.append("could not be determined: ").append(t.getClass().getSimpleName()).append('\n');
+        }
+
+        out.append('\n');
         out.append("Fast core pinning: ");
         if (!com.limelight.utils.CpuAffinity.isSupported()) {
             out.append("not available on this device\n");

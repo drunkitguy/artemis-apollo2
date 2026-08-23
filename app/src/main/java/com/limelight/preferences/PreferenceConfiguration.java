@@ -504,46 +504,71 @@ public class PreferenceConfiguration {
      */
     private static int[] resolveNativeResolution(Context context, SharedPreferences prefs) {
         try {
-            Display display = null;
-
-            // Read the raw flag rather than the parsed config: this runs while
-            // that config is still being built.
-            if (prefs.getBoolean("checkbox_enable_fullexdisplay", false)) {
-                display = com.limelight.utils.ServerHelper.getSecondaryDisplay(context);
-            }
-
-            if (display == null) {
-                android.hardware.display.DisplayManager manager =
-                        (android.hardware.display.DisplayManager)
-                                context.getSystemService(Context.DISPLAY_SERVICE);
-                if (manager != null) {
-                    display = manager.getDisplay(Display.DEFAULT_DISPLAY);
-                }
-            }
-
+            Display display = pickStreamDisplay(context, prefs);
             if (display == null) {
                 return new int[] {NativeResolution.FALLBACK_WIDTH, NativeResolution.FALLBACK_HEIGHT};
             }
 
-            int width;
-            int height;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && display.getMode() != null) {
-                // The mode's physical size, not the window size: the app is
-                // letterboxed and inset, and neither belongs in this answer.
-                width = display.getMode().getPhysicalWidth();
-                height = display.getMode().getPhysicalHeight();
-            } else {
-                android.graphics.Point size = new android.graphics.Point();
-                display.getRealSize(size);
-                width = size.x;
-                height = size.y;
-            }
-
-            return NativeResolution.normalize(width, height);
+            int[] size = realSizeOf(display);
+            return NativeResolution.normalize(size[0], size[1]);
         } catch (Throwable t) {
             com.limelight.LimeLog.warning("Could not resolve the native resolution: " + t);
             return new int[] {NativeResolution.FALLBACK_WIDTH, NativeResolution.FALLBACK_HEIGHT};
         }
+    }
+
+    /**
+     * The display the stream will be rendered on.
+     *
+     * Not ServerHelper.getSecondaryDisplay: that returns the first display
+     * whose id is not zero, which on a dual screen handheld is the small
+     * built-in panel rather than a monitor. Choosing by size instead tells
+     * those two apart without having to know which is which.
+     */
+    static Display pickStreamDisplay(Context context, SharedPreferences prefs) {
+        android.hardware.display.DisplayManager manager =
+                (android.hardware.display.DisplayManager)
+                        context.getSystemService(Context.DISPLAY_SERVICE);
+        if (manager == null) {
+            return null;
+        }
+
+        Display[] all = manager.getDisplays();
+        if (all == null || all.length == 0) {
+            return null;
+        }
+
+        java.util.List<StreamDisplayChooser.Candidate> candidates =
+                new java.util.ArrayList<>(all.length);
+        for (Display display : all) {
+            int[] size = realSizeOf(display);
+            candidates.add(new StreamDisplayChooser.Candidate(
+                    display.getDisplayId(), size[0], size[1],
+                    display.getDisplayId() == Display.DEFAULT_DISPLAY,
+                    display.getState() != Display.STATE_OFF));
+        }
+
+        // Read the raw flag rather than the parsed config: this can run while
+        // that config is still being built.
+        boolean useExternal = prefs.getBoolean("checkbox_enable_fullexdisplay", false);
+
+        int chosen = StreamDisplayChooser.choose(candidates, useExternal);
+        return chosen == StreamDisplayChooser.NO_DISPLAY ? null : manager.getDisplay(chosen);
+    }
+
+    /** A display's real size, ignoring window insets and letterboxing. */
+    @SuppressWarnings("deprecation")
+    static int[] realSizeOf(Display display) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && display.getMode() != null
+                && display.getMode().getPhysicalWidth() > 0) {
+            return new int[] {
+                    display.getMode().getPhysicalWidth(),
+                    display.getMode().getPhysicalHeight()};
+        }
+
+        android.graphics.Point size = new android.graphics.Point();
+        display.getRealSize(size);
+        return new int[] {size.x, size.y};
     }
 
     private static int getWidthFromResolutionString(String resString) {
