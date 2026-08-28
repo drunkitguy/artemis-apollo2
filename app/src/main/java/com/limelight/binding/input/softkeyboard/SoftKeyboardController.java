@@ -102,6 +102,21 @@ public class SoftKeyboardController {
     /** Local mirror of what has been typed, purely so the user can see it. */
     private final StringBuilder echo = new StringBuilder();
 
+    /** Live readout for the second screen, ticked only while the panel rests. */
+    private final com.limelight.metrics.StreamMetricsWindow metrics =
+            new com.limelight.metrics.StreamMetricsWindow();
+    private com.limelight.metrics.StreamMetricsBanner banner;
+    private static final long METRICS_INTERVAL_MS = 1000;
+    private final Runnable tickMetrics = new Runnable() {
+        @Override
+        public void run() {
+            updateMetrics();
+            if (banner != null) {
+                idleHandler.postDelayed(this, METRICS_INTERVAL_MS);
+            }
+        }
+    };
+
     /**
      * Key codes whose press the keyboard consumed.
      *
@@ -230,6 +245,7 @@ public class SoftKeyboardController {
      * takes the overlay away entirely when there is no second screen.
      */
     private void rest() {
+        stopMetrics();
         refreshCachedPreferences();
         idleHandler.removeCallbacks(openOnChord);
         leftStickClicked = false;
@@ -251,6 +267,35 @@ public class SoftKeyboardController {
         lastOutcome = "resting on screen " + presentationDisplayId;
     }
 
+    private void startMetrics(com.limelight.metrics.StreamMetricsBanner target) {
+        stopMetrics();
+        banner = target;
+        metrics.reset();
+        banner.setResolution(game.getStreamWidth(), game.getStreamHeight());
+        idleHandler.post(tickMetrics);
+    }
+
+    private void stopMetrics() {
+        idleHandler.removeCallbacks(tickMetrics);
+        banner = null;
+    }
+
+    private void updateMetrics() {
+        if (banner == null) {
+            return;
+        }
+
+        com.limelight.binding.video.StreamCounters counters = game.getStreamCounters();
+        if (counters == null) {
+            return;
+        }
+
+        metrics.update(android.os.SystemClock.uptimeMillis(),
+                counters.framesRendered, counters.decoderTimeMs);
+        banner.setResolution(game.getStreamWidth(), game.getStreamHeight());
+        banner.setRates(metrics.getFps(), metrics.getDecodeTimeTenthsMs());
+    }
+
     private SoftKeyboardLauncherView newLauncher() {
         SoftKeyboardLauncherView launcher = new SoftKeyboardLauncherView(
                 context, lastUsedPage(), padShortcutEnabled(), trackpadSensitivity());
@@ -260,6 +305,8 @@ public class SoftKeyboardController {
                 openPage(page);
             }
         });
+
+        startMetrics(launcher.getBanner());
 
         launcher.getTrackpad().setListener(
                 new com.limelight.binding.input.trackpad.SoftTrackpadView.Listener() {
@@ -357,6 +404,8 @@ public class SoftKeyboardController {
 
     /** Brings up one of the keyboards on a screen that is currently resting. */
     private void openPage(SoftKeyboardLayouts.Page page) {
+        // The keyboard replaces the panel, so there is no banner to feed.
+        stopMetrics();
         rememberPage(page);
         if (presentation == null) {
             show(page);
@@ -474,6 +523,7 @@ public class SoftKeyboardController {
     }
 
     public void hide() {
+        stopMetrics();
         idleHandler.removeCallbacks(releaseOnIdle);
         capturing = false;
         unwatchDisplays();

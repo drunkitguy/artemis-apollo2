@@ -1235,6 +1235,26 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         });
     }
 
+    /**
+     * Cumulative decoder counters, for the second screen's readout.
+     *
+     * Returned raw rather than pre-averaged: these are session totals, and a
+     * banner wants the change since it last looked, not the session average.
+     */
+    public com.limelight.binding.video.StreamCounters getStreamCounters() {
+        MediaCodecDecoderRenderer renderer = decoderRenderer;
+        return renderer == null ? null : renderer.snapshotCounters();
+    }
+
+    /** Negotiated stream width, or 0 before one exists. */
+    public int getStreamWidth() {
+        return prefConfig != null ? prefConfig.width : 0;
+    }
+
+    public int getStreamHeight() {
+        return prefConfig != null ? prefConfig.height : 0;
+    }
+
     /** Sends literal text, used for pasting the clipboard into the host. */
     public void sendSoftKeyboardText(String text) {
         if (!connected || conn == null || text == null || text.isEmpty()) {

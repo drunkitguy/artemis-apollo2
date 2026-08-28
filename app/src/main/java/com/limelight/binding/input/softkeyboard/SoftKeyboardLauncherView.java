@@ -34,6 +34,7 @@ public class SoftKeyboardLauncherView extends LinearLayout {
     private OnPickListener listener;
     private final SoftKeyboardLayouts.Page lastUsed;
     private final com.limelight.binding.input.trackpad.SoftTrackpadView trackpad;
+    private final com.limelight.metrics.StreamMetricsBanner banner;
 
     public SoftKeyboardLauncherView(Context context, SoftKeyboardLayouts.Page lastUsed,
                                     boolean padShortcutEnabled, float trackpadSensitivity) {
@@ -47,6 +48,9 @@ public class SoftKeyboardLauncherView extends LinearLayout {
         // The panel is otherwise doing nothing while nobody types, so most of
         // it is a trackpad. The keyboard buttons become a strip along the
         // bottom rather than the whole screen.
+        banner = new com.limelight.metrics.StreamMetricsBanner(context);
+        addView(banner, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
         trackpad = new com.limelight.binding.input.trackpad.SoftTrackpadView(context, trackpadSensitivity);
         LayoutParams padParams = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
         addView(trackpad, padParams);
@@ -71,6 +75,10 @@ public class SoftKeyboardLauncherView extends LinearLayout {
 
     public com.limelight.binding.input.trackpad.SoftTrackpadView getTrackpad() {
         return trackpad;
+    }
+
+    public com.limelight.metrics.StreamMetricsBanner getBanner() {
+        return banner;
     }
 
     public void setOnPickListener(OnPickListener listener) {

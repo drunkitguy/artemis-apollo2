@@ -63,7 +63,8 @@ jobs:
             --tests 'com.limelight.sweep.*' \
             --tests 'com.limelight.binding.input.trackpad.*' \
             --tests 'com.limelight.preferences.NativeResolutionTest' \
-            --tests 'com.limelight.preferences.StreamDisplayChooserTest'
+            --tests 'com.limelight.preferences.StreamDisplayChooserTest' \
+            --tests 'com.limelight.metrics.*'
 
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleNonRoot_gameDebug
