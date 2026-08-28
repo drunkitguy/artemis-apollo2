@@ -531,7 +531,7 @@ public class PreferenceConfiguration {
      * built-in panel rather than a monitor. Choosing by size instead tells
      * those two apart without having to know which is which.
      */
-    static Display pickStreamDisplay(Context context, SharedPreferences prefs) {
+    public static Display pickStreamDisplay(Context context, SharedPreferences prefs) {
         android.hardware.display.DisplayManager manager =
                 (android.hardware.display.DisplayManager)
                         context.getSystemService(Context.DISPLAY_SERVICE);
@@ -564,7 +564,7 @@ public class PreferenceConfiguration {
 
     /** A display's real size, ignoring window insets and letterboxing. */
     @SuppressWarnings("deprecation")
-    static int[] realSizeOf(Display display) {
+    public static int[] realSizeOf(Display display) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && display.getMode() != null
                 && display.getMode().getPhysicalWidth() > 0) {
             return new int[] {
