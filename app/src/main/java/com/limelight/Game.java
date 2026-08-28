@@ -1246,6 +1246,22 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         return renderer == null ? null : renderer.snapshotCounters();
     }
 
+    /**
+     * The host this session is streaming from.
+     *
+     * Used to reject focus reports from anywhere else: the token is short and
+     * only guards which keyboard is drawn, so the source address is the filter
+     * that actually matters.
+     */
+    public java.net.InetAddress getStreamHostAddress() {
+        try {
+            String address = getIntent().getStringExtra(EXTRA_HOST);
+            return address == null ? null : java.net.InetAddress.getByName(address);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** Negotiated stream width, or 0 before one exists. */
     public int getStreamWidth() {
         return prefConfig != null ? prefConfig.width : 0;

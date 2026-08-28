@@ -666,6 +666,17 @@
             app:iconSpaceReserved="false" />
         <com.limelight.preferences.VlTogglePreference
             android:defaultValue="false"
+            android:key="checkbox_focus_hints"
+            android:summary="@string/summary_focus_hints"
+            android:title="@string/title_focus_hints"
+            app:iconSpaceReserved="false" />
+        <com.limelight.preferences.VlActionPreference
+            android:key="pref_focus_hints_setup"
+            android:summary="@string/summary_focus_hints"
+            android:title="@string/title_focus_hints_setup"
+            app:iconSpaceReserved="false" />
+        <com.limelight.preferences.VlTogglePreference
+            android:defaultValue="false"
             android:key="checkbox_pin_threads_fast_cores"
             android:summary="@string/summary_pin_threads_fast_cores"
             android:title="@string/title_pin_threads_fast_cores"

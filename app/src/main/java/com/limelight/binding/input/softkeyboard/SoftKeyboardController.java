@@ -102,6 +102,11 @@ public class SoftKeyboardController {
     /** Local mirror of what has been typed, purely so the user can see it. */
     private final StringBuilder echo = new StringBuilder();
 
+    /** Host driven keyboard switching, when the reporter is set up and enabled. */
+    private com.limelight.focus.FocusHintListener focusListener;
+    private final com.limelight.focus.FocusHintPolicy focusPolicy =
+            new com.limelight.focus.FocusHintPolicy();
+
     /** Live readout for the second screen, ticked only while the panel rests. */
     private final com.limelight.metrics.StreamMetricsWindow metrics =
             new com.limelight.metrics.StreamMetricsWindow();
@@ -296,6 +301,79 @@ public class SoftKeyboardController {
         banner.setRates(metrics.getFps(), metrics.getDecodeTimeTenthsMs());
     }
 
+    /**
+     * Starts listening for focus reports from the host.
+     *
+     * Only bound while a panel exists to drive, and only when the user has both
+     * enabled it and set up the reporter on the PC. Datagrams are accepted from
+     * the host being streamed from and nowhere else.
+     */
+    private void startFocusHints() {
+        stopFocusHints();
+
+        PreferenceConfiguration prefs = PreferenceConfiguration.readPreferences(context);
+        if (!prefs.focusHintsEnabled) {
+            return;
+        }
+
+        String token = com.limelight.focus.FocusHintTokens.get(context);
+        if (token == null || token.isEmpty()) {
+            return;
+        }
+
+        java.net.InetAddress host = game.getStreamHostAddress();
+        focusPolicy.reset();
+        focusPolicy.syncOpenState(false, false);
+
+        focusListener = new com.limelight.focus.FocusHintListener(
+                com.limelight.focus.FocusHintListener.DEFAULT_PORT, token, host,
+                new com.limelight.focus.FocusHintListener.Callback() {
+            @Override
+            public void onFocusHint(final com.limelight.focus.FocusHint.State state) {
+                idleHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        applyFocusHint(state);
+                    }
+                });
+            }
+        });
+        focusListener.start();
+    }
+
+    private void stopFocusHints() {
+        if (focusListener != null) {
+            focusListener.stop();
+            focusListener = null;
+        }
+    }
+
+    /** Runs on the main thread: the policy decides, this carries it out. */
+    private void applyFocusHint(com.limelight.focus.FocusHint.State state) {
+        if (!shown) {
+            return;
+        }
+
+        // Keep the policy honest about what the user may have done by hand
+        // since the last report, so it does not fight them.
+        focusPolicy.syncOpenState(capturing, getPage() == SoftKeyboardLayouts.Page.PIN);
+
+        switch (focusPolicy.onHint(state, android.os.SystemClock.uptimeMillis())) {
+            case SHOW_TEXT:
+                openPage(SoftKeyboardLayouts.Page.LETTERS);
+                break;
+            case SHOW_DIGITS:
+                openPage(SoftKeyboardLayouts.Page.PIN);
+                break;
+            case REST:
+                setCapturing(false);
+                break;
+            case NOTHING:
+            default:
+                break;
+        }
+    }
+
     private SoftKeyboardLauncherView newLauncher() {
         SoftKeyboardLauncherView launcher = new SoftKeyboardLauncherView(
                 context, lastUsedPage(), padShortcutEnabled(), trackpadSensitivity());
@@ -483,6 +561,7 @@ public class SoftKeyboardController {
             watchDisplays();
             lastOutcome = "resting on screen " + target.getDisplayId();
             LimeLog.info("Soft keyboard " + lastOutcome);
+            startFocusHints();
         } catch (RuntimeException e) {
             presentation = null;
             presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
@@ -523,6 +602,7 @@ public class SoftKeyboardController {
     }
 
     public void hide() {
+        stopFocusHints();
         stopMetrics();
         idleHandler.removeCallbacks(releaseOnIdle);
         capturing = false;
