@@ -74,6 +74,18 @@ public class StreamDisplayChooserTest {
     }
 
     @Test
+    public void aPlausibleDefaultIsKeptEvenWhenSomethingBiggerIsAttached() {
+        // This is the case the first version of the guard got wrong: a 1080p
+        // handheld with a television plugged in but not being streamed to. The
+        // handheld's own panel really is the right answer there, and it looks
+        // identical by size alone to a device that reports a small strip as
+        // its default.
+        List<StreamDisplayChooser.Candidate> displays =
+                Arrays.asList(main(0, 1920, 1080), other(5, 3840, 2160));
+        assertEquals(0, StreamDisplayChooser.choose(displays, false));
+    }
+
+    @Test
     public void unusableScreensAreSkipped() {
         List<StreamDisplayChooser.Candidate> displays = Arrays.asList(
                 main(0, 1920, 1080),

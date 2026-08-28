@@ -19,6 +19,15 @@ public final class StreamDisplayChooser {
 
     public static final int NO_DISPLAY = -1;
 
+    /**
+     * Below this a display is an auxiliary panel rather than a main screen.
+     *
+     * 1280x720. Every handheld's primary panel clears it comfortably and every
+     * second-screen strip falls well short, so it separates the two without
+     * needing to ask the device which is which.
+     */
+    static final long MIN_MAIN_SCREEN_PIXELS = 1280L * 720L;
+
     public static final class Candidate {
         public final int displayId;
         public final int width;
@@ -96,9 +105,20 @@ public final class StreamDisplayChooser {
             return largest.displayId;
         }
 
-        // The stream renders on the main screen. Guard anyway: if the default
-        // is somehow not the largest built-in panel, sizing the stream to a
-        // smaller auxiliary screen is never what was wanted.
-        return fallback.pixels() >= largest.pixels() ? fallback.displayId : largest.displayId;
+        // The stream renders on the main screen, so the default is the answer.
+        //
+        // The one exception is a device that reports an auxiliary panel as its
+        // default, where sizing the stream to a small strip is never the
+        // intent. Distinguishing that from a 1080p handheld with a television
+        // attached needs more than "smaller than the largest", because both
+        // look the same by that measure and only one of them is wrong: with a
+        // television plugged in but not being streamed to, the handheld's own
+        // panel really is the right answer. So the default is overridden only
+        // when it is too small to plausibly be anyone's main screen.
+        boolean defaultIsPlausible = fallback.pixels() >= MIN_MAIN_SCREEN_PIXELS;
+        if (defaultIsPlausible || fallback.pixels() >= largest.pixels()) {
+            return fallback.displayId;
+        }
+        return largest.displayId;
     }
 }
