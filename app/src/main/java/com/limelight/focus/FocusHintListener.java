@@ -30,6 +30,8 @@ public class FocusHintListener {
     private final InetAddress expectedSource;
     private final Callback callback;
 
+    private static volatile boolean announced;
+
     private volatile boolean running;
     private DatagramSocket socket;
     private Thread thread;
@@ -71,8 +73,13 @@ public class FocusHintListener {
         thread.setDaemon(true);
         thread.start();
 
-        LimeLog.info("Focus hints: listening on " + port
-                + (expectedSource != null ? " from " + expectedSource.getHostAddress() : ""));
+        // Logged once per process rather than once per panel: this is on by
+        // default now, and the panel is rebuilt whenever the page changes.
+        if (!announced) {
+            announced = true;
+            LimeLog.info("Focus hints: listening on " + port
+                    + (expectedSource != null ? " from " + expectedSource.getHostAddress() : ""));
+        }
     }
 
     public synchronized void stop() {

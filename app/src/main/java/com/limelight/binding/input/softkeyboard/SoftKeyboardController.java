@@ -594,6 +594,9 @@ public class SoftKeyboardController {
         attach(view, page);
         watchDisplays();
         shown = true;
+        // Also started here, not only on the automatic path: opening the panel
+        // from the menu should listen for focus reports just the same.
+        startFocusHints();
         capturing = false;
         setCapturing(true);
         heldDirection = null;

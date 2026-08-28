@@ -665,7 +665,7 @@
             android:title="@string/title_soft_keyboard_auto_show"
             app:iconSpaceReserved="false" />
         <com.limelight.preferences.VlTogglePreference
-            android:defaultValue="false"
+            android:defaultValue="true"
             android:key="checkbox_focus_hints"
             android:summary="@string/summary_focus_hints"
             android:title="@string/title_focus_hints"

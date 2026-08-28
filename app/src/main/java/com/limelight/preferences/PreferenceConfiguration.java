@@ -167,9 +167,10 @@ public class PreferenceConfiguration {
     // Off by default: pinning trades power and heat for scheduling certainty,
     // and which way that lands depends on the device and the session length.
     private static final boolean DEFAULT_PIN_THREADS_FAST_CORES = false;
-    // Off until the reporter is actually set up on the PC; a bound socket that
-    // nothing ever talks to is pointless.
-    private static final boolean DEFAULT_FOCUS_HINTS = false;
+    // On by default. With no reporter running the socket simply never hears
+    // anything, which costs a bound port and a thread parked on a one second
+    // timeout, and means setting the script up on the PC is the only step.
+    private static final boolean DEFAULT_FOCUS_HINTS = true;
     private static final boolean DEFAULT_HOST_AUDIO = false;
     private static final int DEFAULT_DEADZONE = 5;
     private static final int DEFAULT_OPACITY = 90;
