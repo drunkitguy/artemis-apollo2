@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="resolution_names">
-        <item>@string/resolution_native_dynamic</item>
         <item>@string/resolution_360p</item>
         <item>@string/resolution_480p</item>
         <item>@string/resolution_720p</item>
@@ -10,10 +9,11 @@
         <item>@string/resolution_4k</item>
     </string-array>
 
-    <!-- Keep this in sync with PreferenceConfiguration.isNativeResolution()! -->
+    <!-- Native was removed: resolving it to whatever panel the device reports
+         made the client request unusual modes, which is a plausible cause of
+         streams failing to start. isNativeResolution() still coerces any
+         stored "Native" to 1080p so existing installs keep working. -->
     <string-array name="resolution_values" translatable="false">
-        <!-- Resolved at stream time by PreferenceConfiguration, not a fixed size. -->
-        <item>Native</item>
         <item>640x360</item>
         <item>854x480</item>
         <item>1280x720</item>

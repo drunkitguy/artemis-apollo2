@@ -55,6 +55,7 @@ public class PreferenceConfiguration {
     private static final String SOFT_KEYBOARD_PAD_SHORTCUT_PREF_STRING = "checkbox_soft_keyboard_pad_shortcut";
     private static final String PIN_THREADS_FAST_CORES_PREF_STRING = "checkbox_pin_threads_fast_cores";
     private static final String FOCUS_HINTS_PREF_STRING = "checkbox_focus_hints";
+    private static final String FOCUS_HINTS_DISABLED_ONCE_PREF_STRING = "focus_hints_disabled_once";
     private static final String ENABLE_ULTRA_LOW_LATENCY_PREF_STRING = "checkbox_ultra_low_latency";
     private static final String ENFORCE_DISPLAY_MODE_PREF_STRING = "checkbox_enforce_display_mode";
     private static final String USE_VIRTUAL_DISPLAY_PREF_STRING = "checkbox_use_virtual_display";
@@ -167,7 +168,10 @@ public class PreferenceConfiguration {
     // Off by default: pinning trades power and heat for scheduling certainty,
     // and which way that lands depends on the device and the session length.
     private static final boolean DEFAULT_PIN_THREADS_FAST_CORES = false;
-    private static final boolean DEFAULT_FOCUS_HINTS = true;
+    // Off until streaming is known good again: it binds a UDP port on the
+    // handheld, and nothing added for the keyboard should be running while a
+    // connection problem is still unexplained.
+    private static final boolean DEFAULT_FOCUS_HINTS = false;
     private static final boolean DEFAULT_HOST_AUDIO = false;
     private static final int DEFAULT_DEADZONE = 5;
     private static final int DEFAULT_OPACITY = 90;
@@ -694,10 +698,8 @@ public class PreferenceConfiguration {
         SharedPreferences prefs = ProfilesManager.getInstance().getOverlayingSharedPreferences(context);
         String resString = prefs.getString(RESOLUTION_PREF_STRING, DEFAULT_RESOLUTION);
 
-        // This overload has a context, so unlike the string only one it can
-        // ask what "native" actually means before sizing the bitrate.
         if (isNativeResolution(resString)) {
-            resString = NativeResolution.toResolutionString(resolveNativeResolution(context, prefs));
+            resString = RES_1080P;
         }
 
         return getDefaultBitrate(resString, prefs.getString(FPS_PREF_STRING, DEFAULT_FPS));
@@ -915,15 +917,15 @@ private static int getFramePacingValue(Context context) {
             // recognise, and writes the result back to the preference. "Native"
             // has no "x" in it, so going through there did not merely misread
             // the setting, it overwrote it, and the choice was gone for good.
+            // Native is gone. It resolved to whatever panel the device
+            // reported, which meant asking the host for unusual modes; that is
+            // a plausible cause of streams that never finish starting. Any
+            // stored value is rewritten so nothing is left pointing at it.
             if (isNativeResolution(resStr)) {
-                // Resolved here rather than baked into the preference, so the
-                // answer follows whatever display is actually attached now.
-                // Artemis already offers the native size as a fixed entry, but
-                // that is a snapshot taken when the settings screen was opened
-                // and goes stale the moment the device is docked.
-                int[] native_ = resolveNativeResolution(context, prefs);
-                config.width = native_[0];
-                config.height = native_[1];
+                resStr = RES_1080P;
+                prefs.edit().putString(RESOLUTION_PREF_STRING, resStr).apply();
+                config.width = getWidthFromResolutionString(resStr);
+                config.height = getHeightFromResolutionString(resStr);
             } else {
                 // Convert legacy resolution strings to the new style
                 if (!resStr.contains("x")) {
@@ -1020,6 +1022,15 @@ private static int getFramePacingValue(Context context) {
         config.softKeyboardAutoShow = prefs.getBoolean(SOFT_KEYBOARD_AUTO_SHOW_PREF_STRING, DEFAULT_SOFT_KEYBOARD_AUTO_SHOW);
         config.softKeyboardPadShortcut = prefs.getBoolean(SOFT_KEYBOARD_PAD_SHORTCUT_PREF_STRING, DEFAULT_SOFT_KEYBOARD_PAD_SHORTCUT);
         config.pinThreadsToFastCores = prefs.getBoolean(PIN_THREADS_FAST_CORES_PREF_STRING, DEFAULT_PIN_THREADS_FAST_CORES);
+        // An install from before this build has "true" already written, so a
+        // changed default alone would not turn it off. Forced once, and only
+        // once, so the toggle still belongs to the user afterwards.
+        if (!prefs.getBoolean(FOCUS_HINTS_DISABLED_ONCE_PREF_STRING, false)) {
+            prefs.edit()
+                    .putBoolean(FOCUS_HINTS_PREF_STRING, false)
+                    .putBoolean(FOCUS_HINTS_DISABLED_ONCE_PREF_STRING, true)
+                    .apply();
+        }
         config.focusHintsEnabled = prefs.getBoolean(FOCUS_HINTS_PREF_STRING, DEFAULT_FOCUS_HINTS);
         config.enforceDisplayMode = prefs.getBoolean(ENFORCE_DISPLAY_MODE_PREF_STRING, DEFAULT_ENFORCE_DISPLAY_MODE);
         config.useVirtualDisplay = prefs.getBoolean(USE_VIRTUAL_DISPLAY_PREF_STRING, DEFAULT_USE_VIRTUAL_DISPLAY);
