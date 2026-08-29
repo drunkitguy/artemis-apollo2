@@ -7,8 +7,11 @@
     no network-visible surface. This reads it and says so in one small UDP
     datagram, which is the whole of the trick.
 
-    It is meant to be started and stopped by Vibepollo, so it runs only while a
-    stream is running. See the header of the README next to this file.
+    It starts with Windows and stays running, but it does nothing at all until
+    it sees an established connection on the RTSP port, so it costs nothing
+    while nobody is streaming. Nothing on the host has to launch it, and
+    nothing it does can affect whether a stream starts. See the README next to
+    this file.
 
     Nothing is received, no port is opened for listening, and nothing is
     written to disk. It sends, and that is all.
@@ -28,10 +31,9 @@ param(
     # and start typing, and costs a fraction of a percent of one core.
     [int] $PollMs = 150,
 
-    # A backstop only, in case the stop command never runs. Not an idle timer:
-    # an earlier version exited after five minutes without a focus change,
-    # which killed it whenever someone simply stopped clicking about.
-    [int] $MaxRuntimeHours = 12
+    # How often to look when no stream is running. The reporter is meant to sit
+    # in the background all day, so it costs nothing while nobody is streaming.
+    [int] $IdlePollMs = 3000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -95,6 +97,20 @@ function Get-FocusState {
     return 'unknown'
 }
 
+function Test-StreamActive {
+    # Vibepollo holds an established connection on the RTSP port for the length
+    # of a session, which is a cheap and reliable way to know whether anyone is
+    # watching without asking Vibepollo anything.
+    try {
+        $conn = Get-NetTCPConnection -LocalPort 48010 -State Established -ErrorAction SilentlyContinue
+        return ($null -ne $conn)
+    } catch {
+        # If the check itself is unavailable, assume a stream so the feature
+        # still works rather than silently doing nothing.
+        return $true
+    }
+}
+
 $client = New-Object System.Net.Sockets.UdpClient
 try {
     $client.Connect($ClientAddress, $Port)
@@ -104,10 +120,18 @@ try {
 
 $last = ''
 $lastSent = [DateTime]::UtcNow
-$startedAt = [DateTime]::UtcNow
 
 try {
     while ($true) {
+        if (-not (Test-StreamActive)) {
+            # Nothing is streaming. Do not read the UI tree, do not send, and
+            # forget the last state so the first report of the next session is
+            # sent rather than suppressed as unchanged.
+            $last = ''
+            Start-Sleep -Milliseconds $IdlePollMs
+            continue
+        }
+
         $state = Get-FocusState
 
         # Send on change, and otherwise once a second so a client that started
@@ -124,10 +148,6 @@ try {
                 # The handheld went away. Keep trying until the idle timeout.
             }
             $last = $state
-        }
-
-        if (($now - $startedAt).TotalHours -ge $MaxRuntimeHours) {
-            break
         }
 
         Start-Sleep -Milliseconds $PollMs

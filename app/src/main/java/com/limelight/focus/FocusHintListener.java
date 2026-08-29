@@ -36,6 +36,19 @@ public class FocusHintListener {
     private DatagramSocket socket;
     private Thread thread;
 
+    // Enough state to answer "why is nothing happening?" without a logcat. The
+    // person using this is on a handheld with a game running; asking them to
+    // attach a cable to find out that a token is wrong is not a real answer,
+    // so the panel shows it instead.
+    private volatile boolean bound;
+    private volatile String bindError;
+    private volatile int datagramsSeen;
+    private volatile int datagramsAccepted;
+    private volatile int rejectedBySource;
+    private volatile int rejectedByToken;
+    private volatile String lastSourceAddress;
+    private volatile long lastAcceptedAt;
+
     /**
      * @param expectedSource the host being streamed from, or null to accept any
      *                       source on the network. Passing the host is strongly
@@ -59,9 +72,12 @@ public class FocusHintListener {
             socket.setSoTimeout(1000);
         } catch (Exception e) {
             LimeLog.warning("Focus hints: could not bind port " + port + ": " + e);
+            bindError = e.getClass().getSimpleName();
             socket = null;
             return;
         }
+
+        bound = true;
 
         running = true;
         thread = new Thread(new Runnable() {
@@ -91,6 +107,35 @@ public class FocusHintListener {
         thread = null;
     }
 
+    /**
+     * One short line for the second screen, so a report of "it didn't work"
+     * can say which of the four things went wrong instead of just that.
+     */
+    public String describeStatus() {
+        if (token == null || token.isEmpty()) {
+            return "PC reporter: no token";
+        }
+        if (!bound) {
+            return "PC reporter: port " + port + " busy"
+                    + (bindError != null ? " (" + bindError + ")" : "");
+        }
+        if (datagramsAccepted > 0) {
+            long age = System.currentTimeMillis() - lastAcceptedAt;
+            if (age < 4000) {
+                return "PC reporter: connected";
+            }
+            return "PC reporter: quiet for " + (age / 1000) + "s";
+        }
+        if (rejectedByToken > 0) {
+            return "PC reporter: token mismatch";
+        }
+        if (rejectedBySource > 0) {
+            return "PC reporter: packets from " + lastSourceAddress
+                    + ", expected " + (expectedSource != null ? expectedSource.getHostAddress() : "?");
+        }
+        return "PC reporter: waiting on " + port;
+    }
+
     private void receiveLoop() {
         byte[] buffer = new byte[FocusHint.MAX_BYTES];
 
@@ -113,8 +158,14 @@ public class FocusHintListener {
                 break;
             }
 
+            datagramsSeen++;
+            if (packet.getAddress() != null) {
+                lastSourceAddress = packet.getAddress().getHostAddress();
+            }
+
             if (expectedSource != null && !expectedSource.equals(packet.getAddress())) {
                 // Not from the machine we are streaming from.
+                rejectedBySource++;
                 continue;
             }
 
@@ -126,7 +177,14 @@ public class FocusHintListener {
             }
 
             FocusHint.State state = FocusHint.parse(payload, token);
-            if (state != null && callback != null) {
+            if (state == null) {
+                rejectedByToken++;
+                continue;
+            }
+
+            datagramsAccepted++;
+            lastAcceptedAt = System.currentTimeMillis();
+            if (callback != null) {
                 callback.onFocusHint(state);
             }
         }

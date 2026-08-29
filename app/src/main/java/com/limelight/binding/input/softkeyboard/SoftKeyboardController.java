@@ -111,6 +111,7 @@ public class SoftKeyboardController {
     private final com.limelight.metrics.StreamMetricsWindow metrics =
             new com.limelight.metrics.StreamMetricsWindow();
     private com.limelight.metrics.StreamMetricsBanner banner;
+    private SoftKeyboardLauncherView restingPanel;
     private static final long METRICS_INTERVAL_MS = 1000;
     private final Runnable tickMetrics = new Runnable() {
         @Override
@@ -283,11 +284,19 @@ public class SoftKeyboardController {
     private void stopMetrics() {
         idleHandler.removeCallbacks(tickMetrics);
         banner = null;
+        restingPanel = null;
     }
 
     private void updateMetrics() {
         if (banner == null) {
             return;
+        }
+
+        if (restingPanel != null) {
+            // Only worth showing while the reporter is meant to be running;
+            // otherwise the line is noise on an otherwise black panel.
+            restingPanel.setReporterStatus(
+                    focusListener != null ? focusListener.describeStatus() : null);
         }
 
         com.limelight.binding.video.StreamCounters counters = game.getStreamCounters();
@@ -381,6 +390,7 @@ public class SoftKeyboardController {
         });
 
         startMetrics(launcher.getBanner());
+        restingPanel = launcher;
 
         launcher.getTrackpad().setListener(
                 new com.limelight.binding.input.trackpad.SoftTrackpadView.Listener() {

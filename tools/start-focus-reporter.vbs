@@ -1,35 +1,30 @@
-' Starts the focus reporter and returns immediately.
+' Starts the focus reporter hidden, with no console window, and returns.
 '
-' This exists because of how Vibepollo runs prep commands. It waits for a Do
-' command to finish and fails the whole launch if the exit code is not zero:
+' PowerShell always flashes a window for a moment when it starts, even with
+' -WindowStyle Hidden. Running it through wscript avoids that entirely, which
+' matters because this is launched at logon and would otherwise blink a black
+' box across the desktop every time you sign in.
 '
-'   child.wait(ec);
-'   auto ret = child.exit_code();
-'   if (ret != 0) { return -1; }
-'
-' The reporter is meant to run for the length of the session, so pointing a Do
-' command straight at it holds the launch open and the stream never starts.
-' This launcher spawns it in the background, exits zero straight away, and
-' lets Vibepollo get on with starting the stream.
-'
-' Run(command, 0, False): 0 hides the window entirely, False means do not wait.
+' Run(command, 0, False): 0 hides the window, False means do not wait.
 '
 ' Usage:
 '   wscript "start-focus-reporter.vbs" "<path to focus-reporter.ps1>" <client ip> <token>
+'
+' install-focus-reporter.ps1 writes a Startup shortcut that calls this, so
+' normally you never type it yourself.
 
 Option Explicit
 
-' Everything below is wrapped so that no failure here can stop a stream.
-' Vibepollo aborts a launch when a Do command exits non-zero, so a typo in a
-' path or a missing file would otherwise break streaming entirely, including
-' for a stock client. This exits zero no matter what.
+' Nothing here is allowed to raise. This is not defensive habit: it is the one
+' hard rule of this whole feature, that a convenience on the handheld can never
+' interfere with the PC or with a stream.
 On Error Resume Next
 
 Dim args, shell, scriptPath, clientAddress, token, command
 Set args = WScript.Arguments
 
 If args.Count < 3 Then
-    WScript.Quit 0   ' Never fail the launch over our own arguments.
+    WScript.Quit 0
 End If
 
 scriptPath = args(0)
@@ -40,8 +35,6 @@ command = "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Fi
           scriptPath & """ -ClientAddress " & clientAddress & " -Token " & token
 
 Set shell = CreateObject("WScript.Shell")
-On Error Resume Next
 shell.Run command, 0, False
-On Error GoTo 0
 
 WScript.Quit 0

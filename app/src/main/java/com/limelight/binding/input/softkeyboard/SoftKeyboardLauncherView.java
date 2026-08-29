@@ -35,6 +35,7 @@ public class SoftKeyboardLauncherView extends LinearLayout {
     private final SoftKeyboardLayouts.Page lastUsed;
     private final com.limelight.binding.input.trackpad.SoftTrackpadView trackpad;
     private final com.limelight.metrics.StreamMetricsBanner banner;
+    private final TextView reporterStatus;
 
     public SoftKeyboardLauncherView(Context context, SoftKeyboardLayouts.Page lastUsed,
                                     boolean padShortcutEnabled, float trackpadSensitivity) {
@@ -71,6 +72,27 @@ public class SoftKeyboardLauncherView extends LinearLayout {
         row.addView(button(context, R.string.soft_keyboard_launcher_digits,
                         SoftKeyboardLayouts.Page.PIN),
                 buttonParams(true));
+
+        // Hidden unless the PC-side reporter has something to say. When the
+        // automatic switching does not work, this is the difference between a
+        // report of "it didn't work" and one that names the cause.
+        reporterStatus = new TextView(context);
+        reporterStatus.setGravity(Gravity.CENTER);
+        reporterStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        reporterStatus.setTextColor(ContextCompat.getColor(context, R.color.vl_label));
+        reporterStatus.setPadding(dp(8f), 0, dp(8f), dp(6f));
+        reporterStatus.setVisibility(GONE);
+        addView(reporterStatus, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+    }
+
+    /** Pass null to hide the line entirely. */
+    public void setReporterStatus(String text) {
+        if (text == null) {
+            reporterStatus.setVisibility(GONE);
+            return;
+        }
+        reporterStatus.setText(text);
+        reporterStatus.setVisibility(VISIBLE);
     }
 
     public com.limelight.binding.input.trackpad.SoftTrackpadView getTrackpad() {
