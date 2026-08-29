@@ -54,7 +54,6 @@ public class PreferenceConfiguration {
     private static final String SOFT_KEYBOARD_AUTO_SHOW_PREF_STRING = "checkbox_soft_keyboard_auto_show";
     private static final String SOFT_KEYBOARD_PAD_SHORTCUT_PREF_STRING = "checkbox_soft_keyboard_pad_shortcut";
     private static final String PIN_THREADS_FAST_CORES_PREF_STRING = "checkbox_pin_threads_fast_cores";
-    private static final String FOCUS_HINTS_PREF_STRING = "checkbox_focus_hints";
     private static final String ENABLE_ULTRA_LOW_LATENCY_PREF_STRING = "checkbox_ultra_low_latency";
     private static final String ENFORCE_DISPLAY_MODE_PREF_STRING = "checkbox_enforce_display_mode";
     private static final String USE_VIRTUAL_DISPLAY_PREF_STRING = "checkbox_use_virtual_display";
@@ -167,10 +166,6 @@ public class PreferenceConfiguration {
     // Off by default: pinning trades power and heat for scheduling certainty,
     // and which way that lands depends on the device and the session length.
     private static final boolean DEFAULT_PIN_THREADS_FAST_CORES = false;
-    // On by default. With no reporter running the socket simply never hears
-    // anything, which costs a bound port and a thread parked on a one second
-    // timeout, and means setting the script up on the PC is the only step.
-    private static final boolean DEFAULT_FOCUS_HINTS = true;
     private static final boolean DEFAULT_HOST_AUDIO = false;
     private static final int DEFAULT_DEADZONE = 5;
     private static final int DEFAULT_OPACITY = 90;
@@ -262,7 +257,6 @@ public class PreferenceConfiguration {
     public boolean softKeyboardAutoShow;
     public boolean softKeyboardPadShortcut;
     public boolean pinThreadsToFastCores;
-    public boolean focusHintsEnabled;
     public FormatOption videoFormat;
     public int framePacingWarpFactor = 0;
     public int deadzonePercentage;
@@ -912,12 +906,12 @@ private static int getFramePacingValue(Context context) {
             // Use the new preference location
             String resStr = prefs.getString(RESOLUTION_PREF_STRING, PreferenceConfiguration.DEFAULT_RESOLUTION);
 
-            // Convert legacy resolution strings to the new style
-            if (!resStr.contains("x")) {
-                resStr = PreferenceConfiguration.convertFromLegacyResolutionString(resStr);
-                prefs.edit().putString(RESOLUTION_PREF_STRING, resStr).apply();
-            }
-
+            // Native is checked before the legacy conversion, not after. That
+            // conversion treats any value without an "x" as an old style name
+            // like "1080p", falls through to 720p for anything it does not
+            // recognise, and writes the result back to the preference. "Native"
+            // has no "x" in it, so going through there did not merely misread
+            // the setting, it overwrote it, and the choice was gone for good.
             if (isNativeResolution(resStr)) {
                 // Resolved here rather than baked into the preference, so the
                 // answer follows whatever display is actually attached now.
@@ -928,6 +922,12 @@ private static int getFramePacingValue(Context context) {
                 config.width = native_[0];
                 config.height = native_[1];
             } else {
+                // Convert legacy resolution strings to the new style
+                if (!resStr.contains("x")) {
+                    resStr = PreferenceConfiguration.convertFromLegacyResolutionString(resStr);
+                    prefs.edit().putString(RESOLUTION_PREF_STRING, resStr).apply();
+                }
+
                 config.width = PreferenceConfiguration.getWidthFromResolutionString(resStr);
                 config.height = PreferenceConfiguration.getHeightFromResolutionString(resStr);
             }
@@ -1017,7 +1017,6 @@ private static int getFramePacingValue(Context context) {
         config.softKeyboardAutoShow = prefs.getBoolean(SOFT_KEYBOARD_AUTO_SHOW_PREF_STRING, DEFAULT_SOFT_KEYBOARD_AUTO_SHOW);
         config.softKeyboardPadShortcut = prefs.getBoolean(SOFT_KEYBOARD_PAD_SHORTCUT_PREF_STRING, DEFAULT_SOFT_KEYBOARD_PAD_SHORTCUT);
         config.pinThreadsToFastCores = prefs.getBoolean(PIN_THREADS_FAST_CORES_PREF_STRING, DEFAULT_PIN_THREADS_FAST_CORES);
-        config.focusHintsEnabled = prefs.getBoolean(FOCUS_HINTS_PREF_STRING, DEFAULT_FOCUS_HINTS);
         config.enforceDisplayMode = prefs.getBoolean(ENFORCE_DISPLAY_MODE_PREF_STRING, DEFAULT_ENFORCE_DISPLAY_MODE);
         config.useVirtualDisplay = prefs.getBoolean(USE_VIRTUAL_DISPLAY_PREF_STRING, DEFAULT_USE_VIRTUAL_DISPLAY);
         config.enableUltraLowLatency = prefs.getBoolean(ENABLE_ULTRA_LOW_LATENCY_PREF_STRING, DEFAULT_ENABLE_ULTRA_LOW_LATENCY);

@@ -747,10 +747,6 @@
     <string name="sweep_depth_standard">Standard \u2014 adds core pinning, about 10 minutes</string>
     <string name="sweep_depth_thorough">Thorough \u2014 adds frame pacing, about 20 minutes</string>
     <string name="sweep_depth_exhaustive">Exhaustive \u2014 adds bitrate, about an hour</string>
-    <string name="title_focus_hints">Switch keyboards from the PC</string>
-    <string name="summary_focus_hints">Lets a small script on the PC say whether the field you clicked takes text or digits, so the right keyboard opens by itself. Needs focus-reporter.ps1 set up as a Vibepollo prep command. Tap for the address and token to paste into it. Browsers usually cannot be detected, and the Windows lock screen never can.</string>
-    <string name="title_focus_hints_setup">Focus reporter setup</string>
-    <string name="focus_hints_setup_body">Run focus-reporter.ps1 on the PC as a Vibepollo Global Prep Command.\n\nDo:\npowershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"C:\\path\\to\\focus-reporter.ps1\" -ClientAddress THIS_DEVICE_IP -Token %2$s\n\nUndo: stop that process.\n\nPort: %1$d\nToken: %2$s\n\nThe script only sends. It opens no port, writes nothing to disk and needs no elevation. Vibepollo starts it when a stream begins and stops it when the stream ends, so it does not run otherwise.\n\nBrowsers and Electron apps usually report an unknown field type, which changes nothing rather than guessing. The Windows lock screen runs on a separate secure desktop and cannot be read at all.</string>
     <string name="title_pin_threads_fast_cores">Pin streaming threads to fast cores</string>
     <string name="summary_pin_threads_fast_cores">Keeps the video and audio threads on the device\'s fast CPU cores instead of letting the scheduler move them to slower ones. Can shave a millisecond or two of jitter, but draws more power and runs warmer, so a long session may throttle instead. Try it both ways and keep whichever is steadier. Does nothing on devices whose cores are all the same speed.</string>
     <string name="title_soft_keyboard_pad_shortcut">Open the keyboard with both stick clicks</string>
