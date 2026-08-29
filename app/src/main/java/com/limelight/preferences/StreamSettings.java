@@ -913,6 +913,35 @@ public class StreamSettings extends AppCompatActivity {
                 });
             }
 
+            _pref = findPreference("pref_focus_hints_setup");
+            if (_pref != null) {
+                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(@NonNull Preference preference) {
+                        String token = com.limelight.focus.FocusHintTokens.get(requireActivity());
+                        String text = getString(R.string.focus_hints_setup_body,
+                                com.limelight.focus.FocusHintListener.DEFAULT_PORT, token);
+
+                        TextView body = new TextView(requireActivity());
+                        body.setText(text);
+                        body.setTextIsSelectable(true);
+                        body.setTypeface(android.graphics.Typeface.MONOSPACE);
+                        body.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f);
+                        int pad = Math.round(16f * getResources().getDisplayMetrics().density);
+                        body.setPadding(pad, pad, pad, pad);
+                        ScrollView scroller = new ScrollView(requireActivity());
+                        scroller.addView(body);
+
+                        new android.app.AlertDialog.Builder(requireActivity())
+                                .setTitle(R.string.title_focus_hints_setup)
+                                .setView(scroller)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
+                        return false;
+                    }
+                });
+            }
+
             _pref = findPreference("pref_settings_sweep");
             if (_pref != null) {
                 _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
