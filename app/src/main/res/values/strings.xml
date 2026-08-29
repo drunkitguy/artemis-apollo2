@@ -737,7 +737,6 @@
     <string name="game_menu_toggle_number_pad">Toggle Number pad</string>
     <string name="game_menu_keyboard_screen_info">Keyboard screen info</string>
     <string name="soft_keyboard_hint_resting">Tap any key to start typing · the controller is playing the game</string>
-    <string name="resolution_native_dynamic">Native (follows the display in use)</string>
     <string name="soft_trackpad_hint">Drag to move the pointer · tap to click · two fingers to right-click or scroll</string>
     <string name="soft_keyboard_launcher_caption">Tap anywhere to type · or pick one</string>
     <string name="soft_keyboard_launcher_caption_pad">Tap anywhere, or hold both stick clicks, to type</string>
@@ -747,10 +746,6 @@
     <string name="sweep_depth_standard">Standard \u2014 adds core pinning, about 10 minutes</string>
     <string name="sweep_depth_thorough">Thorough \u2014 adds frame pacing, about 20 minutes</string>
     <string name="sweep_depth_exhaustive">Exhaustive \u2014 adds bitrate, about an hour</string>
-    <string name="title_focus_hints">Switch keyboards from the PC</string>
-    <string name="summary_focus_hints">Lets a small script on the PC say whether the field you clicked takes text or digits, so the right keyboard opens by itself. Needs the focus reporter installed on the PC once. Tap the setup entry below for the address and token. Browsers usually cannot be detected, and the Windows lock screen never can.</string>
-    <string name="title_focus_hints_setup">Focus reporter setup</string>
-    <string name="focus_hints_setup_body">Run this once on the PC, from the folder holding focus-reporter.ps1:\n\npowershell -ExecutionPolicy Bypass -File .\\install-focus-reporter.ps1 -ClientAddress THIS_DEVICE_IP -Token %2$s\n\nPort: %1$d\nToken: %2$s\n\nThat sets the reporter to start with Windows and starts it now. It has nothing to do with Vibepollo and is not a prep command: a prep command that fails stops a stream from starting, and this must never be able to do that. It sits idle until it sees a stream running.\n\nIf you added the old Do and Undo prep commands in Vibepollo, remove them.\n\nBrowsers and Electron apps usually report an unknown field type, which changes nothing rather than guessing. The Windows lock screen runs on a separate secure desktop and cannot be read at all.</string>
     <string name="title_pin_threads_fast_cores">Pin streaming threads to fast cores</string>
     <string name="summary_pin_threads_fast_cores">Keeps the video and audio threads on the device\'s fast CPU cores instead of letting the scheduler move them to slower ones. Can shave a millisecond or two of jitter, but draws more power and runs warmer, so a long session may throttle instead. Try it both ways and keep whichever is steadier. Does nothing on devices whose cores are all the same speed.</string>
     <string name="title_soft_keyboard_pad_shortcut">Open the keyboard with both stick clicks</string>
