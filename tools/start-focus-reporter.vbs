@@ -19,6 +19,12 @@
 
 Option Explicit
 
+' Everything below is wrapped so that no failure here can stop a stream.
+' Vibepollo aborts a launch when a Do command exits non-zero, so a typo in a
+' path or a missing file would otherwise break streaming entirely, including
+' for a stock client. This exits zero no matter what.
+On Error Resume Next
+
 Dim args, shell, scriptPath, clientAddress, token, command
 Set args = WScript.Arguments
 
