@@ -2,16 +2,21 @@ package com.limelight.ui;
 
 import android.content.Context;
 import android.view.KeyEvent;
+import android.view.View;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 
-public class ExternalControllerView extends FrameLayout {
+public class ExternalControllerView extends FrameLayout implements SoftKeyboardController.ImeTarget {
     private InputCallbacks inputCallbacks;
 
     // When enabled, we expose an InputConnection so that soft keyboards can send
     // commitText() events (e.g. swipe typing). Default disabled.
     private boolean commitTextEnabled = false;
+
+    // Non-zero while SoftKeyboardController is asking the IME for a specific layout.
+    // It makes this view a real editor even when commitTextEnabled is off.
+    private int requestedImeInputType = 0;
 
     public void setInputCallbacks(InputCallbacks callbacks) {
         this.inputCallbacks = callbacks;
@@ -24,6 +29,16 @@ public class ExternalControllerView extends FrameLayout {
             setFocusableInTouchMode(true);
             requestFocus();
         }
+    }
+
+    @Override
+    public void setImeInputType(int inputType) {
+        this.requestedImeInputType = inputType;
+    }
+
+    @Override
+    public View asView() {
+        return this;
     }
 
     public ExternalControllerView(@NonNull Context context) {
@@ -52,18 +67,20 @@ public class ExternalControllerView extends FrameLayout {
 
     @Override
     public boolean onCheckIsTextEditor() {
-        return commitTextEnabled || super.onCheckIsTextEditor();
+        return requestedImeInputType != 0 || commitTextEnabled || super.onCheckIsTextEditor();
     }
 
     @Override
     public android.view.inputmethod.InputConnection onCreateInputConnection(android.view.inputmethod.EditorInfo outAttrs) {
-        if (!commitTextEnabled) {
+        if (requestedImeInputType == 0 && !commitTextEnabled) {
             return super.onCreateInputConnection(outAttrs);
         }
 
         // Basic text editor flags – we don't need extract UI or enter action
-        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT;
-        outAttrs.imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI;
+        outAttrs.inputType = requestedImeInputType != 0
+                ? requestedImeInputType
+                : android.text.InputType.TYPE_CLASS_TEXT;
+        outAttrs.imeOptions = SoftKeyboardController.imeOptions();
 
         return new android.view.inputmethod.BaseInputConnection(this, false) {
             @Override

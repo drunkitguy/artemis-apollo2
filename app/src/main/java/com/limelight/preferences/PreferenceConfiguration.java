@@ -138,6 +138,9 @@ public class PreferenceConfiguration {
 
     private static final String CHECKBOX_ENABLE_COMMIT_TEXT = "checkbox_enable_commit_text";
 
+    //第二屏幕点击后弹出系统键盘
+    private static final String CHECKBOX_TAP_TO_TYPE = "checkbox_tap_to_type";
+
     static final String DEFAULT_RESOLUTION = "1280x720";
     static final String DEFAULT_FPS = "60";
     private static final boolean DEFAULT_ENABLE_ULTRA_LOW_LATENCY = false;
@@ -206,6 +209,7 @@ public class PreferenceConfiguration {
     private static final int DEFAULT_TRACKPAD_DRAG_DROP_THRESHOLD = 250;
     private static final boolean DEFAULT_TRACKPAD_SWAP_AXIS = false;
     private static final boolean DEFAULT_ENABLE_COMMIT_TEXT = false;
+    private static final boolean DEFAULT_TAP_TO_TYPE = true;
     private static final String DEFAULT_ONSCREEN_KEYBOARD_ALIGN_MODE = "center";
     private static final boolean DEFAULT_SHOW_OVERLAY_TOGGLE_BUTTON = false;
 
@@ -335,6 +339,9 @@ public class PreferenceConfiguration {
 
     // Enable forwarding of commitText from soft keyboard
     public boolean enableCommitText;
+
+    // Offer the ABC/123 keyboard prompt after a left click on the secondary display trackpad
+    public boolean tapToType;
 
     public boolean enableKeyboardVibrate;
 
@@ -989,6 +996,8 @@ private static int getFramePacingValue(Context context) {
         config.enableDeviceRumble=prefs.getBoolean("checkbox_enable_device_rumble", false);
 
         config.enableCommitText = prefs.getBoolean(CHECKBOX_ENABLE_COMMIT_TEXT, DEFAULT_ENABLE_COMMIT_TEXT);
+
+        config.tapToType = prefs.getBoolean(CHECKBOX_TAP_TO_TYPE, DEFAULT_TAP_TO_TYPE);
 
         config.enableKeyboardSquare=prefs.getBoolean("checkbox_enable_keyboard_square",false);
 
