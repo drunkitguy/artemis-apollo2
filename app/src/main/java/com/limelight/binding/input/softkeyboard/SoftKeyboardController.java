@@ -161,8 +161,24 @@ public class SoftKeyboardController {
      * Null means "go back to resting", never "hide the panel".
      */
     private SoftKeyboardLayouts.Page hostPage;
-    /** True once any field focus report has arrived, i.e. this host speaks it. */
+    /**
+     * True once the host has reported an actual field, not merely spoken to us.
+     *
+     * A host sends a baseline "no field" report as soon as the control stream
+     * is up, so this deliberately does NOT flip on that. Taking the ABC/123
+     * buttons off the panel is only safe once the host has demonstrated it can
+     * raise a keyboard; a host whose focus watcher registers but never fires
+     * would otherwise leave a touch-only panel with no route to the keyboard
+     * at all.
+     */
     private boolean hostVerdictSeen;
+    /**
+     * True once any report at all has arrived, baseline included.
+     *
+     * Only the screen report uses this, to tell "this host does not speak the
+     * protocol" apart from "it does, and right now nothing has focus".
+     */
+    private boolean hostPacketSeen;
     /**
      * Set when the page currently on the panel was put there by the PC.
      *
@@ -569,12 +585,23 @@ public class SoftKeyboardController {
             return;
         }
 
-        hostVerdictSeen = true;
+        // Recorded whatever the report says, so the screen report can always
+        // show the host's last word even when it was "nothing".
+        hostPacketSeen = true;
         hostKind = kindValue;
         hostFlags = flagValue;
 
         SoftKeyboardLayouts.Page want = HostFieldFocus.pageFor(kindValue, flagValue);
         boolean wantMask = HostFieldFocus.masksEcho(kindValue, flagValue);
+
+        if (kindValue != HostFieldFocus.KIND_NONE) {
+            // A baseline "no field" packet is not a verdict about a field. The
+            // host sends one to every peer the moment the control stream is up,
+            // and a watcher that registers but never fires would send nothing
+            // else ever again. Waiting for a real field is what makes it
+            // impossible to ship a panel with no way to reach the keyboard.
+            hostVerdictSeen = true;
+        }
 
         // Keyed on what would actually be done, not on the raw bytes. Tabbing
         // between two text fields that differ only in, say, the multiline flag
@@ -582,12 +609,16 @@ public class SoftKeyboardController {
         if (want == hostPage && wantMask == maskEcho) {
             return;
         }
+        boolean maskChanged = wantMask != maskEcho;
         hostPage = want;
         maskEcho = wantMask;
-        if (wantMask) {
-            // Focus has moved into a masked box. Clear the panel now rather
-            // than at whatever point the page happens to get rebuilt, so this
-            // holds even on the paths below that deliberately do nothing.
+        if (maskChanged) {
+            // Focus has crossed into or out of a masked box. Clear the panel
+            // now rather than at whatever point the page happens to get
+            // rebuilt, so it holds even on the paths below that deliberately
+            // do nothing. Both directions matter: going in, plain text must
+            // not sit there next to the bullets; coming out, bullets must not
+            // sit there collecting plain text after them.
             applyEchoMask();
         }
 
@@ -616,7 +647,9 @@ public class SoftKeyboardController {
         }
 
         if (shown && hostOwnsPanel && getPage() == want) {
-            // Right keyboard already up: only the masking can have changed.
+            // Right keyboard already up, so only the masking can have changed,
+            // and the clear above has already handled it. Repeated here so the
+            // branch stays correct on its own if the guards above ever move.
             applyEchoMask();
             return;
         }
@@ -636,6 +669,7 @@ public class SoftKeyboardController {
     public void resetHostFieldState() {
         hostPage = null;
         hostVerdictSeen = false;
+        hostPacketSeen = false;
         hostOwnsPanel = false;
         userChosePage = false;
         maskEcho = false;
@@ -660,10 +694,11 @@ public class SoftKeyboardController {
         if (!autoLayoutFromHost) {
             return "ignored, letting the PC pick the keyboard is turned off";
         }
-        if (!hostVerdictSeen) {
+        if (!hostPacketSeen) {
             return "nothing, this host does not report which field has focus";
         }
-        return HostFieldFocus.describe(hostKind, hostFlags);
+        return HostFieldFocus.describe(hostKind, hostFlags)
+                + (hostVerdictSeen ? "" : " (no field reported yet this session)");
     }
 
     private SoftKeyboardView buildView() {

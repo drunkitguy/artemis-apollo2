@@ -18,6 +18,14 @@ package com.limelight.binding.input.softkeyboard;
  * in turn mirror {@code ML_TEXT_FIELD_*} in moonlight-common-c's Limelight.h.
  * Duplicating them is deliberate: it keeps this class loadable, and therefore
  * testable, without the native bridge being initialised.
+ *
+ * <p>"No Android imports" is about this file, not about the whole closure: the
+ * return type is {@link SoftKeyboardLayouts.Page}, and {@code SoftKeyboardLayouts}
+ * imports {@code android.view.KeyEvent} for its key codes. That is fine and is
+ * not something to "fix" later. javac inlines those {@code static final int}
+ * constants, the nested enum is its own class file, and the existing
+ * {@code SoftKeyboardModelTest} has run on a plain JVM through exactly this
+ * shape since before any of this was added.
  */
 public final class HostFieldFocus {
 
