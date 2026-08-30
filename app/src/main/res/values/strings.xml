@@ -17,9 +17,6 @@
     <string name="help_loading_msg">Loading help page…</string>
 
     <!-- Alignments -->
-    <string name="align_left">Align Left</string>
-    <string name="align_center">Align Center</string>
-    <string name="align_right">Align Right</string>
 
     <!-- PC view menu entries -->
     <string name="pcview_menu_header_online">Online</string>
@@ -375,9 +372,7 @@
     <string name="game_menu_enable_zoom_mode">Enable Pan/Zoom</string>
     <string name="game_menu_disable_zoom_mode">Disable Pan/Zoom</string>
     <string name="game_menu_rotate_screen">Rotate Screen</string>
-    <string name="game_menu_toggle_keyboard_model">Toggle Special keys</string>s
     <string name="game_menu_toggle_virtual_model">Toggle On-screen controller</string>
-    <string name="game_menu_toggle_virtual_keyboard_model">Toggle On-screen full keyboard</string>
     <string name="game_menu_switch_touch_sensitivity_model">Switch touch sensitivity</string>
 
 
@@ -422,10 +417,6 @@
     <string name="perf_overlay_ai_fps">3DFPS:</string>
     <string name="perf_overlay_ai_delegate">Delegate:</string>
     <string name="perf_overlay_lite_decoder">Decoder: %1$s</string>
-    <string name="title_import_keyboard_layout">Import keyboard layout</string>
-    <string name="title_export_keyboard_layout">Export keyboard layout</string>
-    <string name="summary_import_keyboard_layout">This will overwrite the current layout.</string>
-    <string name="summary_export_keyboard_layout">Export the current keyboard layout</string>
     <string name="title_manual_enter_bitrate">Custom bitrate</string>
     <string name="summary_manual_enter_bitrate">Enter bitrate manually.\nCan exceed the maximum range of the seekbar.</string>
     <string name="dialog_manual_enter_bitrate">Enter bitrate in Mbps. Round to 0.5.</string>
@@ -474,27 +465,11 @@
     <string name="summary_software_update">Artemis Nior Version by ClassicOldSong - Visit GitHub Releases to get latest version</string>
     <string name="title_follow_update">Follow Update</string>
     <string name="summary_follow_update">Follow updates of Artemis with Obtainium</string>
-    <string name="title_special_key_layout">Special Key Layout</string>
-    <string name="title_show_virtual_key">Display virtual keys on screen</string>
-    <string name="summary_show_virtual_key">Display a layer of virtual special keys on the touchscreen.\nKey opacity is shared with the virtual gamepad above.</string>
-    <string name="title_default_layout_scheme">Default layout profile</string>
-    <string name="summary_default_layout_scheme">Each layout profile is initially the same (generated based on the keyboards.json file), you can delete and adjust it yourself</string>
     <string name="summary_vibrate_keyboard">When you click the screen button, it will trigger the phone motor vibration. This option can also be used for virtual gamepad buttons.</string>
     <string name="title_square_buttons">Normal buttons are square buttons</string>
     <string name="summary_square_buttons">Virtual button shapes are square buttons, by default they are round.</string>
-    <string name="title_reset_keyboard_layout">Reset virtual keyboard layout</string>
-    <string name="summary_reset_keyboard_layout">Initialize the special key layout (reset the default selected layout scheme)</string>
     <string name="title_joyconfix">Compatible with Switch JoyCon</string>
     <string name="summary_joyconfix">If your JoyCon cannot be used or has key recognition issues, you can try to enable this feature. Adapted for Android 10 and above</string>
-    <string name="title_keyboard_opacity">Virtual Full Keyboard Opacity</string>
-    <string name="title_onscreen_keyboard_autofit">Virtual Full Keyboard Disable Autofit</string>
-    <string name="title_onscreen_keyboard_height">Virtual Full Keyboard Height</string>
-    <string name="title_onscreen_keyboard_width">Virtual Full Keyboard Width</string>
-    <string name="title_onscreen_keyboard_align_mode">Virtual Full Keyboard Align Mode</string>
-    <string name="summary_onscreen_keyboard_height">Adjust the height of the virtual full keyboard</string>
-    <string name="summary_onscreen_keyboard_autofit">Dont adjust the size and position of the keyboard automatically and allows custom size </string>
-    <string name="summary_onscreen_keyboard_width">Adjust the width of the virtual full keyboard</string>
-    <string name="summary_onscreen_keyboard_align_mode">How the virtual full keyboard aligns to the view port</string>
     <string name="title_free_analog_stick">Free Analog Stick</string>
     <string name="summary_free_analog_stick">Virtual gamepad left and right stick center point positions are not fixed, can be freely adjusted within a certain range of movement.</string>
     <string name="summary_free_analog_stick_opacity">By default, only when the stick moves, the background is displayed. If you don\'t like it, you can adjust the opacity effect.</string>
@@ -566,9 +541,6 @@
     <string name="summary_checkbox_use_virtual_display">Use Virtual Display by default.\nVirtual Display can automatically match your client side resolution and frame rate settings, giving you a seamless streaming experience.\nRequires Apollo as host streaming software.</string>
     <string name="title_checkbox_resume_without_confirm">Quick Resume</string>
     <string name="summary_checkbox_resume_without_confirm">Do not show resume menu when clicking resume button, resume the app immediately.</string>
-    <string name="title_checkbox_enable_sticky_modifier_key_virtual_keyboard">Sticky modifier keys</string>
-    <string name="summary_checkbox_enable_sticky_modifier_key_virtual_keyboard">Use sticky modifier keys on virtual full keyboard and custom onscreen keyboard.</string>
-    <string name="virtual_keyboard_hide">Hide\nKBD</string>
     <string name="mouse_mode_multi_touch">Multi touch</string>
     <string name="render_mode_2d">Default 2D</string>
     <string name="render_mode_3d_sbs">AI SBS 3D</string>
@@ -578,11 +550,6 @@
     <string name="mouse_mode_track_pad_gaming">Track pad(Gaming/Long press to drag)</string>
     <string name="mouse_mode_disabled">Disabled</string>
     <string name="mouse_mode_absolute_touch_swapped">Absolute touch (left/right click swapped)</string>
-    <string name="keyboard_layout_set_1">Profile 1</string>
-    <string name="keyboard_layout_set_2">Profile 2</string>
-    <string name="keyboard_layout_set_3">Profile 3</string>
-    <string name="keyboard_layout_set_4">Profile 4</string>
-    <string name="keyboard_layout_set_5">Profile 5</string>
     <string name="toggle_local_mouse_cursor">Toggle local mouse cursor(physical mouse needed)</string>
     <string name="debug_info_android_version">Android Version:</string>
     <string name="debug_info_api_version">API Version:</string>
@@ -619,7 +586,6 @@
     <string name="pref_empty_file">Empty file!</string>
     <string name="pref_import_success">Import success!</string>
     <string name="pref_error_occurred">An error occurred: </string>
-    <string name="pref_save_keyboard_profile">Save OSK profile</string>
     <string name="game_menu_advanced">Advanced Menu</string>
     <string name="game_dialog_title_quit_confirm">Really want to quit?</string>
     <string name="game_dialog_message_quit_confirm">Please make sure you have no unsaved progress. Quitting the session will terminate your current running application.</string>
@@ -659,17 +625,6 @@
     <string name="searchpreference_no_results">No results</string>
 
     <!-- Keyboard -->
-    <string name="keyboard_clear_all">Clear All</string>
-    <string name="keyboard_add_keys">Add Keys</string>
-    <string name="keyboard_select_keys">Select Keys to Add</string>
-    <string name="keyboard_clear_all_confirm_title">Clear All Keys</string>
-    <string name="keyboard_clear_all_confirm_message">Are you sure you want to hide all on-screen controls? You can add them back later in configuration mode.</string>
-    <string name="keyboard_keys_added">%d keys added successfully</string>
-    <string name="keyboard_duplicates_skipped">%d duplicates were skipped</string>
-    <string name="keyboard_configure_movable">You can now move the settings button.</string>
-    <string name="keyboard_load_error">Error loading keyboard configuration: %s</string>
-    <string name="keyboard_add">Add</string>
-    <string name="keyboard_key_custom">%s (Custom)</string>
 
     <!-- Compliance -->
     <string name="category_basic_settings" />

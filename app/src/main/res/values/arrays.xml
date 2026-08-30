@@ -147,21 +147,6 @@
         <item>left</item>
     </string-array>
 
-
-    <string-array name="keyboard_axi_names">
-        <item>@string/keyboard_layout_set_1</item>
-        <item>@string/keyboard_layout_set_1</item>
-        <item>@string/keyboard_layout_set_1</item>
-        <item>@string/keyboard_layout_set_1</item>
-        <item>@string/keyboard_layout_set_1</item>
-    </string-array>
-    <string-array name="keyboard_axi_values" translatable="false">
-        <item>OSC_Keyboard</item>
-        <item>OSC_Keyboard_2</item>
-        <item>OSC_Keyboard_3</item>
-        <item>OSC_Keyboard_4</item>
-        <item>OSC_Keyboard_5</item>
-    </string-array>
     <string-array name="render_mode_names">
         <item>@string/render_mode_2d</item>
         <item>@string/render_mode_3d_sbs</item>
@@ -187,17 +172,6 @@
         <item>3</item>
         <item>4</item>
         <item>5</item>
-    </string-array>
-
-    <string-array name="onscreen_keyboard_align_modes">
-        <item>@string/align_left</item>
-        <item>@string/align_center</item>
-        <item>@string/align_right</item>
-    </string-array>
-    <string-array name="onscreen_keyboard_align_values" translatable="false">
-        <item>left</item>
-        <item>center</item>
-        <item>right</item>
     </string-array>
 
 </resources>

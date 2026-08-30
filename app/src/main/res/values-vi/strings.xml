@@ -12,9 +12,6 @@
     <string name="help_loading_msg">Đang tải trang trợ giúp…</string>
 
     <!-- Alignments -->
-    <string name="align_left">Căn trái</string>
-    <string name="align_center">Căn giữa</string>
-    <string name="align_right">Căn phải</string>
 
     <!-- PC view menu entries -->
     <string name="pcview_menu_header_online">Trực tuyến</string>
@@ -346,9 +343,7 @@
     <string name="game_menu_enable_zoom_mode">Bật Pan/Zoom</string>
     <string name="game_menu_disable_zoom_mode">Tắt Pan/Zoom</string>
     <string name="game_menu_rotate_screen">Xoay màn hình</string>
-    <string name="game_menu_toggle_keyboard_model">Hiển thị phím đặc biệt</string>s
     <string name="game_menu_toggle_virtual_model">Hiển thị gamepad</string>
-    <string name="game_menu_toggle_virtual_keyboard_model">Hiển thị bàn phím đầy đủ</string>
     <string name="game_menu_switch_touch_sensitivity_model">Thay đổi độ nhạy cảm ứng</string>
 
 
@@ -387,10 +382,6 @@
     <string name="perf_overlay_lite_streamdetails">%1$s</string>
     <string name="perf_overlay_lite_fps">%1$.2f</string>
     <string name="perf_overlay_lite_decoder">Bộ giải mã: %1$s</string>
-    <string name="title_import_keyboard_layout">Nhập bố cục bàn phím</string>
-    <string name="title_export_keyboard_layout">Xuất bố cục bàn phím</string>
-    <string name="summary_import_keyboard_layout">Thao tác này sẽ ghi đè bố cục hiện tại.</string>
-    <string name="summary_export_keyboard_layout">Xuất bố cục bàn phím hiện tại</string>
 
     <string name="title_manual_enter_bitrate">Tùy chỉnh bitrate</string>
     <string name="summary_manual_enter_bitrate">Tự nhập tốc độ truyền tải.\nCó thể vượt quá giới hạn tối đa của thanh trượt.</string>
@@ -435,32 +426,18 @@
     <string name="title_software_update">Cập nhật phần mềm</string>
     <string name="summary_software_update">Phiên bản Artemis Việt Hóa bởi ZeronX - Truy cập GitHub Release để nhận phiên bản mới nhất</string>
 
-    <string name="title_special_key_layout">Bố cục phím đặc biệt</string>
 
-    <string name="title_show_virtual_key">Hiển thị phím ảo trên màn hình</string>
-    <string name="summary_show_virtual_key">Hiển thị một lớp phím đặc biệt ảo trên màn hình cảm ứng.\nĐộ mờ của phím chia sẻ với tay cầm ảo phía trên.</string>
 
-    <string name="title_default_layout_scheme">Cấu hình bố cục mặc định</string>
-    <string name="summary_default_layout_scheme">Mỗi bố cục ban đầu giống nhau (được tạo từ file keyboards.json), bạn có thể xóa và chỉnh sửa theo ý</string>
 
     <string name="summary_vibrate_keyboard">Khi bạn nhấn nút trên màn hình, thiết bị sẽ rung. Áp dụng cả với nút tay cầm ảo.</string>
 
     <string name="title_square_buttons">Nút hình vuông bình thường</string>
     <string name="summary_square_buttons">Hình dạng nút ảo là nút vuông, mặc định là tròn.</string>
 
-    <string name="title_reset_keyboard_layout">Đặt lại bố cục bàn phím ảo</string>
-    <string name="summary_reset_keyboard_layout">Khởi tạo lại bố cục phím đặc biệt (đặt lại bố cục được chọn mặc định)</string>
 
     <string name="title_joyconfix">Tương thích JoyCon của Switch</string>
     <string name="summary_joyconfix">Nếu JoyCon của bạn không hoạt động hoặc nhận phím sai, bạn có thể bật tính năng này. Hỗ trợ Android 10 trở lên</string>
 
-    <string name="title_keyboard_opacity">Độ mờ bàn phím đầy đủ ảo</string>
-    <string name="title_onscreen_keyboard_height">Chiều cao bàn phím đầy đủ ảo</string>
-    <string name="title_onscreen_keyboard_width">Chiều rộng bàn phím đầy đủ ảo</string>
-    <string name="title_onscreen_keyboard_align_mode">Căn chỉnh bàn phím đầy đủ ảo</string>
-    <string name="summary_onscreen_keyboard_height">Điều chỉnh chiều cao bàn phím đầy đủ ảo</string>
-    <string name="summary_onscreen_keyboard_width">Điều chỉnh chiều rộng bàn phím đầy đủ ảo</string>
-    <string name="summary_onscreen_keyboard_align_mode">Cách căn bàn phím đầy đủ ảo với màn hình</string>
 
     <string name="title_free_analog_stick">Joystick tự do</string>
     <string name="summary_free_analog_stick">Vị trí tâm của joystick trái và phải không cố định, có thể điều chỉnh tự do trong phạm vi nhất định.</string>
@@ -538,20 +515,12 @@
     <string name="title_checkbox_resume_without_confirm">Tiếp tục nhanh</string>
 
         <string name="summary_checkbox_resume_without_confirm">Bỏ qua menu tiếp tục, mở lại ứng dụng ngay khi bấm nút.</string>
-    <string name="title_checkbox_enable_sticky_modifier_key_virtual_keyboard">Giữ phím chức năng</string>
-    <string name="summary_checkbox_enable_sticky_modifier_key_virtual_keyboard">Tự động giữ phím Shift, Ctrl... trên bàn phím ảo và bàn phím tùy chỉnh.</string>
-    <string name="virtual_keyboard_hide">Ẩn\nBàn phím</string>
     <string name="mouse_mode_multi_touch">Chạm đa điểm</string>
     <string name="mouse_mode_absolute_touch">Chạm theo vị trí</string>
     <string name="mouse_mode_track_pad_natural">Bàn di chuột (Tự nhiên - Nhấn đúp để kéo)</string>
     <string name="mouse_mode_track_pad_gaming">Bàn di chuột (Game - Nhấn giữ để kéo)</string>
     <string name="mouse_mode_disabled">Tắt chuột</string>
     <string name="mouse_mode_absolute_touch_swapped">Chạm theo vị trí (Đổi trái/phải chuột)</string>
-    <string name="keyboard_layout_set_1">Cấu hình 1</string>
-    <string name="keyboard_layout_set_2">Cấu hình 2</string>
-    <string name="keyboard_layout_set_3">Cấu hình 3</string>
-    <string name="keyboard_layout_set_4">Cấu hình 4</string>
-    <string name="keyboard_layout_set_5">Cấu hình 5</string>
     <string name="toggle_local_mouse_cursor">Bật/tắt con trỏ chuột trên thiết bị (cần chuột thật)</string>
     <string name="debug_info_android_version">Phiên bản Android:</string>
     <string name="debug_info_api_version">Phiên bản API:</string>
@@ -588,7 +557,6 @@
     <string name="pref_empty_file">Tệp rỗng!</string>
     <string name="pref_import_success">Nhập thành công!</string>
     <string name="pref_error_occurred">Đã xảy ra lỗi: </string>
-    <string name="pref_save_keyboard_profile">Lưu cấu hình bàn phím</string>
     <string name="game_menu_advanced">Tùy chọn nâng cao</string>
     <string name="game_dialog_title_quit_confirm">Bạn có chắc muốn thoát không?</string>
     <string name="game_dialog_message_quit_confirm">Hãy chắc rằng bạn đã lưu tiến trình. Thoát khỏi phiên sẽ đóng ứng dụng đang chạy.</string>

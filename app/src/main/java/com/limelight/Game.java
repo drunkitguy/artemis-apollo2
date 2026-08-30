@@ -22,8 +22,6 @@ import com.limelight.binding.input.evdev.EvdevListener;
 import com.limelight.binding.input.touch.TouchContext;
 import com.limelight.binding.input.touch.TrackpadContext;
 import com.limelight.binding.input.virtual_controller.VirtualController;
-import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardController;
-import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardLayoutController;
 import com.limelight.binding.video.CrashListener;
 import com.limelight.binding.video.MediaCodecDecoderRenderer;
 import com.limelight.binding.video.MediaCodecHelper;
@@ -103,7 +101,6 @@ import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ImageButton;
@@ -172,10 +169,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private ControllerHandler controllerHandler;
     private KeyboardTranslator keyboardTranslator;
     private VirtualController virtualController;
-
-    private KeyBoardController keyBoardController;
-
-    private KeyBoardLayoutController keyBoardLayoutController;
 
     private SoftKeyboardController softKeyboardController;
 
@@ -850,11 +843,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             }
         }
 
-        //特殊按键屏幕布局
-        if(prefConfig.enableKeyboard){
-            initKeyboardController();
-        }
-
         if (!decoderRenderer.isAvcSupported()) {
             if (spinner != null) {
                 spinner.dismiss();
@@ -1094,47 +1082,54 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
     }
 
-    private void initKeyboardController(){
-        keyBoardController = new KeyBoardController(conn,(FrameLayout)rootView, this);
-        keyBoardController.refreshLayout();
-        keyBoardController.show();
-    }
-
-    public Boolean isKeyboardLayoutVisible() {
-        return keyBoardLayoutController != null && keyBoardLayoutController.shown;
-    }
-
     private void initVirtualController(){
         virtualController = new VirtualController(controllerHandler, (FrameLayout)rootView, this);
         virtualController.refreshLayout();
         virtualController.show();
     }
 
-    private void initkeyBoardLayoutController(){
-        keyBoardLayoutController = new KeyBoardLayoutController((FrameLayout)rootView, this, prefConfig);
-        keyBoardLayoutController.refreshLayout();
-        keyBoardLayoutController.show();
-    }
-
-    //显示隐藏虚拟特殊按键
-    public void toggleKeyboardController(){
-        if (keyBoardController==null) {
-            initKeyboardController();
-            return;
-        }
-        keyBoardController.toggleVisibility();
-    }
-
-    public void toggleFullKeyboard() {
+    /**
+     * Raises the system IME with the requested layout, replacing it if it is already up.
+     */
+    public void showSoftKeyboard(SoftKeyboardController.Mode mode) {
         if (isOnExternalDisplay()) {
-            ExternalDisplayControlActivity.toggleFullKeyboard();
+            ExternalDisplayControlActivity.showSoftKeyboard(mode);
             return;
         }
-        if (keyBoardLayoutController == null) {
-            initkeyBoardLayoutController();
+        if (softKeyboardController != null) {
+            softKeyboardController.show(mode);
+        }
+    }
+
+    /**
+     * Raises the system IME with the requested layout, or dismisses it if it is already up.
+     */
+    public void toggleSoftKeyboard(SoftKeyboardController.Mode mode) {
+        if (isOnExternalDisplay()) {
+            ExternalDisplayControlActivity.toggleSoftKeyboard(mode);
             return;
         }
-        keyBoardLayoutController.toggleVisibility();
+        if (softKeyboardController != null) {
+            softKeyboardController.toggle(mode);
+        }
+    }
+
+    private boolean isSoftKeyboardShown() {
+        if (softKeyboardController != null && softKeyboardController.isShown()) {
+            return true;
+        }
+        return ExternalDisplayControlActivity.isSoftKeyboardShown();
+    }
+
+    /**
+     * A left click on the second screen trackpad is the only hint we get that the user may
+     * have put the host caret into a text field, so that is where the keyboard prompt is
+     * offered. See SoftKeyboardPrompt for why the field type cannot be detected.
+     */
+    private void onTrackpadLeftClick() {
+        if (isOnExternalDisplay() && prefConfig.tapToType) {
+            ExternalDisplayControlActivity.showKeyboardPrompt();
+        }
     }
 
     //显示隐藏虚拟手柄控制器
@@ -1202,14 +1197,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             virtualController.refreshLayout();
         }
 
-        if(keyBoardController != null){
-            keyBoardController.refreshLayout();
-        }
-
-        if(keyBoardLayoutController != null){
-            keyBoardLayoutController.refreshLayout();
-        }
-
         // Hide on-screen overlays in PiP mode
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (isInPictureInPictureMode()) {
@@ -1229,14 +1216,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                 if (virtualController != null) {
                     virtualController.hide();
-                }
-
-                if (keyBoardController != null && keyBoardController.shown) {
-                    keyBoardController.hide(true);
-                }
-
-                if (keyBoardLayoutController!=null && keyBoardLayoutController.shown) {
-                    keyBoardLayoutController.hide(true);
                 }
 
                 hideGameMenu();
@@ -1265,14 +1244,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                 if (virtualController != null) {
                     virtualController.show();
-                }
-
-                if (keyBoardController != null && keyBoardController.shown) {
-                    keyBoardController.show();
-                }
-
-                if(keyBoardLayoutController!=null && keyBoardLayoutController.shown){
-                    keyBoardLayoutController.show();
                 }
 
                 if (prefConfig.enablePerfOverlay) {
@@ -1772,13 +1743,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         if (virtualController != null) {
             virtualController.hide();
-        }
-        if (keyBoardController != null) {
-            keyBoardController.hide();
-        }
-
-        if(keyBoardLayoutController!=null){
-            keyBoardLayoutController.hide();
         }
 
         if (conn != null) {
@@ -2406,13 +2370,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void toggleKeyboard() {
-        if (isOnExternalDisplay()) {
-            ExternalDisplayControlActivity.toggleKeyboard();
-        } else {
-            LimeLog.info("Toggling keyboard overlay");
-            InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            inputManager.toggleSoftInput(0, 0);
-        }
+        LimeLog.info("Toggling the system keyboard");
+        toggleSoftKeyboard(SoftKeyboardController.Mode.TEXT);
     }
 
     private byte getLiTouchTypeFromEvent(MotionEvent event) {
@@ -3243,7 +3202,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                             toggleKeyboard();
                             return true;
                         } else if (currentEventTime - fourFingerDownTime < FOUR_FINGER_TAP_THRESHOLD) {
-                            toggleFullKeyboard();
+                            showSoftKeyboard(SoftKeyboardController.Mode.NUMBER);
                             return true;
                         } else if (currentEventTime - fiveFingerDownTime < FIVE_FINGER_TAP_THRESHOLD) {
                             if(prefConfig.enableBackMenu) {
@@ -3317,7 +3276,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     fiveFingerDownTime = 0;
                     break;
                 } else if (pointerCount == 4 && fourFingerDownTime > 0 && currentEventTime - fourFingerDownTime < FOUR_FINGER_TAP_THRESHOLD) {
-                    toggleFullKeyboard();
+                    showSoftKeyboard(SoftKeyboardController.Mode.NUMBER);
                     fourFingerDownTime = 0;
                     break;
                 } else if (pointerCount == 3 && threeFingerDownTime > 0 && currentEventTime - threeFingerDownTime < THREE_FINGER_TAP_THRESHOLD) {
@@ -4055,7 +4014,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         String natural = getString(R.string.mouse_mode_track_pad_natural);
         String gaming = getString(R.string.mouse_mode_track_pad_gaming);
-        String disabled = getString(R.string.mouse_mode_disabled);
 
         int naturalIndex = 2; //fallback natural mode for secondary screen
         for (int i = 0; i < mouseModes.length; i++) {
@@ -4066,10 +4024,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
         // We only want to temporary override the mouse mode to work with external, but not store it
         if (isOnExternalDisplay()) {
+            // The second screen is a trackpad first and foremost, so "Disabled" is not
+            // an option there: it would leave the surface dead.
             if (savedMouseModeString != null &&
                     (savedMouseModeString.equals(natural) ||
-                            savedMouseModeString.equals(gaming) ||
-                            savedMouseModeString.equals(disabled))) {
+                            savedMouseModeString.equals(gaming))) {
                 applyMouseMode(savedMouseModeIndex);
             } else {
                 applyMouseMode(naturalIndex);
@@ -4099,8 +4058,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         Set<String> allowedLabels = new HashSet<>(Arrays.asList(
                 getString(R.string.mouse_mode_track_pad_natural),
-                getString(R.string.mouse_mode_track_pad_gaming),
-                getString(R.string.mouse_mode_disabled)
+                getString(R.string.mouse_mode_track_pad_gaming)
         ));
 
         List<MouseModeOption> options = new ArrayList<>();
@@ -4189,7 +4147,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             } else if (mode == 3) {
                 touchContextMap[i] = new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamContainer, prefConfig);
             } else {
-                touchContextMap[i] = new TrackpadContext(conn, i);
+                TrackpadContext trackpadContext = new TrackpadContext(conn, i);
+                trackpadContext.setClickListener(this::onTrackpadLeftClick);
+                touchContextMap[i] = trackpadContext;
             }
         }
 
@@ -4294,7 +4254,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleCommitText(CharSequence text) {
-        if (!prefConfig.enableCommitText || conn == null) {
+        // A keyboard we raised ourselves must work even though commitText is off by default
+        if (!(prefConfig.enableCommitText || isSoftKeyboardShown()) || conn == null) {
             return false;
         }
         enqueueCommitText(text.toString());
@@ -4303,7 +4264,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleDeleteSurroundingText(int beforeLength, int afterLength) {
-        if (!prefConfig.enableCommitText || conn == null) {
+        if (!(prefConfig.enableCommitText || isSoftKeyboardShown()) || conn == null) {
             return false;
         }
         // Send backspace events for deleted preceding characters

@@ -26,7 +26,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -46,15 +45,16 @@ import com.limelight.GameMenu;
 import com.limelight.LimeLog;
 import com.limelight.R;
 import com.limelight.StartExternalDisplayControlReceiver;
-import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardLayoutController;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.ui.ExternalControllerView;
+import com.limelight.ui.SoftKeyboardController;
+import com.limelight.ui.SoftKeyboardPrompt;
 
 /**
  * A standalone Activity providing a full-screen touchpad controller for the secondary display.
  * It creates its own UI programmatically and hosts the GameMenu for in-game options.
  */
-public class ExternalDisplayControlActivity extends AppCompatActivity implements View.OnKeyListener, KeyBoardLayoutController.ViewCallbacks {
+public class ExternalDisplayControlActivity extends AppCompatActivity implements View.OnKeyListener {
 
     public static String EXTRA_LAUNCH_INTENT = "launchIntent";
 
@@ -65,7 +65,8 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
 
     private ExternalControllerView rootLayout;
     private ImageButton zoomButton;
-    private KeyBoardLayoutController keyBoardLayoutController;
+    private SoftKeyboardController softKeyboardController;
+    private SoftKeyboardPrompt keyboardPrompt;
 
     private boolean isKeyboardVisible = false;
 
@@ -90,15 +91,26 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         }
     }
 
-    public static void toggleKeyboard() {
+    public static void showSoftKeyboard(SoftKeyboardController.Mode mode) {
         if (instance != null) {
-            instance._toggleKeyboard();
+            instance._showSoftKeyboard(mode);
         }
     }
 
-    public static void toggleFullKeyboard() {
+    public static void toggleSoftKeyboard(SoftKeyboardController.Mode mode) {
         if (instance != null) {
-            instance._toggleFullKeyboard();
+            instance._toggleSoftKeyboard(mode);
+        }
+    }
+
+    public static boolean isSoftKeyboardShown() {
+        return instance != null && instance.softKeyboardController != null
+                && instance.softKeyboardController.isShown();
+    }
+
+    public static void showKeyboardPrompt() {
+        if (instance != null) {
+            instance._showKeyboardPrompt();
         }
     }
 
@@ -170,7 +182,11 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
             WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (v, insets) -> {
                 boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
-                updateKeyboardVisibility(imeVisible || (keyBoardLayoutController != null && keyBoardLayoutController.isKeyboardVisible()));
+                updateKeyboardVisibility(imeVisible);
+                if (softKeyboardController != null) {
+                    // The IME may have been dismissed without us asking; go back to trackpad
+                    softKeyboardController.onImeVisibilityChanged(imeVisible);
+                }
                 return androidx.core.view.ViewCompat.onApplyWindowInsets(v, insets);
             });
         }
@@ -215,11 +231,6 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
     protected void onDestroy() {
         super.onDestroy();
         instance = null;
-    }
-
-    @Override
-    public void onKeyboardControllerVisibilityChange(boolean visible) {
-        updateKeyboardVisibility(visible);
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -287,8 +298,8 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
 
     @Override
     public void onBackPressed() {
-        if (Game.instance != null && Game.instance.isKeyboardLayoutVisible()) {
-            toggleFullKeyboard();
+        if (softKeyboardController != null && softKeyboardController.isShown()) {
+            softKeyboardController.hide();
         } else if (gameMenu != null && !gameMenu.isMenuOpen() && Game.instance != null)
             Game.instance.onBackPressed();
         else {
@@ -397,6 +408,8 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         rootLayout.setInputCallbacks(Game.instance);
         rootLayout.setCommitTextEnabled(prefConfig.enableCommitText);
 
+        softKeyboardController = new SoftKeyboardController(this, rootLayout);
+
         setContentView(rootLayout);
 
         // Top-left buttons
@@ -424,49 +437,51 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         topRightButtons.addView(createImageButton(R.drawable.ic_close_external, v -> finish()));
         rootLayout.addView(topRightButtons);
 
-        // Bottom-left button: Android keyboard toggle
+        // Bottom-left button: system keyboard toggle
         LinearLayout bottomLeftButton = createButtonContainer(Gravity.BOTTOM | Gravity.START);
         bottomLeftButton.setFocusable(false);
-        bottomLeftButton.addView(createImageButton(R.drawable.ic_android_keyboard, v -> _toggleKeyboard()));
+        bottomLeftButton.addView(createImageButton(R.drawable.ic_android_keyboard,
+                v -> _toggleSoftKeyboard(softKeyboardController.getLastMode())));
         rootLayout.addView(bottomLeftButton);
 
-        // Bottom-center buttons
-//        LinearLayout bottomCenterButtons = createButtonContainer(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-//        bottomCenterButtons.setFocusable(false);
-//        rootLayout.addView(bottomCenterButtons);
-
-        // Bottom-right button: Custom keyboard toggle
-        LinearLayout bottomRightButton = createButtonContainer(Gravity.BOTTOM | Gravity.END);
-        bottomRightButton.setFocusable(false);
-        bottomRightButton.addView(createImageButton(R.drawable.ic_fullscreen_keyboard, v -> _toggleFullKeyboard()));
-        rootLayout.addView(bottomRightButton);
+        // The ABC / 123 picker. It stays hidden until a trackpad left click offers it.
+        keyboardPrompt = new SoftKeyboardPrompt(this, this::_showSoftKeyboard);
+        rootLayout.addView(keyboardPrompt);
     }
 
     /**
-     * Toggles the visibility of the on-screen software keyboard.
+     * Raises the system keyboard with the given layout, dismissing the picker if it is up.
      */
-    private void _toggleKeyboard() {
-        LimeLog.info("Toggling keyboard overlay on ExternalDisplayControlActivity");
-        InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        inputManager.toggleSoftInput(0, 0);
-    }
-
-    private void initFullKeyboard(PreferenceConfiguration prefConfig) {
-        keyBoardLayoutController = new KeyBoardLayoutController(rootLayout, this, prefConfig);
-        keyBoardLayoutController.setViewCallbacks(this);
-        keyBoardLayoutController.refreshLayout();
-        keyBoardLayoutController.show();
-    }
-
-    /**
-     * Toggles the visibility of the full screen keyboard
-     */
-    private void _toggleFullKeyboard() {
-        if (keyBoardLayoutController == null) {
-            initFullKeyboard(prefConfig);
+    private void _showSoftKeyboard(SoftKeyboardController.Mode mode) {
+        if (softKeyboardController == null) {
             return;
         }
-        keyBoardLayoutController.toggleVisibility();
+        LimeLog.info("Showing the system keyboard on ExternalDisplayControlActivity");
+        if (keyboardPrompt != null) {
+            keyboardPrompt.hide();
+        }
+        softKeyboardController.show(mode);
+    }
+
+    private void _toggleSoftKeyboard(SoftKeyboardController.Mode mode) {
+        if (softKeyboardController == null) {
+            return;
+        }
+        if (keyboardPrompt != null) {
+            keyboardPrompt.hide();
+        }
+        softKeyboardController.toggle(mode);
+    }
+
+    /**
+     * Offers the ABC / 123 picker for a couple of seconds. Nothing is offered while the
+     * keyboard is already up, so the surface stays a plain trackpad in that case.
+     */
+    private void _showKeyboardPrompt() {
+        if (keyboardPrompt == null || (softKeyboardController != null && softKeyboardController.isShown())) {
+            return;
+        }
+        keyboardPrompt.show();
     }
 
     public void toggleZoomMode(boolean callGame) {
