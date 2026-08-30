@@ -720,13 +720,6 @@
             app:iconSpaceReserved="false" />
 
         <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="checkbox_tap_to_type"
-            android:summary="@string/summary_tap_to_type"
-            android:title="@string/title_tap_to_type"
-            app:iconSpaceReserved="false" />
-
-        <CheckBoxPreference
             android:defaultValue="false"
             android:key="checkbox_enable_touch_sensitivity"
             android:summary="@string/summary_touch_sensitivity"

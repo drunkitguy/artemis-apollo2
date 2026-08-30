@@ -131,8 +131,6 @@ public class PreferenceConfiguration {
 
     private static final String CHECKBOX_ENABLE_COMMIT_TEXT = "checkbox_enable_commit_text";
 
-    //第二屏幕点击后弹出系统键盘
-    private static final String CHECKBOX_TAP_TO_TYPE = "checkbox_tap_to_type";
     // Raise the system keyboard automatically when the host reports a focused text field
     private static final String CHECKBOX_AUTO_SOFT_KEYBOARD = "checkbox_auto_soft_keyboard";
 
@@ -203,7 +201,6 @@ public class PreferenceConfiguration {
     private static final int DEFAULT_TRACKPAD_DRAG_DROP_THRESHOLD = 250;
     private static final boolean DEFAULT_TRACKPAD_SWAP_AXIS = false;
     private static final boolean DEFAULT_ENABLE_COMMIT_TEXT = false;
-    private static final boolean DEFAULT_TAP_TO_TYPE = true;
     private static final boolean DEFAULT_AUTO_SOFT_KEYBOARD = true;
     private static final boolean DEFAULT_SHOW_OVERLAY_TOGGLE_BUTTON = false;
 
@@ -325,9 +322,6 @@ public class PreferenceConfiguration {
 
     // Enable forwarding of commitText from soft keyboard
     public boolean enableCommitText;
-
-    // Offer the ABC/123 keyboard prompt after a left click on the secondary display trackpad
-    public boolean tapToType;
 
     // Act on the host's text field focus signal, when the host sends one at all. Safe to
     // default on: a host that does not have text field detection enabled never sends the
@@ -978,7 +972,6 @@ private static int getFramePacingValue(Context context) {
 
         config.enableCommitText = prefs.getBoolean(CHECKBOX_ENABLE_COMMIT_TEXT, DEFAULT_ENABLE_COMMIT_TEXT);
 
-        config.tapToType = prefs.getBoolean(CHECKBOX_TAP_TO_TYPE, DEFAULT_TAP_TO_TYPE);
         config.autoSoftKeyboard = prefs.getBoolean(CHECKBOX_AUTO_SOFT_KEYBOARD, DEFAULT_AUTO_SOFT_KEYBOARD);
 
         config.enableKeyboardSquare=prefs.getBoolean("checkbox_enable_keyboard_square",false);

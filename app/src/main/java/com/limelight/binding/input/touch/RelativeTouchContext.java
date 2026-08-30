@@ -31,8 +31,6 @@ public class RelativeTouchContext implements TouchContext {
     private final PreferenceConfiguration prefConfig;
     private final Handler handler;
 
-    private ClickListener clickListener;
-
     private final Runnable dragTimerRunnable = new Runnable() {
         @Override
         public void run() {
@@ -104,10 +102,6 @@ public class RelativeTouchContext implements TouchContext {
         this.targetView = view;
         this.prefConfig = prefConfig;
         this.handler = new Handler(Looper.getMainLooper());
-    }
-
-    public void setClickListener(ClickListener listener) {
-        this.clickListener = listener;
     }
 
     @Override
@@ -196,10 +190,6 @@ public class RelativeTouchContext implements TouchContext {
         {
             // Lower the mouse button
             conn.sendMouseButtonDown(buttonIndex);
-
-            if (buttonIndex == MouseButtonPacket.BUTTON_LEFT && clickListener != null) {
-                clickListener.onTouchLeftClick();
-            }
 
             // Release the mouse button in 100ms to allow for apps that use polling
             // to detect mouse button presses.

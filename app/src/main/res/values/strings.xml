@@ -685,11 +685,7 @@
     <string name="title_checkbox_full_screen">Enable Full Screen</string>
     <string name="summary_checkbox_full_screen">Hide system bars with immersive mode</string>
     <string name="title_auto_soft_keyboard">Automatic keyboard</string>
-    <string name="summary_auto_soft_keyboard">Raise the system keyboard automatically when a text field is focused on the host. Needs a host with text field detection enabled; otherwise the ABC/123 prompt is used.</string>
-    <string name="title_tap_to_type">Tap to type on the second screen</string>
-    <string name="summary_tap_to_type">After a left click on the second-screen trackpad, briefly offer a letter or number keyboard</string>
-    <string name="soft_keyboard_prompt_text">ABC</string>
-    <string name="soft_keyboard_prompt_number">123</string>
+    <string name="summary_auto_soft_keyboard">Raise the system keyboard automatically when a text field is focused on the host. Needs a host with text field detection enabled; otherwise use the game menu or the three- or four-finger tap to raise it by hand.</string>
     <string name="game_menu_toggle_numpad">Numeric keyboard</string>
     <string name="title_vibrate_keyboard">Vibrate on virtual button press</string>
 </resources>

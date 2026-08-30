@@ -48,7 +48,6 @@ import com.limelight.StartExternalDisplayControlReceiver;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.ui.ExternalControllerView;
 import com.limelight.ui.SoftKeyboardController;
-import com.limelight.ui.SoftKeyboardPrompt;
 
 /**
  * A standalone Activity providing a full-screen touchpad controller for the secondary display.
@@ -66,7 +65,6 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
     private ExternalControllerView rootLayout;
     private ImageButton zoomButton;
     private SoftKeyboardController softKeyboardController;
-    private SoftKeyboardPrompt keyboardPrompt;
 
     private boolean isKeyboardVisible = false;
 
@@ -112,12 +110,6 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
     public static boolean isSoftKeyboardShown() {
         return instance != null && instance.softKeyboardController != null
                 && instance.softKeyboardController.isShown();
-    }
-
-    public static void showKeyboardPrompt() {
-        if (instance != null) {
-            instance._showKeyboardPrompt();
-        }
     }
 
     public static void toggleGameMenu() {
@@ -453,59 +445,25 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         topRightButtons.addView(createImageButton(R.drawable.ic_close_external, v -> finish()));
         rootLayout.addView(topRightButtons);
 
-        // Bottom-left button: system keyboard toggle. The second screen is meant to be a
-        // bare trackpad, so this only exists as the escape hatch for users who turned the
-        // tap-to-type picker off. The value is read once here, so flipping the preference
-        // mid-stream needs a restart of this Activity to take effect.
-        if (!prefConfig.tapToType) {
-            LinearLayout bottomLeftButton = createButtonContainer(Gravity.BOTTOM | Gravity.START);
-            bottomLeftButton.setFocusable(false);
-            bottomLeftButton.addView(createImageButton(R.drawable.ic_android_keyboard,
-                    v -> {
-                        notifyManualKeyboardUse();
-                        _toggleLastSoftKeyboard();
-                    }));
-            rootLayout.addView(bottomLeftButton);
-        }
-
-        // The ABC / 123 picker. It stays hidden until a trackpad left click offers it.
-        keyboardPrompt = new SoftKeyboardPrompt(this, mode -> {
-            notifyManualKeyboardUse();
-            _showSoftKeyboard(mode);
-        });
-        rootLayout.addView(keyboardPrompt);
+        // Nothing else goes on the bottom screen: it is a trackpad and nothing more. The
+        // keyboard is raised by the host's text field focus signal, with the game menu
+        // entries and the three- and four-finger gestures as the manual fallback.
     }
 
     /**
-     * Raises the system keyboard with the given layout, dismissing the picker if it is up.
+     * Raises the system keyboard with the given layout.
      */
     private void _showSoftKeyboard(SoftKeyboardController.Mode mode) {
         if (softKeyboardController == null) {
             return;
         }
         LimeLog.info("Showing the system keyboard on ExternalDisplayControlActivity");
-        if (keyboardPrompt != null) {
-            keyboardPrompt.hide();
-        }
         softKeyboardController.show(mode);
-    }
-
-    /**
-     * These two affordances live on this Activity and raise the IME without going through
-     * Game's public manual API, so they have to clear the host-raised flag themselves.
-     */
-    private void notifyManualKeyboardUse() {
-        if (Game.instance != null) {
-            Game.instance.onManualSoftKeyboardUse();
-        }
     }
 
     private void _hideSoftKeyboard() {
         if (softKeyboardController == null) {
             return;
-        }
-        if (keyboardPrompt != null) {
-            keyboardPrompt.hide();
         }
         softKeyboardController.hide();
     }
@@ -514,29 +472,7 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         if (softKeyboardController == null) {
             return;
         }
-        if (keyboardPrompt != null) {
-            keyboardPrompt.hide();
-        }
         softKeyboardController.toggle(mode);
-    }
-
-    /** Toggles whichever layout was last used, so the button does not force a choice. */
-    private void _toggleLastSoftKeyboard() {
-        if (softKeyboardController == null) {
-            return;
-        }
-        _toggleSoftKeyboard(softKeyboardController.getLastMode());
-    }
-
-    /**
-     * Offers the ABC / 123 picker for a couple of seconds. Nothing is offered while the
-     * keyboard is already up, so the surface stays a plain trackpad in that case.
-     */
-    private void _showKeyboardPrompt() {
-        if (keyboardPrompt == null || (softKeyboardController != null && softKeyboardController.isShown())) {
-            return;
-        }
-        keyboardPrompt.show();
     }
 
     public void toggleZoomMode(boolean callGame) {

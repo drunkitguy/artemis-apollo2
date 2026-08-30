@@ -176,20 +176,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     // Host text field focus (Apollo control packet 0x3003), all touched on the UI thread only.
     //
-    // hostReportedTextField goes true only once the host has reported an ACTUAL FIELD, never
-    // on the baseline "no field" packet every peer receives when the control stream comes up.
-    // That distinction is the whole point: the host sends the baseline unconditionally, so a
-    // host whose UI Automation client registered but never receives a focus event would
-    // otherwise look identical to a working one, and suppressing the ABC/123 prompt on that
-    // evidence would leave the user with no second-screen keyboard at all. Against a host
-    // that never detects a field - or never sends 0x3003 in the first place - this stays
-    // false forever and the prompt behaves exactly as it did before this feature existed.
-    private boolean hostReportedTextField = false;
     // True only while the keyboard currently up was raised BY THE HOST SIGNAL. This is the
     // crux of the whole feature: an unfocus event may only take down a keyboard the host
     // itself raised, never one the user raised by hand. Set in exactly one place
-    // (applyHostTextFieldFocus) and cleared on manual use, on a host report of "no field",
-    // and on a new connection.
+    // (applyHostTextFieldFocus) and cleared by the public manual API showSoftKeyboard() /
+    // toggleSoftKeyboard(), by onSoftKeyboardDismissed() and onManualSoftKeyboardUse(), by a
+    // host report of "no field", and on a new connection.
     private boolean autoRaisedKeyboard = false;
     // The keyboard action the last host report resolved to: null means "no field, keyboard
     // down". Deliberately keyed on the resulting Mode rather than on the raw (kind, flags)
@@ -1145,9 +1137,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     /**
      * Raises the system IME with the requested layout, replacing it if it is already up.
      *
-     * This is the MANUAL entry point: the game menu, the three- and four-finger gestures and
-     * the ABC/123 prompt all come through here, so raising the keyboard by hand always clears
-     * autoRaisedKeyboard and the host can no longer take it away.
+     * This is the MANUAL entry point: the game menu and the three- and four-finger gestures
+     * all come through here, so raising the keyboard by hand always clears autoRaisedKeyboard
+     * and the host can no longer take it away.
      */
     public void showSoftKeyboard(SoftKeyboardController.Mode mode) {
         autoRaisedKeyboard = false;
@@ -1211,17 +1203,19 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     /**
-     * Called by the secondary display's own manual keyboard affordances (the escape-hatch
-     * keyboard button and the ABC/123 picker), which raise the IME without going through
-     * showSoftKeyboard(). A keyboard the user asked for by hand is never taken away by a
-     * host unfocus event.
+     * Hands keyboard ownership back to the user for any IME raised without going through
+     * showSoftKeyboard() / toggleSoftKeyboard(). A keyboard the user asked for by hand is
+     * never taken away by a host unfocus event.
+     *
+     * Nothing in the app calls this today - every manual path (the game menu entries and the
+     * three- and four-finger gestures) routes through the public show/toggle API, which
+     * already clears the flag. It is kept as the hook any future manual affordance must use.
      */
     public void onManualSoftKeyboardUse() {
         autoRaisedKeyboard = false;
     }
 
     private void resetHostTextFieldState() {
-        hostReportedTextField = false;
         autoRaisedKeyboard = false;
         lastAppliedHostMode = null;
         hasAppliedHostField = false;
@@ -1253,13 +1247,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (!prefConfig.autoSoftKeyboard) {
             // Preference off: ignore the host entirely and leave the manual prompt alone.
             return;
-        }
-
-        // Only an actual field proves the host's detector is delivering events. The raw kind
-        // is used on purpose: a read-only field will not raise the keyboard, but it is still
-        // proof that focus detection works on that host.
-        if (fieldKind != MoonBridge.TEXT_FIELD_NONE) {
-            hostReportedTextField = true;
         }
 
         // A read-only field takes no input, so it resolves to "keyboard down" even though
@@ -1294,24 +1281,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return true;
         }
         return ExternalDisplayControlActivity.isSoftKeyboardShown();
-    }
-
-    /**
-     * A left click on the second screen touch surface is the only hint we get that the
-     * user may have put the host caret into a text field, so that is where the keyboard
-     * prompt is offered. Both relative modes (Trackpad natural and Trackpad gaming) feed
-     * this. See SoftKeyboardPrompt for why the field type cannot be detected.
-     */
-    private void onTouchLeftClick() {
-        if (hostReportedTextField && prefConfig.autoSoftKeyboard) {
-            // The host tells us when a text field is focused, so guessing from a left click
-            // would only ever fight it. The game menu entries and the multi-finger gestures
-            // stay available as unconditional manual overrides.
-            return;
-        }
-        if (isOnExternalDisplay() && prefConfig.tapToType) {
-            ExternalDisplayControlActivity.showKeyboardPrompt();
-        }
     }
 
     //显示隐藏虚拟手柄控制器
@@ -4338,13 +4307,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             } else if (!prefConfig.touchscreenTrackpad) {
                 touchContextMap[i] = new AbsoluteTouchContext(conn, i, streamContainer, mode == 5);
             } else if (mode == 3) {
-                RelativeTouchContext relativeTouchContext = new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamContainer, prefConfig);
-                relativeTouchContext.setClickListener(this::onTouchLeftClick);
-                touchContextMap[i] = relativeTouchContext;
+                touchContextMap[i] = new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamContainer, prefConfig);
             } else {
-                TrackpadContext trackpadContext = new TrackpadContext(conn, i);
-                trackpadContext.setClickListener(this::onTouchLeftClick);
-                touchContextMap[i] = trackpadContext;
+                touchContextMap[i] = new TrackpadContext(conn, i);
             }
         }
 
