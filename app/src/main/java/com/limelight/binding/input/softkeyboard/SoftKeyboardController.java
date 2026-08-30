@@ -131,9 +131,19 @@ public class SoftKeyboardController {
     private final Runnable openOnChord = new Runnable() {
         @Override
         public void run() {
-            if (leftStickClicked && rightStickClicked && shown && !capturing) {
-                openPage(lastUsedPage());
+            if (!leftStickClicked || !rightStickClicked || !shown || capturing) {
+                return;
             }
+            if (hostOwnsPanel && view != null) {
+                // The PC already put the right keyboard up and it is sitting
+                // there resting. Re-opening the same page would rebuild it for
+                // nothing; what the chord means in that state is "give me the
+                // pad so I can type", which matters most on exactly the panels
+                // this chord exists for, the ones that are not touchscreens.
+                setCapturing(true);
+                return;
+            }
+            openPage(preferredPage());
         }
     };
     /**
@@ -142,6 +152,59 @@ public class SoftKeyboardController {
      * put a file parse on the input path.
      */
     private boolean padShortcut = true;
+
+    // ------------------------------------------------------- what the PC says
+
+    /**
+     * The page the PC last asked for, or null when it reports no typable field.
+     *
+     * Null means "go back to resting", never "hide the panel".
+     */
+    private SoftKeyboardLayouts.Page hostPage;
+    /**
+     * True once the host has reported a field this panel would open a keyboard
+     * for, which is a narrower thing than the host having spoken to us.
+     *
+     * Neither the baseline "no field" report that arrives as soon as the
+     * control stream is up, nor a read-only field, flips this. Both prove the
+     * host is talking; neither proves it will ever raise a keyboard. Since
+     * this is what takes the ABC/123 buttons off the panel, and on a second
+     * screen that is not a touchscreen those buttons are the only on-panel
+     * route to the keyboard, it has to wait for the thing it is replacing.
+     */
+    private boolean hostVerdictSeen;
+    /**
+     * True once any report at all has arrived, baseline included.
+     *
+     * Only the screen report uses this, to tell "this host does not speak the
+     * protocol" apart from "it does, and right now nothing has focus".
+     */
+    private boolean hostPacketSeen;
+    /**
+     * Set when the page currently on the panel was put there by the PC.
+     *
+     * The host may only take back what the host raised. A keyboard the user
+     * opened by hand is never closed or re-paged out from under them.
+     */
+    private boolean hostOwnsPanel;
+    /** The user overrode the page by hand during this typing session. */
+    private boolean userChosePage;
+    /**
+     * A password field has focus, so the on screen echo shows bullets.
+     *
+     * This panel normally paints everything typed across the second screen so
+     * the user can see what they sent without looking up at the TV. Pointed at
+     * a password box that turns the handheld into a password display readable
+     * by whoever else is in the room, which is why this flag exists.
+     */
+    private boolean maskEcho;
+    /** Cached alongside {@link #padShortcut}. */
+    private boolean autoLayoutFromHost = true;
+    /** The last raw report, kept only so the screen report can explain itself. */
+    private int hostKind = HostFieldFocus.KIND_NONE;
+    private int hostFlags;
+    /** What one masked character looks like on the panel. */
+    private static final char ECHO_MASK_CHAR = '•';
 
     private SoftKeyboardModel.Direction heldDirection;
     private long nextRepeatAt;
@@ -175,6 +238,11 @@ public class SoftKeyboardController {
     }
 
     private void toggle(SoftKeyboardLayouts.Page page) {
+        // Asking for a specific keyboard from the menu is an explicit override.
+        // The PC does not get to take this panel back afterwards.
+        hostOwnsPanel = false;
+        userChosePage = true;
+
         if (presentation != null) {
             // The second screen is already claimed. Asking for the page that is
             // already being typed on means "I am done"; anything else means
@@ -254,6 +322,11 @@ public class SoftKeyboardController {
         capturing = false;
         heldDirection = null;
         echo.setLength(0);
+        // Back to the panel nobody has claimed: whatever the PC or the user
+        // decided about this typing session is finished with.
+        hostOwnsPanel = false;
+        userChosePage = false;
+        maskEcho = false;
 
         if (presentation == null) {
             // Docked over the game: resting has to mean gone, because a black
@@ -300,8 +373,13 @@ public class SoftKeyboardController {
 
 
     private SoftKeyboardLauncherView newLauncher() {
+        // Once the PC is telling us which field has focus, picking a keyboard
+        // by hand is work the user should not have to do, so the two buttons
+        // come off the panel and the trackpad gets the space. Against a host
+        // that says nothing they stay exactly where they were.
         SoftKeyboardLauncherView launcher = new SoftKeyboardLauncherView(
-                context, lastUsedPage(), padShortcutEnabled(), trackpadSensitivity());
+                context, preferredPage(), padShortcutEnabled(), trackpadSensitivity(),
+                autoLayoutFromHost && hostVerdictSeen);
         launcher.setOnPickListener(new SoftKeyboardLauncherView.OnPickListener() {
             @Override
             public void onPick(SoftKeyboardLayouts.Page page) {
@@ -402,11 +480,31 @@ public class SoftKeyboardController {
 
     /** Re-read the preferences that are consulted on the input path. */
     private void refreshCachedPreferences() {
-        padShortcut = PreferenceConfiguration.readPreferences(context).softKeyboardPadShortcut;
+        PreferenceConfiguration prefs = PreferenceConfiguration.readPreferences(context);
+        padShortcut = prefs.softKeyboardPadShortcut;
+        autoLayoutFromHost = prefs.softKeyboardHostLayout;
+    }
+
+    /**
+     * Which keyboard to open when the user has not said which one they want.
+     *
+     * The PC knows the answer whenever it is reporting a field, and it is a
+     * better answer than "whatever you used last time" because it is about the
+     * box the cursor is actually in. Falls straight back to the remembered page
+     * against a host that does not report anything.
+     */
+    private SoftKeyboardLayouts.Page preferredPage() {
+        if (autoLayoutFromHost && hostVerdictSeen && hostPage != null) {
+            return hostPage;
+        }
+        return lastUsedPage();
     }
 
     /** Brings up one of the keyboards on a screen that is currently resting. */
     private void openPage(SoftKeyboardLayouts.Page page) {
+        // Every route into here is the user asking by hand, so the PC no longer
+        // owns this panel and may not take it away again.
+        hostOwnsPanel = false;
         // The keyboard replaces the panel, so there is no banner to feed.
         stopMetrics();
         rememberPage(page);
@@ -426,6 +524,190 @@ public class SoftKeyboardController {
         applyHint();
         view.refresh();
         lastOutcome = "typing on screen " + presentationDisplayId;
+    }
+
+    // ---------------------------------------------- the PC picks the keyboard
+
+    /**
+     * Puts a keyboard on the panel because the PC says a field has focus.
+     *
+     * The one difference from {@link #openPage} is the one that matters: this
+     * does not take the gamepad. Windows moving focus is not a reason to stop
+     * the game receiving input, and a keyboard that appears without stealing
+     * the pad costs the player nothing if the PC guessed wrong. Touching any
+     * key still hands the pad over through the usual listener, so "tap a key to
+     * start typing" works exactly as it did.
+     *
+     * A page change while the user is already typing keeps the pad, because the
+     * keyboard already had it. That is not the host taking the pad; it is the
+     * host declining to drop it in the middle of a word.
+     */
+    private void openPageResting(SoftKeyboardLayouts.Page page) {
+        boolean keepPad = capturing;
+
+        stopMetrics();
+        rememberPage(page);
+
+        model = new SoftKeyboardModel(page);
+        view = buildView();
+        presentation.swapContent(view, page == SoftKeyboardLayouts.Page.PIN);
+
+        // Whatever is in the echo belongs to the field that just lost focus.
+        echo.setLength(0);
+        view.setEcho("");
+        capturing = keepPad;
+        applyHint();
+        view.refresh();
+        lastOutcome = (keepPad ? "typing on screen " : "waiting on screen ")
+                + presentationDisplayId + " (the PC asked for this keyboard)";
+    }
+
+    /**
+     * A report from the PC about the field that has focus.
+     *
+     * Absolute state, not an edge: the most recent call is always the current
+     * truth, so there is nothing to reconcile and nothing to miss if one is
+     * dropped. Called on the UI thread.
+     *
+     * @param kind  one of {@code MoonBridge.TEXT_FIELD_*}
+     * @param flags a mask of {@code MoonBridge.TEXT_FIELD_FLAG_*}
+     */
+    public void applyHostFieldFocus(byte kind, byte flags) {
+        // Arrives as a signed byte off the wire. Widen before anything looks at
+        // it, or a future host setting the top flag bit turns flags negative.
+        int kindValue = kind & 0xFF;
+        int flagValue = flags & 0xFF;
+
+        refreshCachedPreferences();
+        if (!autoLayoutFromHost) {
+            // Turned off means off: no auto raise, no page pre-selection, and
+            // the ABC/123 buttons stay on the panel. Identical to not having
+            // this feature at all.
+            return;
+        }
+
+        // Recorded whatever the report says, so the screen report can always
+        // show the host's last word even when it was "nothing".
+        hostPacketSeen = true;
+        hostKind = kindValue;
+        hostFlags = flagValue;
+
+        SoftKeyboardLayouts.Page want = HostFieldFocus.pageFor(kindValue, flagValue);
+        boolean wantMask = HostFieldFocus.masksEcho(kindValue, flagValue);
+
+        if (want != null) {
+            // Deliberately keyed on the page, not on the kind. Taking the only
+            // on-panel route to the keyboard away should require proof of the
+            // thing being replaced, not proof of the machinery behind it: a
+            // baseline "no field" report arrives the moment the control stream
+            // is up, and a read-only field proves the host classifies without
+            // proving it will ever raise anything. Either would hide the
+            // buttons on a host that never opens a keyboard at all.
+            hostVerdictSeen = true;
+        }
+
+        // Keyed on what would actually be done, not on the raw bytes. Tabbing
+        // between two text fields that differ only in, say, the multiline flag
+        // must not rebuild anything.
+        if (want == hostPage && wantMask == maskEcho) {
+            return;
+        }
+        boolean maskChanged = wantMask != maskEcho;
+        hostPage = want;
+        maskEcho = wantMask;
+        if (maskChanged) {
+            // Focus has crossed into or out of a masked box. Clear the panel
+            // now rather than at whatever point the page happens to get
+            // rebuilt, so it holds even on the paths below that deliberately
+            // do nothing. Both directions matter: going in, plain text must
+            // not sit there next to the bullets; coming out, bullets must not
+            // sit there collecting plain text after them.
+            applyEchoMask();
+        }
+
+        if (presentation == null) {
+            // Docked over the game, resting means gone, so raising a keyboard
+            // here would drop a panel across the picture every time the PC's
+            // focus moved. The verdict is still remembered, and the next manual
+            // open gets the right page out of it.
+            return;
+        }
+
+        if (capturing && (userChosePage || !hostOwnsPanel)) {
+            // Somebody is typing on a keyboard the PC did not put there, or on
+            // one whose page they picked by hand. Leave them alone.
+            return;
+        }
+
+        if (want == null) {
+            // Nothing has focus any more. Take back only what was raised here,
+            // and never in the middle of a word.
+            if (hostOwnsPanel && !capturing) {
+                hostOwnsPanel = false;
+                rest();
+            }
+            return;
+        }
+
+        if (shown && hostOwnsPanel && getPage() == want) {
+            // Right keyboard already up, so only the masking can have changed,
+            // and the clear above has already handled it. Repeated here so the
+            // branch stays correct on its own if the guards above ever move.
+            applyEchoMask();
+            return;
+        }
+
+        openPageResting(want);
+        hostOwnsPanel = true;
+    }
+
+    /**
+     * Forgets everything the previous session's PC said.
+     *
+     * Called as a new connection is started, because the next host may be a
+     * different machine, or the same one with the setting turned off, and a
+     * stale verdict would decide which keyboard opens and whether the ABC/123
+     * buttons are on the panel.
+     */
+    public void resetHostFieldState() {
+        hostPage = null;
+        hostVerdictSeen = false;
+        hostPacketSeen = false;
+        hostOwnsPanel = false;
+        userChosePage = false;
+        maskEcho = false;
+        hostKind = HostFieldFocus.KIND_NONE;
+        hostFlags = 0;
+    }
+
+    /**
+     * The echo belongs to the field that had focus, so a change of field throws
+     * it away. In the direction that matters, plain text typed into an ordinary
+     * box must not still be sitting on the panel once a password box has focus.
+     */
+    private void applyEchoMask() {
+        echo.setLength(0);
+        if (view != null) {
+            view.setEcho("");
+        }
+    }
+
+    /** One line about the PC's last word on the subject, for the screen report. */
+    private String hostVerdict() {
+        if (!autoLayoutFromHost) {
+            return "ignored, letting the PC pick the keyboard is turned off";
+        }
+        if (!hostPacketSeen) {
+            return "nothing, this host does not report which field has focus";
+        }
+        // Not "no field reported": a read-only field is a field, it is simply
+        // not one anything gets opened for. What the reader needs to know is
+        // that nothing has yet earned a keyboard, which is also why the
+        // ABC/123 buttons are still there.
+        return HostFieldFocus.describe(hostKind, hostFlags)
+                + (hostVerdictSeen
+                        ? ""
+                        : " (nothing yet that opens a keyboard, so the ABC/123 buttons stay)");
     }
 
     private SoftKeyboardView buildView() {
@@ -534,6 +816,10 @@ public class SoftKeyboardController {
         view = null;
         shown = false;
         heldDirection = null;
+        hostOwnsPanel = false;
+        userChosePage = false;
+        maskEcho = false;
+        echo.setLength(0);
     }
 
     // ------------------------------------------------------ where it is shown
@@ -582,8 +868,12 @@ public class SoftKeyboardController {
 
     /** A plain language account of what the keyboard did, for the screen report. */
     public String describe() {
+        // Not on the input path, so the cache can be brought up to date first
+        // rather than reporting a preference the user has since changed.
+        refreshCachedPreferences();
         return SoftKeyboardDiagnostics.report(
-                context, game.getStreamDisplayId(), prefersSecondScreen(), lastOutcome);
+                context, game.getStreamDisplayId(), prefersSecondScreen(), lastOutcome,
+                hostVerdict());
     }
 
     private void detach() {
@@ -794,10 +1084,12 @@ public class SoftKeyboardController {
 
             case KeyEvent.KEYCODE_BUTTON_L1:
             case KeyEvent.KEYCODE_BUTTON_R1:
-                // The host never tells the client that the focused field only
-                // takes digits, so reaching the keypad has to be something the
-                // user does. A shoulder button is the cheapest way to do it
-                // without going back out to the menu.
+                // The PC now tells us when the focused field only takes digits,
+                // but it is guessing from what the application publishes and
+                // plenty of applications publish nothing useful. This is the
+                // override, and it is the cheapest one to reach: a shoulder
+                // button, without going back out to the menu. Once it is used
+                // the PC stops being allowed to change the page underneath.
                 toggleKeypadPage();
                 return true;
 
@@ -1025,6 +1317,8 @@ public class SoftKeyboardController {
 
     /** Flips between the keypad and the letter keyboard, in place. */
     private void toggleKeypadPage() {
+        // A page picked by hand outranks the PC for the rest of this session.
+        userChosePage = true;
         model.setPage(model.getPage() == SoftKeyboardLayouts.Page.PIN
                 ? SoftKeyboardLayouts.Page.LETTERS
                 : SoftKeyboardLayouts.Page.PIN);
@@ -1037,6 +1331,9 @@ public class SoftKeyboardController {
             // into a letter grid they did not ask for.
             return;
         }
+        // Same as the keypad flip: a page reached by hand is the user's choice,
+        // and the PC does not get to move it back.
+        userChosePage = true;
         model.setPage(model.getPage() == SoftKeyboardLayouts.Page.LETTERS
                 ? SoftKeyboardLayouts.Page.SYMBOLS
                 : SoftKeyboardLayouts.Page.LETTERS);
@@ -1091,6 +1388,12 @@ public class SoftKeyboardController {
 
     // ------------------------------------------------------------------ echo
 
+    /**
+     * Every path that puts a character on the panel goes through
+     * {@link #appendEcho}, which is where password masking happens. Deleting
+     * and clearing need no special case: a bullet trims like any other
+     * character, and Enter wipes the line either way.
+     */
     private void recordEcho(SoftKeyboardModel.Press press) {
         switch (press.keyCode) {
             case KeyEvent.KEYCODE_DEL:
@@ -1116,7 +1419,25 @@ public class SoftKeyboardController {
     }
 
     private void appendEcho(String text) {
-        echo.append(text);
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+
+        if (maskEcho) {
+            // The PC says this is a password box. Something still has to appear
+            // or the panel looks like the keys are not reaching the PC at all,
+            // but it appears as bullets: a handheld's second screen is at
+            // reading distance for everyone else in the room, and the whole
+            // point of this echo is that it is easy to read.
+            //
+            // Spaces and pasted clipboard text are masked the same way. A space
+            // shown as a space would give away where the words break.
+            for (int i = 0; i < text.length(); i++) {
+                echo.append(ECHO_MASK_CHAR);
+            }
+        } else {
+            echo.append(text);
+        }
         // The echo is one line; older text scrolling off is better than a
         // keyboard that grows and covers the game.
         if (echo.length() > 96) {

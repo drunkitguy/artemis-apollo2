@@ -28,9 +28,13 @@ public final class SoftKeyboardDiagnostics {
      * @param streamDisplayId the screen the stream is rendering on
      * @param preferSecond    the user's second screen preference
      * @param lastOutcome     what the last attempt to show the keyboard did
+     * @param hostVerdict     the PC's last word on the focused field, so that
+     *                        "it opened the wrong keyboard" can be answered
+     *                        without a log capture
      */
     public static String report(Context context, int streamDisplayId,
-                                boolean preferSecond, String lastOutcome) {
+                                boolean preferSecond, String lastOutcome,
+                                String hostVerdict) {
         StringBuilder out = new StringBuilder();
 
         DisplayManager manager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
@@ -82,6 +86,10 @@ public final class SoftKeyboardDiagnostics {
 
         out.append("Last time it was opened: ")
                 .append(lastOutcome == null ? "not opened yet this session" : lastOutcome)
+                .append('\n');
+
+        out.append("PC reports: ")
+                .append(hostVerdict == null ? "nothing" : hostVerdict)
                 .append('\n');
 
         out.append('\n');

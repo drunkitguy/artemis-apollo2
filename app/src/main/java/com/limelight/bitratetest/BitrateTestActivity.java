@@ -1497,5 +1497,11 @@ public class BitrateTestActivity extends AppCompatActivity
         @Override
         public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
         }
+
+        @Override
+        public void setTextFieldFocus(byte fieldKind, byte flags, int inputScope) {
+            // The bitrate test drives a headless session with no keyboard on
+            // it, so there is nothing here for a focused text field to do.
+        }
     }
 }

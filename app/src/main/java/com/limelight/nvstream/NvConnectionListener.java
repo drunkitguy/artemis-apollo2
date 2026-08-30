@@ -20,4 +20,10 @@ public interface NvConnectionListener {
     void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz);
 
     void setControllerLED(short controllerNumber, byte r, byte g, byte b);
+
+    // Apollo protocol extension. fieldKind is one of MoonBridge.TEXT_FIELD_*, flags is a
+    // mask of MoonBridge.TEXT_FIELD_FLAG_*, and inputScope is reserved (always 0 today).
+    // This reports ABSOLUTE STATE: the most recent call always describes the current host
+    // focus. It is never called when streaming from a host that does not implement it.
+    void setTextFieldFocus(byte fieldKind, byte flags, int inputScope);
 }
