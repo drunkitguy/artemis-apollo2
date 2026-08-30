@@ -176,20 +176,28 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     // Host text field focus (Apollo control packet 0x3003), all touched on the UI thread only.
     //
-    // hostTextFieldSignalSeen flips on the FIRST packet of the session. The host sends a
-    // baseline packet as soon as the control stream is up, so against a host that speaks the
-    // extension this is true within one control-loop tick; against any other host it stays
-    // false forever and the manual ABC/123 prompt behaves exactly as before.
-    private boolean hostTextFieldSignalSeen = false;
+    // hostReportedTextField goes true only once the host has reported an ACTUAL FIELD, never
+    // on the baseline "no field" packet every peer receives when the control stream comes up.
+    // That distinction is the whole point: the host sends the baseline unconditionally, so a
+    // host whose UI Automation client registered but never receives a focus event would
+    // otherwise look identical to a working one, and suppressing the ABC/123 prompt on that
+    // evidence would leave the user with no second-screen keyboard at all. Against a host
+    // that never detects a field - or never sends 0x3003 in the first place - this stays
+    // false forever and the prompt behaves exactly as it did before this feature existed.
+    private boolean hostReportedTextField = false;
     // True only while the keyboard currently up was raised BY THE HOST SIGNAL. This is the
     // crux of the whole feature: an unfocus event may only take down a keyboard the host
     // itself raised, never one the user raised by hand. Set in exactly one place
-    // (applyHostTextFieldFocus) and cleared in three: the manual show/toggle entry points,
-    // the IME being dismissed, and a new connection.
+    // (applyHostTextFieldFocus) and cleared on manual use, on a host report of "no field",
+    // and on a new connection.
     private boolean autoRaisedKeyboard = false;
-    // -1 means "no packet seen yet", so the first packet always takes the full path.
-    private byte lastHostFieldKind = -1;
-    private byte lastHostFieldFlags = 0;
+    // The keyboard action the last host report resolved to: null means "no field, keyboard
+    // down". Deliberately keyed on the resulting Mode rather than on the raw (kind, flags)
+    // off the wire - flags carries SOURCE_UIA and MULTILINE, which do not change what we ask
+    // the IME for, so tabbing between a classic Win32 edit (flags 0x00) and a WPF text box
+    // (flags 0x04) would otherwise re-run restartInput() for an identical input type.
+    private SoftKeyboardController.Mode lastAppliedHostMode = null;
+    private boolean hasAppliedHostField = false;
 
     private PreferenceConfiguration prefConfig;
     private SharedPreferences tombstonePrefs;
@@ -490,11 +498,15 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // window's (absent) keyboard.
         if (!onExternelDisplay && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (v, insets) -> {
-                boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
-                softKeyboardController.onImeVisibilityChanged(imeVisible);
-                if (!imeVisible) {
-                    onSoftKeyboardDismissed();
-                }
+                // Deliberately does NOT clear autoRaisedKeyboard. Insets are re-dispatched
+                // with ime=false for all sorts of transient reasons, including the frame
+                // between showSoftInput() and the IME actually appearing; clearing the flag
+                // there would strand a host-raised keyboard on screen because the later
+                // "no field" report would no longer recognise it as ours. Nothing is lost:
+                // a "no field" report arriving after the user already dismissed the IME
+                // calls hide(), which is idempotent (clearImeTarget early-returns once the
+                // input type is 0), and every manual raise still clears the flag.
+                softKeyboardController.onImeVisibilityChanged(insets.isVisible(WindowInsetsCompat.Type.ime()));
                 return ViewCompat.onApplyWindowInsets(v, insets);
             });
         }
@@ -1185,9 +1197,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     /**
-     * Called whenever the IME goes away, from either screen's insets listener and from the
-     * secondary display's back press. Once the keyboard is down there is nothing for a host
-     * unfocus event to take away.
+     * Called when the user explicitly dismisses the IME - today, the secondary display's
+     * back press. A dismissal the user asked for hands ownership of the keyboard back to
+     * them, so a later host report must not act as though it still owns it.
+     *
+     * This is deliberately NOT wired to the insets listeners. Those fire ime=false for
+     * transients that are not user intent at all, including the frame between
+     * showSoftInput() and the IME appearing, which would clear the flag immediately after
+     * the host raised the keyboard and leave it stuck up forever.
      */
     public void onSoftKeyboardDismissed() {
         autoRaisedKeyboard = false;
@@ -1204,10 +1221,29 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void resetHostTextFieldState() {
-        hostTextFieldSignalSeen = false;
+        hostReportedTextField = false;
         autoRaisedKeyboard = false;
-        lastHostFieldKind = -1;
-        lastHostFieldFlags = 0;
+        lastAppliedHostMode = null;
+        hasAppliedHostField = false;
+    }
+
+    /**
+     * Maps a wire field kind onto the IME layout to ask for, or null for "keyboard down".
+     */
+    private static SoftKeyboardController.Mode hostModeFor(int fieldKind) {
+        switch (fieldKind) {
+            case MoonBridge.TEXT_FIELD_TEXT:
+                return SoftKeyboardController.Mode.TEXT;
+            case MoonBridge.TEXT_FIELD_NUMERIC:
+                return SoftKeyboardController.Mode.NUMBER;
+            case MoonBridge.TEXT_FIELD_PASSWORD:
+                return SoftKeyboardController.Mode.PASSWORD;
+            case MoonBridge.TEXT_FIELD_NONE:
+            default:
+                // An unknown kind from a newer host is treated as "no field" rather than
+                // guessed at.
+                return null;
+        }
     }
 
     /**
@@ -1219,44 +1255,37 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return;
         }
 
-        hostTextFieldSignalSeen = true;
-
-        if (fieldKind == lastHostFieldKind && flags == lastHostFieldFlags) {
-            // Idempotence guard. Together with the host-side coalescing this is what keeps a
-            // focus storm from turning into a strobing keyboard: restartInput() is expensive
-            // and visible, so a repeat of the state we are already in must do nothing.
-            return;
+        // Only an actual field proves the host's detector is delivering events. The raw kind
+        // is used on purpose: a read-only field will not raise the keyboard, but it is still
+        // proof that focus detection works on that host.
+        if (fieldKind != MoonBridge.TEXT_FIELD_NONE) {
+            hostReportedTextField = true;
         }
-        lastHostFieldKind = fieldKind;
-        lastHostFieldFlags = flags;
 
-        // A read-only field takes no input, so treat it as "no field" for the purpose of
-        // raising the keyboard. The classification still reached us for future use.
+        // A read-only field takes no input, so it resolves to "keyboard down" even though
+        // the classification itself reached us intact.
         int effectiveKind = (flags & MoonBridge.TEXT_FIELD_FLAG_READ_ONLY) != 0
                 ? MoonBridge.TEXT_FIELD_NONE
                 : fieldKind;
+        SoftKeyboardController.Mode mode = hostModeFor(effectiveKind);
 
-        switch (effectiveKind) {
-            case MoonBridge.TEXT_FIELD_TEXT:
-                showSoftKeyboardInternal(SoftKeyboardController.Mode.TEXT);
-                autoRaisedKeyboard = true;
-                break;
-            case MoonBridge.TEXT_FIELD_NUMERIC:
-                showSoftKeyboardInternal(SoftKeyboardController.Mode.NUMBER);
-                autoRaisedKeyboard = true;
-                break;
-            case MoonBridge.TEXT_FIELD_PASSWORD:
-                showSoftKeyboardInternal(SoftKeyboardController.Mode.PASSWORD);
-                autoRaisedKeyboard = true;
-                break;
-            case MoonBridge.TEXT_FIELD_NONE:
-            default:
-                // Only ever take down a keyboard the host itself raised.
-                if (autoRaisedKeyboard) {
-                    hideSoftKeyboardInternal();
-                    autoRaisedKeyboard = false;
-                }
-                break;
+        if (hasAppliedHostField && mode == lastAppliedHostMode) {
+            // Idempotence guard, on the resulting ACTION rather than the raw wire fields.
+            // Together with the host-side coalescing this is what keeps a focus storm from
+            // turning into a strobing keyboard: restartInput() is expensive and visible, so
+            // a repeat of the layout we already asked for must do nothing.
+            return;
+        }
+        hasAppliedHostField = true;
+        lastAppliedHostMode = mode;
+
+        if (mode != null) {
+            showSoftKeyboardInternal(mode);
+            autoRaisedKeyboard = true;
+        } else if (autoRaisedKeyboard) {
+            // Only ever take down a keyboard the host itself raised.
+            hideSoftKeyboardInternal();
+            autoRaisedKeyboard = false;
         }
     }
 
@@ -1274,7 +1303,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * this. See SoftKeyboardPrompt for why the field type cannot be detected.
      */
     private void onTouchLeftClick() {
-        if (hostTextFieldSignalSeen && prefConfig.autoSoftKeyboard) {
+        if (hostReportedTextField && prefConfig.autoSoftKeyboard) {
             // The host tells us when a text field is focused, so guessing from a left click
             // would only ever fight it. The game menu entries and the multi-finger gestures
             // stay available as unconditional manual overrides.

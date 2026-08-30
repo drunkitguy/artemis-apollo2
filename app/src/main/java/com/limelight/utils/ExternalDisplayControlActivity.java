@@ -193,11 +193,11 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
                     // The IME may have been dismissed without us asking; go back to trackpad
                     softKeyboardController.onImeVisibilityChanged(imeVisible);
                 }
-                if (!imeVisible && Game.instance != null) {
-                    // Once the keyboard is down there is nothing for a host unfocus event to
-                    // take away, so Game must stop treating it as host-raised.
-                    Game.instance.onSoftKeyboardDismissed();
-                }
+                // Deliberately does NOT tell Game the keyboard is no longer host-raised.
+                // ime=false is re-dispatched for transients that are not user intent,
+                // including the frame between showSoftInput() and the IME appearing, so
+                // clearing the flag here would strand a host-raised keyboard on screen.
+                // See Game.onSoftKeyboardDismissed().
                 return androidx.core.view.ViewCompat.onApplyWindowInsets(v, insets);
             });
         }
@@ -311,7 +311,8 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
     public void onBackPressed() {
         if (softKeyboardController != null && softKeyboardController.isShown()) {
             softKeyboardController.hide();
-            // Covers devices below API 30, where there is no insets listener to notice.
+            // A back press is an unambiguous user dismissal, unlike an insets transient, so
+            // this is the one place that hands keyboard ownership back to the user.
             if (Game.instance != null) {
                 Game.instance.onSoftKeyboardDismissed();
             }
