@@ -909,6 +909,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 LimeLog.info("Surface is available, starting connection...");
                 attemptedConnection = true;
 
+                // Anything the previous session's PC said about text fields is
+                // about a machine we are no longer talking to. Cleared before
+                // the connection starts so the first report of the new session
+                // cannot race a stale verdict.
+                softKeyboardController().resetHostFieldState();
+
                 // Der Decoder erhält die jeweils aktive Oberfläche vom Container
                 decoderRenderer.setRenderTarget(streamContainer.getSurface());
 
@@ -1246,22 +1252,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         return renderer == null ? null : renderer.snapshotCounters();
     }
 
-
-    /**
-     * The host this session is streaming from.
-     *
-     * Used to reject focus reports from anywhere else: the token is short and
-     * only guards which keyboard is drawn, so the source address is the filter
-     * that actually matters.
-     */
-    public java.net.InetAddress getStreamHostAddress() {
-        try {
-            String address = getIntent().getStringExtra(EXTRA_HOST);
-            return address == null ? null : java.net.InetAddress.getByName(address);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
 
     /** Negotiated stream width, or 0 before one exists. */
     public int getStreamWidth() {
@@ -4223,6 +4213,25 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
         controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);
+    }
+
+    /**
+     * The PC telling us what kind of field has focus, if it is a host that does.
+     *
+     * Arrives on a connection thread and describes absolute state, so it is
+     * simply handed to the keyboard on the UI thread. Nothing here decides
+     * anything: whether a keyboard appears, and which one, is the keyboard's
+     * business, and it deliberately never takes the gamepad off the game to do
+     * it. {@code inputScope} is reserved by the protocol and always 0 today.
+     */
+    @Override
+    public void setTextFieldFocus(byte fieldKind, byte flags, int inputScope) {
+        runOnUiThread(() -> {
+            if (isFinishing() || rootView == null) {
+                return;
+            }
+            softKeyboardController().applyHostFieldFocus(fieldKind, flags);
+        });
     }
 
     @Override

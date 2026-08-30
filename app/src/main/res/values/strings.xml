@@ -754,6 +754,8 @@
     <string name="soft_keyboard_launcher_digits">123</string>
     <string name="title_soft_keyboard_auto_show">Open the keyboard automatically</string>
     <string name="summary_soft_keyboard_auto_show">When a stream starts and there is a second screen, put the keyboard on it straight away. It rests there dimmed and does not touch the controller until you tap a key, so there is no menu trip when you need to type.</string>
+    <string name="title_soft_keyboard_host_layout">Let the PC pick the keyboard</string>
+    <string name="summary_soft_keyboard_host_layout">When the PC tells the app which box the cursor is in, the right keyboard comes up on its own and the ABC/123 buttons come off the panel to leave more room for the trackpad. The controller keeps playing the game until you touch a key. L1/R1 always overrides the choice, and anything you type into a password box is shown as dots instead of letters, though the PC decides what counts as a password. Needs a host with text field detection turned on; against any other host nothing changes.</string>
     <string name="title_soft_keyboard_second_screen">Keyboard on the second screen</string>
     <string name="summary_soft_keyboard_second_screen">On a dual screen handheld, show the gamepad keyboard and number pad on the smaller screen so they never cover the game. Falls back to an overlay when there is only one screen.</string>
 </resources>

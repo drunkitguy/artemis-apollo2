@@ -74,6 +74,27 @@ public class MoonBridge {
 
     public static final int ML_TEST_RESULT_INCONCLUSIVE = 0xFFFFFFFF;
 
+    // Text field focus kinds reported by NvConnectionListener.setTextFieldFocus().
+    // These mirror the ML_TEXT_FIELD_* defines in moonlight-common-c's Limelight.h.
+    public static final int TEXT_FIELD_NONE = 0;
+    public static final int TEXT_FIELD_TEXT = 1;
+    public static final int TEXT_FIELD_NUMERIC = 2;
+    public static final int TEXT_FIELD_PASSWORD = 3;
+
+    // Text field focus flags reported by NvConnectionListener.setTextFieldFocus().
+    // These mirror the ML_TEXT_FIELD_FLAG_* defines in moonlight-common-c's Limelight.h.
+    public static final int TEXT_FIELD_FLAG_READ_ONLY = 0x01;
+    public static final int TEXT_FIELD_FLAG_MULTILINE = 0x02;
+    public static final int TEXT_FIELD_FLAG_SOURCE_UIA = 0x04;
+    // The host guessed "numeric" from keywords in the field's label rather than from
+    // anything the application published. Best effort and English-only on the host side.
+    public static final int TEXT_FIELD_FLAG_LOW_CONFIDENCE = 0x08;
+    // The host found positive numeric evidence. Redundant on TEXT_FIELD_NUMERIC; on
+    // TEXT_FIELD_PASSWORD it means the masked field is a numeric PIN or CVV.
+    public static final int TEXT_FIELD_FLAG_NUMERIC = 0x10;
+    // Unknown flag bits from a newer host must be ignored, never rejected.
+
+
     public static final byte SS_KBE_FLAG_NON_NORMALIZED = 0x01;
 
     public static final int LI_ERR_UNSUPPORTED = -5501;
@@ -327,6 +348,16 @@ public class MoonBridge {
             connectionListener.setControllerLED(controllerNumber, r, g, b);
         }
     }
+
+    // Called from callbacks.c through the JNI descriptor "(BBI)V". The parameter types
+    // MUST stay exactly (byte, byte, int): a mismatch is a NoSuchMethodError raised when
+    // the connection starts, not a build error.
+    public static void bridgeClSetTextFieldFocus(byte fieldKind, byte flags, int inputScope) {
+        if (connectionListener != null) {
+            connectionListener.setTextFieldFocus(fieldKind, flags, inputScope);
+        }
+    }
+
 
     public static void setupBridge(VideoDecoderRenderer videoRenderer, AudioRenderer audioRenderer, NvConnectionListener connectionListener) {
         MoonBridge.videoRenderer = videoRenderer;

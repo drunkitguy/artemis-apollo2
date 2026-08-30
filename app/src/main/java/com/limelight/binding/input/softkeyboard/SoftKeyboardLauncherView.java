@@ -17,13 +17,17 @@ import com.limelight.R;
  * What the second screen shows when nobody is typing.
  *
  * Black, so the panel reads as off next to the game rather than lit up by a
- * keyboard nobody is using. The two buttons are the concession to reality: the
- * host never says which kind of field has focus, so the choice between letters
- * and digits has to come from the person typing.
+ * keyboard nobody is using. The two buttons are the concession to hosts that
+ * cannot say which kind of field has focus, so the choice between letters and
+ * digits has to come from the person typing. Where the PC does say, the choice
+ * is already made and the buttons are only in the way, so they come off and
+ * the trackpad takes the space back.
  *
- * Every part of it is a target. The whole panel opens whichever keyboard was
- * used last, and the buttons are only needed to pick the other one, because on
- * a handheld the surest tap is the one that cannot miss.
+ * The buttons are deliberately half a row each rather than wrapped to their
+ * text: on a handheld's small panel a miss costs more than the space saved.
+ * With them gone the trackpad takes the whole panel below the banner, and the
+ * keyboard is reached by the PC raising it, by the game menu, or by the both
+ * stick chord, none of which need a touchscreen.
  */
 public class SoftKeyboardLauncherView extends LinearLayout {
 
@@ -36,8 +40,16 @@ public class SoftKeyboardLauncherView extends LinearLayout {
     private final com.limelight.binding.input.trackpad.SoftTrackpadView trackpad;
     private final com.limelight.metrics.StreamMetricsBanner banner;
 
+    /**
+     * @param lastUsed        the keyboard that gets the filled button, i.e. the
+     *                        one the user is most likely to want
+     * @param hostPicksLayout true when the PC is reporting which field has
+     *                        focus, in which case the letters/digits row is
+     *                        left off entirely
+     */
     public SoftKeyboardLauncherView(Context context, SoftKeyboardLayouts.Page lastUsed,
-                                    boolean padShortcutEnabled, float trackpadSensitivity) {
+                                    boolean padShortcutEnabled, float trackpadSensitivity,
+                                    boolean hostPicksLayout) {
         super(context);
         this.lastUsed = lastUsed;
 
@@ -54,6 +66,13 @@ public class SoftKeyboardLauncherView extends LinearLayout {
         trackpad = new com.limelight.binding.input.trackpad.SoftTrackpadView(context, trackpadSensitivity);
         LayoutParams padParams = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
         addView(trackpad, padParams);
+
+        if (hostPicksLayout) {
+            // The PC has already said which keyboard the focused field wants,
+            // so asking again would be asking the user to answer a question
+            // that has an answer. The trackpad grows into the space.
+            return;
+        }
 
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(HORIZONTAL);
