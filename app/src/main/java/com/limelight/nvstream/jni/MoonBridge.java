@@ -86,6 +86,13 @@ public class MoonBridge {
     public static final int TEXT_FIELD_FLAG_READ_ONLY = 0x01;
     public static final int TEXT_FIELD_FLAG_MULTILINE = 0x02;
     public static final int TEXT_FIELD_FLAG_SOURCE_UIA = 0x04;
+    // The host guessed "numeric" from keywords in the field's label rather than from
+    // anything the application published. Best effort and English-only on the host side.
+    public static final int TEXT_FIELD_FLAG_LOW_CONFIDENCE = 0x08;
+    // The host found positive numeric evidence. Redundant on TEXT_FIELD_NUMERIC; on
+    // TEXT_FIELD_PASSWORD it means the masked field is a numeric PIN or CVV.
+    public static final int TEXT_FIELD_FLAG_NUMERIC = 0x10;
+    // Unknown flag bits from a newer host must be ignored, never rejected.
 
 
     public static final byte SS_KBE_FLAG_NON_NORMALIZED = 0x01;

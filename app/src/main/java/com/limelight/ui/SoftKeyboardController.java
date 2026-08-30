@@ -28,7 +28,9 @@ public class SoftKeyboardController {
     public enum Mode {
         TEXT,
         NUMBER,
-        PASSWORD
+        PASSWORD,
+        /** A masked field the host has positive numeric evidence for: a PIN, a CVV, an OTP. */
+        NUMBER_PASSWORD
     }
 
     /**
@@ -63,6 +65,13 @@ public class SoftKeyboardController {
         if (mode == Mode.NUMBER) {
             return InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED | InputType.TYPE_NUMBER_FLAG_DECIMAL;
         }
+        if (mode == Mode.NUMBER_PASSWORD) {
+            // A masked field that is numeric by construction. TYPE_NUMBER_VARIATION_PASSWORD
+            // gets the numeric layout without the IME learning or suggesting the digits, which
+            // is exactly what a PIN or a CVV wants. No SIGNED/DECIMAL flags: a PIN has neither
+            // a sign nor a decimal point, and offering them only adds keys that do nothing.
+            return InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD;
+        }
         if (mode == Mode.PASSWORD) {
             // A password field on the host still needs a normal alphabetic layout: hiding the
             // keyboard entirely would mean the user physically cannot log in. What matters is
@@ -88,10 +97,6 @@ public class SoftKeyboardController {
      */
     public boolean isShown() {
         return target != null && target.getImeInputType() != 0;
-    }
-
-    public Mode getLastMode() {
-        return lastMode;
     }
 
     public void show(Mode mode) {

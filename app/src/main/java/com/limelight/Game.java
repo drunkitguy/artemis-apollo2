@@ -180,14 +180,16 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     // crux of the whole feature: an unfocus event may only take down a keyboard the host
     // itself raised, never one the user raised by hand. Set in exactly one place
     // (applyHostTextFieldFocus) and cleared by the public manual API showSoftKeyboard() /
-    // toggleSoftKeyboard(), by onSoftKeyboardDismissed() and onManualSoftKeyboardUse(), by a
-    // host report of "no field", and on a new connection.
+    // toggleSoftKeyboard(), by onSoftKeyboardDismissed(), by a host report of "no field",
+    // and on a new connection.
     private boolean autoRaisedKeyboard = false;
     // The keyboard action the last host report resolved to: null means "no field, keyboard
     // down". Deliberately keyed on the resulting Mode rather than on the raw (kind, flags)
-    // off the wire - flags carries SOURCE_UIA and MULTILINE, which do not change what we ask
-    // the IME for, so tabbing between a classic Win32 edit (flags 0x00) and a WPF text box
-    // (flags 0x04) would otherwise re-run restartInput() for an identical input type.
+    // off the wire - most of the flags byte (SOURCE_UIA, MULTILINE, LOW_CONFIDENCE) does not
+    // change what we ask the IME for, so tabbing between a classic Win32 edit (flags 0x00)
+    // and a WPF text box (flags 0x04) would otherwise re-run restartInput() for an identical
+    // input type. The bits that DO change the layout - READ_ONLY and NUMERIC - are folded
+    // into the Mode by hostModeFor() before this comparison, so they are not lost.
     private SoftKeyboardController.Mode lastAppliedHostMode = null;
     private boolean hasAppliedHostField = false;
 
@@ -1202,19 +1204,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         autoRaisedKeyboard = false;
     }
 
-    /**
-     * Hands keyboard ownership back to the user for any IME raised without going through
-     * showSoftKeyboard() / toggleSoftKeyboard(). A keyboard the user asked for by hand is
-     * never taken away by a host unfocus event.
-     *
-     * Nothing in the app calls this today - every manual path (the game menu entries and the
-     * three- and four-finger gestures) routes through the public show/toggle API, which
-     * already clears the flag. It is kept as the hook any future manual affordance must use.
-     */
-    public void onManualSoftKeyboardUse() {
-        autoRaisedKeyboard = false;
-    }
-
     private void resetHostTextFieldState() {
         autoRaisedKeyboard = false;
         lastAppliedHostMode = null;
@@ -1222,16 +1211,31 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     /**
-     * Maps a wire field kind onto the IME layout to ask for, or null for "keyboard down".
+     * Maps a wire (kind, flags) pair onto the IME layout to ask for, or null for
+     * "keyboard down".
+     *
+     * Only the bits that change the layout are read, and unknown bits are ignored: flags is
+     * a bitfield a newer host may extend without bumping the payload version.
      */
-    private static SoftKeyboardController.Mode hostModeFor(int fieldKind) {
+    private static SoftKeyboardController.Mode hostModeFor(int fieldKind, int flags) {
         switch (fieldKind) {
             case MoonBridge.TEXT_FIELD_TEXT:
                 return SoftKeyboardController.Mode.TEXT;
             case MoonBridge.TEXT_FIELD_NUMERIC:
+                // A LOW_CONFIDENCE numeric verdict is still honoured. The host only ever
+                // sends one when its operator turned the label-guessing tier on explicitly,
+                // and downgrading it to TEXT here would make that setting do nothing at all.
+                // The cost of a wrong guess is bounded because every manual path to the
+                // keyboard is still there: the game menu entries and the multi-finger
+                // gestures both raise a layout of the user's choosing and hand ownership of
+                // the keyboard back to them.
                 return SoftKeyboardController.Mode.NUMBER;
             case MoonBridge.TEXT_FIELD_PASSWORD:
-                return SoftKeyboardController.Mode.PASSWORD;
+                // A masked field with numeric evidence is a PIN, a CVV or an OTP, and a
+                // QWERTY password layout is the wrong keyboard for all three.
+                return (flags & MoonBridge.TEXT_FIELD_FLAG_NUMERIC) != 0
+                        ? SoftKeyboardController.Mode.NUMBER_PASSWORD
+                        : SoftKeyboardController.Mode.PASSWORD;
             case MoonBridge.TEXT_FIELD_NONE:
             default:
                 // An unknown kind from a newer host is treated as "no field" rather than
@@ -1254,7 +1258,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         int effectiveKind = (flags & MoonBridge.TEXT_FIELD_FLAG_READ_ONLY) != 0
                 ? MoonBridge.TEXT_FIELD_NONE
                 : fieldKind;
-        SoftKeyboardController.Mode mode = hostModeFor(effectiveKind);
+        SoftKeyboardController.Mode mode = hostModeFor(effectiveKind, flags);
 
         if (hasAppliedHostField && mode == lastAppliedHostMode) {
             // Idempotence guard, on the resulting ACTION rather than the raw wire fields.
