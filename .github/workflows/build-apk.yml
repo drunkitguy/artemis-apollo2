@@ -1,9 +1,17 @@
 name: Build APK
 
-# Publishes installable APKs. Run manually from the Actions tab, or push a
-# v* tag to attach the APKs to a GitHub release.
+# Publishes installable APKs.
+#
+# Run it from the Actions tab and leave "release_tag" blank to get the APKs as
+# a workflow artifact, or fill it in to publish a GitHub release. Pushing a v*
+# tag publishes a release for that tag.
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Publish a release under this tag (blank = artifact only)'
+        required: false
+        default: ''
   push:
     tags:
       - 'v*'
@@ -47,9 +55,13 @@ jobs:
           path: app/build/outputs/apk/nonRoot_game/debug/*.apk
           if-no-files-found: error
 
-      - name: Attach the APKs to the release
-        if: startsWith(github.ref, 'refs/tags/')
+      # Creates the tag as well when it does not already exist, which is why a
+      # release can be published straight from a manual run.
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           files: app/build/outputs/apk/nonRoot_game/debug/*.apk
           generate_release_notes: true
