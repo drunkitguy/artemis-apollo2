@@ -8,6 +8,7 @@ import android.view.KeyEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -23,7 +24,7 @@ import com.limelight.utils.Stereo3DRenderer;
  * handles all input callbacks, aspect ratio scaling, and a robust surface lifecycle.
  * It uses SurfaceView for 2D and GLSurfaceView for both 3D modes.
  */
-public class StreamContainer extends FrameLayout implements SurfaceHolder.Callback, Stereo3DRenderer.OnSurfaceReadyListener {
+public class StreamContainer extends FrameLayout implements SurfaceHolder.Callback, Stereo3DRenderer.OnSurfaceReadyListener, SoftKeyboardController.ImeTarget {
 
     public interface InputCallbacks {
         boolean handleKeyUp(KeyEvent event);
@@ -49,6 +50,10 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     private StreamMode renderMode = null;
     private InputCallbacks mInputCallbacks;
     private boolean commitTextEnabled = false;
+
+    // Non-zero while SoftKeyboardController is asking the IME for a specific layout.
+    // It makes this view a real editor even when commitTextEnabled is off.
+    private int requestedImeInputType = 0;
 
     private double desiredAspectRatio;
     private boolean fillDisplay = false;
@@ -158,6 +163,21 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     }
 
     @Override
+    public void setImeInputType(int inputType) {
+        this.requestedImeInputType = inputType;
+    }
+
+    @Override
+    public int getImeInputType() {
+        return requestedImeInputType;
+    }
+
+    @Override
+    public View asView() {
+        return this;
+    }
+
+    @Override
     public boolean onKeyPreIme(int keyCode, KeyEvent event) {
         if (mInputCallbacks != null) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -179,16 +199,18 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
 
     @Override
     public boolean onCheckIsTextEditor() {
-        return commitTextEnabled || super.onCheckIsTextEditor();
+        return requestedImeInputType != 0 || commitTextEnabled || super.onCheckIsTextEditor();
     }
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        if (!commitTextEnabled) {
+        if (requestedImeInputType == 0 && !commitTextEnabled) {
             return super.onCreateInputConnection(outAttrs);
         }
-        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT;
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI;
+        outAttrs.inputType = requestedImeInputType != 0
+                ? requestedImeInputType
+                : android.text.InputType.TYPE_CLASS_TEXT;
+        outAttrs.imeOptions = SoftKeyboardController.imeOptions();
         return new BaseInputConnection(this, false) {
             @Override
             public boolean commitText(CharSequence text, int newCursorPosition) {

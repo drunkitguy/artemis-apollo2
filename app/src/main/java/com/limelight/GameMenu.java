@@ -17,6 +17,7 @@ import android.widget.Toast;
 import com.limelight.binding.input.GameInputDevice;
 import com.limelight.binding.input.KeyboardTranslator;
 import com.limelight.preferences.PreferenceConfiguration;
+import com.limelight.ui.SoftKeyboardController;
 import com.limelight.utils.KeyConfigHelper;
 import com.limelight.utils.KeyMapper;
 
@@ -250,11 +251,9 @@ public class GameMenu implements Game.GameMenuCallbacks {
         
         options.add(new MenuOption(getString(R.string.game_menu_toggle_hud), true, game::toggleHUD));
         options.add(new MenuOption(getString(R.string.game_menu_toggle_floating_button), true, game::toggleFloatingButtonVisibility));
-        options.add(new MenuOption(getString(R.string.game_menu_toggle_keyboard_model), true, game::toggleKeyboardController));
         if (!game.isOnExternalDisplay()) {
             options.add(new MenuOption(getString(R.string.game_menu_toggle_virtual_model), true, game::toggleVirtualController));
         }
-        options.add(new MenuOption(getString(R.string.game_menu_toggle_virtual_keyboard_model), true, game::toggleFullKeyboard));
         options.add(new MenuOption(getString(R.string.game_menu_task_manager), true, () -> sendKeys(new short[]{KeyboardTranslator.VK_LCONTROL, KeyboardTranslator.VK_LSHIFT, KeyboardTranslator.VK_ESCAPE})));
 
         // **FIXED:** This is a UI navigation action, so it should not use withGameFocus.
@@ -316,6 +315,9 @@ public class GameMenu implements Game.GameMenuCallbacks {
 
         options.add(new MenuOption(getString(R.string.game_menu_toggle_keyboard), true,
                 game::toggleKeyboard));
+
+        options.add(new MenuOption(getString(R.string.game_menu_toggle_numpad), true,
+                () -> game.showSoftKeyboard(SoftKeyboardController.Mode.NUMBER)));
 
         options.add(new MenuOption(getString(game.isZoomModeEnabled() ? R.string.game_menu_disable_zoom_mode : R.string.game_menu_enable_zoom_mode), true,
                 game::toggleZoomMode));

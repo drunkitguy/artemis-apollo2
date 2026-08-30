@@ -38,6 +38,7 @@ static jmethodID BridgeClSetHdrModeMethod;
 static jmethodID BridgeClRumbleTriggersMethod;
 static jmethodID BridgeClSetMotionEventStateMethod;
 static jmethodID BridgeClSetControllerLEDMethod;
+static jmethodID BridgeClSetTextFieldFocusMethod;
 static jbyteArray DecodedFrameBuffer;
 static jshortArray DecodedAudioBuffer;
 
@@ -102,6 +103,10 @@ Java_com_limelight_nvstream_jni_MoonBridge_init(JNIEnv *env, jclass clazz) {
     BridgeClRumbleTriggersMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeClRumbleTriggers", "(SSS)V");
     BridgeClSetMotionEventStateMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeClSetMotionEventState", "(SBS)V");
     BridgeClSetControllerLEDMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeClSetControllerLED", "(SBBB)V");
+    // "(BBI)V" == (byte fieldKind, byte flags, int inputScope) -> void.
+    // This descriptor MUST match MoonBridge.bridgeClSetTextFieldFocus exactly; a mismatch
+    // is a NoSuchMethodError at connection time, not a build error.
+    BridgeClSetTextFieldFocusMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeClSetTextFieldFocus", "(BBI)V");
 }
 
 int BridgeDrSetup(int videoFormat, int width, int height, int redrawRate, void* context, int drFlags) {
@@ -389,6 +394,17 @@ void BridgeClSetControllerLED(uint16_t controllerNumber, uint8_t r, uint8_t g, u
     }
 }
 
+void BridgeClSetTextFieldFocus(uint8_t fieldKind, uint8_t flags, uint32_t inputScope) {
+    JNIEnv* env = GetThreadEnv();
+
+    // These jbyte casts are necessary to satisfy CheckJNI
+    (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClSetTextFieldFocusMethod, (jbyte)fieldKind, (jbyte)flags, (jint)inputScope);
+    if ((*env)->ExceptionCheck(env)) {
+        // We will crash here
+        (*JVM)->DetachCurrentThread(JVM);
+    }
+}
+
 void BridgeClLogMessage(const char* format, ...) {
     va_list va;
     va_start(va, format);
@@ -426,6 +442,7 @@ static CONNECTION_LISTENER_CALLBACKS BridgeConnListenerCallbacks = {
         .rumbleTriggers = BridgeClRumbleTriggers,
         .setMotionEventState = BridgeClSetMotionEventState,
         .setControllerLED = BridgeClSetControllerLED,
+        .setTextFieldFocus = BridgeClSetTextFieldFocus,
 };
 
 static bool

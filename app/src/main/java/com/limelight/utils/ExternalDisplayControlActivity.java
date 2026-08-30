@@ -26,7 +26,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -46,15 +45,15 @@ import com.limelight.GameMenu;
 import com.limelight.LimeLog;
 import com.limelight.R;
 import com.limelight.StartExternalDisplayControlReceiver;
-import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardLayoutController;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.ui.ExternalControllerView;
+import com.limelight.ui.SoftKeyboardController;
 
 /**
  * A standalone Activity providing a full-screen touchpad controller for the secondary display.
  * It creates its own UI programmatically and hosts the GameMenu for in-game options.
  */
-public class ExternalDisplayControlActivity extends AppCompatActivity implements View.OnKeyListener, KeyBoardLayoutController.ViewCallbacks {
+public class ExternalDisplayControlActivity extends AppCompatActivity implements View.OnKeyListener {
 
     public static String EXTRA_LAUNCH_INTENT = "launchIntent";
 
@@ -65,7 +64,7 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
 
     private ExternalControllerView rootLayout;
     private ImageButton zoomButton;
-    private KeyBoardLayoutController keyBoardLayoutController;
+    private SoftKeyboardController softKeyboardController;
 
     private boolean isKeyboardVisible = false;
 
@@ -90,16 +89,27 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         }
     }
 
-    public static void toggleKeyboard() {
+    public static void showSoftKeyboard(SoftKeyboardController.Mode mode) {
         if (instance != null) {
-            instance._toggleKeyboard();
+            instance._showSoftKeyboard(mode);
         }
     }
 
-    public static void toggleFullKeyboard() {
+    public static void toggleSoftKeyboard(SoftKeyboardController.Mode mode) {
         if (instance != null) {
-            instance._toggleFullKeyboard();
+            instance._toggleSoftKeyboard(mode);
         }
+    }
+
+    public static void hideSoftKeyboard() {
+        if (instance != null) {
+            instance._hideSoftKeyboard();
+        }
+    }
+
+    public static boolean isSoftKeyboardShown() {
+        return instance != null && instance.softKeyboardController != null
+                && instance.softKeyboardController.isShown();
     }
 
     public static void toggleGameMenu() {
@@ -170,7 +180,16 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
             WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (v, insets) -> {
                 boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
-                updateKeyboardVisibility(imeVisible || (keyBoardLayoutController != null && keyBoardLayoutController.isKeyboardVisible()));
+                updateKeyboardVisibility(imeVisible);
+                if (softKeyboardController != null) {
+                    // The IME may have been dismissed without us asking; go back to trackpad
+                    softKeyboardController.onImeVisibilityChanged(imeVisible);
+                }
+                // Deliberately does NOT tell Game the keyboard is no longer host-raised.
+                // ime=false is re-dispatched for transients that are not user intent,
+                // including the frame between showSoftInput() and the IME appearing, so
+                // clearing the flag here would strand a host-raised keyboard on screen.
+                // See Game.onSoftKeyboardDismissed().
                 return androidx.core.view.ViewCompat.onApplyWindowInsets(v, insets);
             });
         }
@@ -215,11 +234,6 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
     protected void onDestroy() {
         super.onDestroy();
         instance = null;
-    }
-
-    @Override
-    public void onKeyboardControllerVisibilityChange(boolean visible) {
-        updateKeyboardVisibility(visible);
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -287,8 +301,13 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
 
     @Override
     public void onBackPressed() {
-        if (Game.instance != null && Game.instance.isKeyboardLayoutVisible()) {
-            toggleFullKeyboard();
+        if (softKeyboardController != null && softKeyboardController.isShown()) {
+            softKeyboardController.hide();
+            // A back press is an unambiguous user dismissal, unlike an insets transient, so
+            // this is the one place that hands keyboard ownership back to the user.
+            if (Game.instance != null) {
+                Game.instance.onSoftKeyboardDismissed();
+            }
         } else if (gameMenu != null && !gameMenu.isMenuOpen() && Game.instance != null)
             Game.instance.onBackPressed();
         else {
@@ -397,6 +416,8 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         rootLayout.setInputCallbacks(Game.instance);
         rootLayout.setCommitTextEnabled(prefConfig.enableCommitText);
 
+        softKeyboardController = new SoftKeyboardController(this, rootLayout);
+
         setContentView(rootLayout);
 
         // Top-left buttons
@@ -424,49 +445,34 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         topRightButtons.addView(createImageButton(R.drawable.ic_close_external, v -> finish()));
         rootLayout.addView(topRightButtons);
 
-        // Bottom-left button: Android keyboard toggle
-        LinearLayout bottomLeftButton = createButtonContainer(Gravity.BOTTOM | Gravity.START);
-        bottomLeftButton.setFocusable(false);
-        bottomLeftButton.addView(createImageButton(R.drawable.ic_android_keyboard, v -> _toggleKeyboard()));
-        rootLayout.addView(bottomLeftButton);
-
-        // Bottom-center buttons
-//        LinearLayout bottomCenterButtons = createButtonContainer(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-//        bottomCenterButtons.setFocusable(false);
-//        rootLayout.addView(bottomCenterButtons);
-
-        // Bottom-right button: Custom keyboard toggle
-        LinearLayout bottomRightButton = createButtonContainer(Gravity.BOTTOM | Gravity.END);
-        bottomRightButton.setFocusable(false);
-        bottomRightButton.addView(createImageButton(R.drawable.ic_fullscreen_keyboard, v -> _toggleFullKeyboard()));
-        rootLayout.addView(bottomRightButton);
+        // Nothing else goes on the bottom screen: it is a trackpad and nothing more. The
+        // keyboard is raised by the host's text field focus signal, with the game menu
+        // entries and the three- and four-finger gestures as the manual fallback.
     }
 
     /**
-     * Toggles the visibility of the on-screen software keyboard.
+     * Raises the system keyboard with the given layout.
      */
-    private void _toggleKeyboard() {
-        LimeLog.info("Toggling keyboard overlay on ExternalDisplayControlActivity");
-        InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        inputManager.toggleSoftInput(0, 0);
-    }
-
-    private void initFullKeyboard(PreferenceConfiguration prefConfig) {
-        keyBoardLayoutController = new KeyBoardLayoutController(rootLayout, this, prefConfig);
-        keyBoardLayoutController.setViewCallbacks(this);
-        keyBoardLayoutController.refreshLayout();
-        keyBoardLayoutController.show();
-    }
-
-    /**
-     * Toggles the visibility of the full screen keyboard
-     */
-    private void _toggleFullKeyboard() {
-        if (keyBoardLayoutController == null) {
-            initFullKeyboard(prefConfig);
+    private void _showSoftKeyboard(SoftKeyboardController.Mode mode) {
+        if (softKeyboardController == null) {
             return;
         }
-        keyBoardLayoutController.toggleVisibility();
+        LimeLog.info("Showing the system keyboard on ExternalDisplayControlActivity");
+        softKeyboardController.show(mode);
+    }
+
+    private void _hideSoftKeyboard() {
+        if (softKeyboardController == null) {
+            return;
+        }
+        softKeyboardController.hide();
+    }
+
+    private void _toggleSoftKeyboard(SoftKeyboardController.Mode mode) {
+        if (softKeyboardController == null) {
+            return;
+        }
+        softKeyboardController.toggle(mode);
     }
 
     public void toggleZoomMode(boolean callGame) {

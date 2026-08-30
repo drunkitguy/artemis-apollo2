@@ -12,9 +12,6 @@
     <string name="help_loading_msg">Chargement de la page d\'aide…</string>
 
     <!-- Alignments -->
-    <string name="align_left">Aligner à gauche</string>
-    <string name="align_center">Aligner au centre</string>
-    <string name="align_right">Aligner à droite</string>
 
     <!-- PC view menu entries -->
     <string name="pcview_menu_header_online">En ligne</string>
@@ -338,9 +335,7 @@
     <string name="game_menu_enable_zoom_mode">Activer le mode Zoom/Panoramique</string>
     <string name="game_menu_disable_zoom_mode">Désactiver le mode Zoom/Panoramique</string>
     <string name="game_menu_rotate_screen">Pivoter l\'écran</string>
-    <string name="game_menu_toggle_keyboard_model">Basculer les touches spéciales</string>
     <string name="game_menu_toggle_virtual_model">Basculer le contrôleur à l\'écran</string>
-    <string name="game_menu_toggle_virtual_keyboard_model">Basculer le clavier virtuel complet</string>
     <string name="game_menu_switch_touch_sensitivity_model">Changer la sensibilité tactile</string>
     <string name="game_menu_toggle_mouse_on">Activer l\'émulation de la souris par la manette</string>
     <string name="game_menu_toggle_mouse_off">Désactiver l\'émulation de la souris par la manette</string>
@@ -376,10 +371,6 @@
     <string name="perf_overlay_lite_streamdetails">%1$s</string>
     <string name="perf_overlay_lite_fps">%1$.2f</string>
     <string name="perf_overlay_lite_decoder">Décodeur : %1$s</string>
-    <string name="title_import_keyboard_layout">Importer la disposition du clavier</string>
-    <string name="title_export_keyboard_layout">Exporter la disposition du clavier</string>
-    <string name="summary_import_keyboard_layout">Cela écrasera la disposition actuelle.</string>
-    <string name="summary_export_keyboard_layout">Exporter la disposition actuelle du clavier</string>
     <string name="title_manual_enter_bitrate">Débit personnalisé</string>
     <string name="summary_manual_enter_bitrate">Entrez le débit manuellement.\nPeut dépasser la plage maximale de la barre de défilement.</string>
     <string name="dialog_manual_enter_bitrate">Entrez le débit en Mbps. Arrondir à 0,5.</string>
@@ -412,25 +403,11 @@
     <string name="summary_software_update">Version Artemis Nior par ClassicOldSong - Visitez la page des versions GitHub pour obtenir la dernière version</string>
     <string name="title_follow_update">Suivre les mises à jour</string>
     <string name="summary_follow_update">Suivre les mises à jour d\'Artemis avec Obtainium</string>
-    <string name="title_special_key_layout">Disposition des touches spéciales</string>
-    <string name="title_show_virtual_key">Afficher les touches virtuelles à l\'écran</string>
-    <string name="summary_show_virtual_key">Affiche une couche de touches spéciales virtuelles sur l\'écran tactile.\nL\'opacité des touches est partagée avec la manette virtuelle ci-dessus.</string>
-    <string name="title_default_layout_scheme">Profil de disposition par défaut</string>
-    <string name="summary_default_layout_scheme">Chaque profil de disposition est initialement identique (généré à partir du fichier keyboards.json), vous pouvez le supprimer et l\'ajuster vous-même</string>
     <string name="summary_vibrate_keyboard">Lorsque vous cliquez sur le bouton de l\'écran, il déclenchera la vibration du moteur du téléphone. Cette option peut également être utilisée pour les boutons de la manette virtuelle.</string>
     <string name="title_square_buttons">Les boutons normaux sont des boutons carrés</string>
     <string name="summary_square_buttons">Les formes des boutons virtuels sont des boutons carrés, par défaut ils sont ronds.</string>
-    <string name="title_reset_keyboard_layout">Réinitialiser la disposition du clavier virtuel</string>
-    <string name="summary_reset_keyboard_layout">Initialise la disposition des touches spéciales (réinitialise le schéma de disposition sélectionné par défaut)</string>
     <string name="title_joyconfix">Compatible avec les JoyCon de la Switch</string>
     <string name="summary_joyconfix">Si votre JoyCon ne fonctionne pas ou a des problèmes de reconnaissance des touches, vous pouvez essayer d\'activer cette fonctionnalité. Adapté pour Android 10 et versions ultérieures</string>
-    <string name="title_keyboard_opacity">Opacité du clavier virtuel complet</string>
-    <string name="title_onscreen_keyboard_height">Hauteur du clavier virtuel complet</string>
-    <string name="summary_onscreen_keyboard_height">Ajustez la hauteur du clavier virtuel complet</string>
-    <string name="title_onscreen_keyboard_width">Largeur du clavier virtuel complet</string>
-    <string name="summary_onscreen_keyboard_width">Ajustez la largeur du clavier virtuel complet</string>
-    <string name="title_onscreen_keyboard_align_mode">Mode d\'alignement du clavier virtuel complet</string>
-    <string name="summary_onscreen_keyboard_align_mode">Comment le clavier virtuel complet s\'aligne sur la vue</string>
     <string name="title_free_analog_stick">Stick analogique libre</string>
     <string name="summary_free_analog_stick">Les points centraux des sticks gauche et droit de la manette virtuelle ne sont pas fixes, ils peuvent être ajustés librement dans une certaine plage de mouvement.</string>
     <string name="summary_free_analog_stick_opacity">Par défaut, seul le fond est affiché lorsque le stick bouge. Si vous n\'aimez pas cela, vous pouvez ajuster l\'effet d\'opacité.</string>
@@ -499,20 +476,12 @@
     <string name="summary_checkbox_use_virtual_display">Utiliser l\'affichage virtuel par défaut.\nL\'affichage virtuel peut correspondre automatiquement à la résolution et au taux de rafraîchissement de votre appareil, offrant une expérience de streaming fluide.\nNécessite Apollo comme logiciel de streaming hôte.</string>
     <string name="title_checkbox_resume_without_confirm">Reprise rapide</string>
     <string name="summary_checkbox_resume_without_confirm">Ne pas afficher le menu de reprise lors du clic sur le bouton de reprise, reprendre l\'application immédiatement.</string>
-    <string name="title_checkbox_enable_sticky_modifier_key_virtual_keyboard">Touches modificatrices adhésives</string>
-    <string name="summary_checkbox_enable_sticky_modifier_key_virtual_keyboard">Utiliser les touches modificatrices adhésives sur le clavier virtuel complet et le clavier personnalisé à l\'écran.</string>
-    <string name="virtual_keyboard_hide">Masquer\nCLAVIER</string>
     <string name="mouse_mode_multi_touch">Multitouch</string>
     <string name="mouse_mode_absolute_touch">Toucher absolu</string>
     <string name="mouse_mode_track_pad_natural">Trackpad (Naturel/Double tap pour faire glisser)</string>
     <string name="mouse_mode_track_pad_gaming">Trackpad (Gaming/Appui long pour faire glisser)</string>
     <string name="mouse_mode_disabled">Désactivé</string>
     <string name="mouse_mode_absolute_touch_swapped">Toucher absolu (clic gauche/droit inversé)</string>
-    <string name="keyboard_layout_set_1">Profil 1</string>
-    <string name="keyboard_layout_set_2">Profil 2</string>
-    <string name="keyboard_layout_set_3">Profil 3</string>
-    <string name="keyboard_layout_set_4">Profil 4</string>
-    <string name="keyboard_layout_set_5">Profil 5</string>
     <string name="toggle_local_mouse_cursor">Basculer le curseur local de la souris (souris physique requise)</string>
     <string name="debug_info_android_version">Version Android :</string>
     <string name="debug_info_api_version">Version API :</string>
@@ -549,7 +518,6 @@
     <string name="pref_empty_file">Fichier vide !</string>
     <string name="pref_import_success">Importation réussie !</string>
     <string name="pref_error_occurred">Une erreur s\'est produite : </string>
-    <string name="pref_save_keyboard_profile">Enregistrer le profil OSK</string>
     <string name="game_menu_advanced">Menu avancé</string>
     <string name="game_dialog_title_quit_confirm">Voulez-vous vraiment quitter ?</string>
     <string name="game_dialog_message_quit_confirm">Veuillez vous assurer que vous n\'avez aucune progression non enregistrée. La quittance de la session mettra fin à l\'application en cours d\'exécution.</string>

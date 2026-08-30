@@ -22,8 +22,6 @@ import com.limelight.binding.input.evdev.EvdevListener;
 import com.limelight.binding.input.touch.TouchContext;
 import com.limelight.binding.input.touch.TrackpadContext;
 import com.limelight.binding.input.virtual_controller.VirtualController;
-import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardController;
-import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardLayoutController;
 import com.limelight.binding.video.CrashListener;
 import com.limelight.binding.video.MediaCodecDecoderRenderer;
 import com.limelight.binding.video.MediaCodecHelper;
@@ -42,6 +40,7 @@ import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.profiles.ProfilesManager;
 import com.limelight.ui.ExternalControllerView;
 import com.limelight.ui.GameGestures;
+import com.limelight.ui.SoftKeyboardController;
 import com.limelight.ui.StreamContainer;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.ExternalDisplayControlActivity;
@@ -102,13 +101,14 @@ import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ImageButton;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.preference.PreferenceManager;
 
 import android.os.Looper;
@@ -172,9 +172,26 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private KeyboardTranslator keyboardTranslator;
     private VirtualController virtualController;
 
-    private KeyBoardController keyBoardController;
+    private SoftKeyboardController softKeyboardController;
 
-    private KeyBoardLayoutController keyBoardLayoutController;
+    // Host text field focus (Apollo control packet 0x3003), all touched on the UI thread only.
+    //
+    // True only while the keyboard currently up was raised BY THE HOST SIGNAL. This is the
+    // crux of the whole feature: an unfocus event may only take down a keyboard the host
+    // itself raised, never one the user raised by hand. Set in exactly one place
+    // (applyHostTextFieldFocus) and cleared by the public manual API showSoftKeyboard() /
+    // toggleSoftKeyboard(), by onSoftKeyboardDismissed(), by a host report of "no field",
+    // and on a new connection.
+    private boolean autoRaisedKeyboard = false;
+    // The keyboard action the last host report resolved to: null means "no field, keyboard
+    // down". Deliberately keyed on the resulting Mode rather than on the raw (kind, flags)
+    // off the wire - most of the flags byte (SOURCE_UIA, MULTILINE, LOW_CONFIDENCE) does not
+    // change what we ask the IME for, so tabbing between a classic Win32 edit (flags 0x00)
+    // and a WPF text box (flags 0x04) would otherwise re-run restartInput() for an identical
+    // input type. The bits that DO change the layout - READ_ONLY and NUMERIC - are folded
+    // into the Mode by hostModeFor() before this comparison, so they are not lost.
+    private SoftKeyboardController.Mode lastAppliedHostMode = null;
+    private boolean hasAppliedHostField = false;
 
     private PreferenceConfiguration prefConfig;
     private SharedPreferences tombstonePrefs;
@@ -462,6 +479,31 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         streamContainer.setOnKeyListener(this);
         streamContainer.setInputCallbacks(this);
         streamContainer.setCommitTextEnabled(prefConfig.enableCommitText);
+
+        // Raises the system IME over the stream surface when we're not on the second screen
+        softKeyboardController = new SoftKeyboardController(this, streamContainer);
+
+        // The IME can be dismissed without going through us (back press, the IME's own
+        // hide key). Without this the stream surface would keep advertising itself as a
+        // text editor for the rest of the session, and handleCommitText would keep
+        // accepting text even though the user left checkbox_enable_commit_text off.
+        // On the secondary display the IME belongs to ExternalDisplayControlActivity's
+        // window, which runs its own listener, so this one would only ever see the game
+        // window's (absent) keyboard.
+        if (!onExternelDisplay && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (v, insets) -> {
+                // Deliberately does NOT clear autoRaisedKeyboard. Insets are re-dispatched
+                // with ime=false for all sorts of transient reasons, including the frame
+                // between showSoftInput() and the IME actually appearing; clearing the flag
+                // there would strand a host-raised keyboard on screen because the later
+                // "no field" report would no longer recognise it as ours. Nothing is lost:
+                // a "no field" report arriving after the user already dismissed the IME
+                // calls hide(), which is idempotent (clearImeTarget early-returns once the
+                // input type is 0), and every manual raise still clears the flag.
+                softKeyboardController.onImeVisibilityChanged(insets.isVisible(WindowInsetsCompat.Type.ime()));
+                return ViewCompat.onApplyWindowInsets(v, insets);
+            });
+        }
 
         rootView = streamContainer.getParent();
 
@@ -844,11 +886,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             }
         }
 
-        //特殊按键屏幕布局
-        if(prefConfig.enableKeyboard){
-            initKeyboardController();
-        }
-
         if (!decoderRenderer.isAvcSupported()) {
             if (spinner != null) {
                 spinner.dismiss();
@@ -868,6 +905,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             if (!attemptedConnection) {
                 LimeLog.info("Surface is available, starting connection...");
                 attemptedConnection = true;
+
+                // A reconnect must not inherit the previous session's host focus state: a new
+                // host may not speak the extension at all. Reset before conn.start() so no
+                // callback can land in between.
+                resetHostTextFieldState();
 
                 // Der Decoder erhält die jeweils aktive Oberfläche vom Container
                 decoderRenderer.setRenderTarget(streamContainer.getSurface());
@@ -1088,47 +1130,161 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
     }
 
-    private void initKeyboardController(){
-        keyBoardController = new KeyBoardController(conn,(FrameLayout)rootView, this);
-        keyBoardController.refreshLayout();
-        keyBoardController.show();
-    }
-
-    public Boolean isKeyboardLayoutVisible() {
-        return keyBoardLayoutController != null && keyBoardLayoutController.shown;
-    }
-
     private void initVirtualController(){
         virtualController = new VirtualController(controllerHandler, (FrameLayout)rootView, this);
         virtualController.refreshLayout();
         virtualController.show();
     }
 
-    private void initkeyBoardLayoutController(){
-        keyBoardLayoutController = new KeyBoardLayoutController((FrameLayout)rootView, this, prefConfig);
-        keyBoardLayoutController.refreshLayout();
-        keyBoardLayoutController.show();
+    /**
+     * Raises the system IME with the requested layout, replacing it if it is already up.
+     *
+     * This is the MANUAL entry point: the game menu and the three- and four-finger gestures
+     * all come through here, so raising the keyboard by hand always clears autoRaisedKeyboard
+     * and the host can no longer take it away.
+     */
+    public void showSoftKeyboard(SoftKeyboardController.Mode mode) {
+        autoRaisedKeyboard = false;
+        showSoftKeyboardInternal(mode);
     }
 
-    //显示隐藏虚拟特殊按键
-    public void toggleKeyboardController(){
-        if (keyBoardController==null) {
-            initKeyboardController();
-            return;
-        }
-        keyBoardController.toggleVisibility();
-    }
-
-    public void toggleFullKeyboard() {
+    /**
+     * Raises the system IME without touching autoRaisedKeyboard. Only the host focus signal
+     * uses this; everything a user does goes through showSoftKeyboard().
+     */
+    private void showSoftKeyboardInternal(SoftKeyboardController.Mode mode) {
         if (isOnExternalDisplay()) {
-            ExternalDisplayControlActivity.toggleFullKeyboard();
+            ExternalDisplayControlActivity.showSoftKeyboard(mode);
             return;
         }
-        if (keyBoardLayoutController == null) {
-            initkeyBoardLayoutController();
+        if (softKeyboardController != null) {
+            softKeyboardController.show(mode);
+        }
+    }
+
+    /**
+     * Dismisses the system IME on whichever screen is showing it.
+     */
+    private void hideSoftKeyboardInternal() {
+        if (isOnExternalDisplay()) {
+            ExternalDisplayControlActivity.hideSoftKeyboard();
             return;
         }
-        keyBoardLayoutController.toggleVisibility();
+        if (softKeyboardController != null) {
+            softKeyboardController.hide();
+        }
+    }
+
+    /**
+     * Raises the system IME with the requested layout, or dismisses it if it is already up.
+     * Manual entry point; see showSoftKeyboard().
+     */
+    public void toggleSoftKeyboard(SoftKeyboardController.Mode mode) {
+        autoRaisedKeyboard = false;
+        if (isOnExternalDisplay()) {
+            ExternalDisplayControlActivity.toggleSoftKeyboard(mode);
+            return;
+        }
+        if (softKeyboardController != null) {
+            softKeyboardController.toggle(mode);
+        }
+    }
+
+    /**
+     * Called when the user explicitly dismisses the IME - today, the secondary display's
+     * back press. A dismissal the user asked for hands ownership of the keyboard back to
+     * them, so a later host report must not act as though it still owns it.
+     *
+     * This is deliberately NOT wired to the insets listeners. Those fire ime=false for
+     * transients that are not user intent at all, including the frame between
+     * showSoftInput() and the IME appearing, which would clear the flag immediately after
+     * the host raised the keyboard and leave it stuck up forever.
+     */
+    public void onSoftKeyboardDismissed() {
+        autoRaisedKeyboard = false;
+    }
+
+    private void resetHostTextFieldState() {
+        autoRaisedKeyboard = false;
+        lastAppliedHostMode = null;
+        hasAppliedHostField = false;
+    }
+
+    /**
+     * Maps a wire (kind, flags) pair onto the IME layout to ask for, or null for
+     * "keyboard down".
+     *
+     * Only the bits that change the layout are read, and unknown bits are ignored: flags is
+     * a bitfield a newer host may extend without bumping the payload version.
+     */
+    private static SoftKeyboardController.Mode hostModeFor(int fieldKind, int flags) {
+        switch (fieldKind) {
+            case MoonBridge.TEXT_FIELD_TEXT:
+                return SoftKeyboardController.Mode.TEXT;
+            case MoonBridge.TEXT_FIELD_NUMERIC:
+                // A LOW_CONFIDENCE numeric verdict is still honoured. The host only ever
+                // sends one when its operator turned the label-guessing tier on explicitly,
+                // and downgrading it to TEXT here would make that setting do nothing at all.
+                // The cost of a wrong guess is bounded because every manual path to the
+                // keyboard is still there: the game menu entries and the multi-finger
+                // gestures both raise a layout of the user's choosing and hand ownership of
+                // the keyboard back to them.
+                return SoftKeyboardController.Mode.NUMBER;
+            case MoonBridge.TEXT_FIELD_PASSWORD:
+                // A masked field with numeric evidence is a PIN, a CVV or an OTP, and a
+                // QWERTY password layout is the wrong keyboard for all three.
+                return (flags & MoonBridge.TEXT_FIELD_FLAG_NUMERIC) != 0
+                        ? SoftKeyboardController.Mode.NUMBER_PASSWORD
+                        : SoftKeyboardController.Mode.PASSWORD;
+            case MoonBridge.TEXT_FIELD_NONE:
+            default:
+                // An unknown kind from a newer host is treated as "no field" rather than
+                // guessed at.
+                return null;
+        }
+    }
+
+    /**
+     * Applies a host text field focus report. UI thread only.
+     */
+    private void applyHostTextFieldFocus(byte fieldKind, byte flags) {
+        if (!prefConfig.autoSoftKeyboard) {
+            // Preference off: ignore the host entirely and leave the manual prompt alone.
+            return;
+        }
+
+        // A read-only field takes no input, so it resolves to "keyboard down" even though
+        // the classification itself reached us intact.
+        int effectiveKind = (flags & MoonBridge.TEXT_FIELD_FLAG_READ_ONLY) != 0
+                ? MoonBridge.TEXT_FIELD_NONE
+                : fieldKind;
+        SoftKeyboardController.Mode mode = hostModeFor(effectiveKind, flags);
+
+        if (hasAppliedHostField && mode == lastAppliedHostMode) {
+            // Idempotence guard, on the resulting ACTION rather than the raw wire fields.
+            // Together with the host-side coalescing this is what keeps a focus storm from
+            // turning into a strobing keyboard: restartInput() is expensive and visible, so
+            // a repeat of the layout we already asked for must do nothing.
+            return;
+        }
+        hasAppliedHostField = true;
+        lastAppliedHostMode = mode;
+
+        if (mode != null) {
+            showSoftKeyboardInternal(mode);
+            autoRaisedKeyboard = true;
+        } else if (autoRaisedKeyboard) {
+            // Only ever take down a keyboard the host itself raised.
+            hideSoftKeyboardInternal();
+            autoRaisedKeyboard = false;
+        }
+    }
+
+    private boolean isSoftKeyboardShown() {
+        if (softKeyboardController != null && softKeyboardController.isShown()) {
+            return true;
+        }
+        return ExternalDisplayControlActivity.isSoftKeyboardShown();
     }
 
     //显示隐藏虚拟手柄控制器
@@ -1196,14 +1352,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             virtualController.refreshLayout();
         }
 
-        if(keyBoardController != null){
-            keyBoardController.refreshLayout();
-        }
-
-        if(keyBoardLayoutController != null){
-            keyBoardLayoutController.refreshLayout();
-        }
-
         // Hide on-screen overlays in PiP mode
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (isInPictureInPictureMode()) {
@@ -1223,14 +1371,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                 if (virtualController != null) {
                     virtualController.hide();
-                }
-
-                if (keyBoardController != null && keyBoardController.shown) {
-                    keyBoardController.hide(true);
-                }
-
-                if (keyBoardLayoutController!=null && keyBoardLayoutController.shown) {
-                    keyBoardLayoutController.hide(true);
                 }
 
                 hideGameMenu();
@@ -1259,14 +1399,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                 if (virtualController != null) {
                     virtualController.show();
-                }
-
-                if (keyBoardController != null && keyBoardController.shown) {
-                    keyBoardController.show();
-                }
-
-                if(keyBoardLayoutController!=null && keyBoardLayoutController.shown){
-                    keyBoardLayoutController.show();
                 }
 
                 if (prefConfig.enablePerfOverlay) {
@@ -1766,13 +1898,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         if (virtualController != null) {
             virtualController.hide();
-        }
-        if (keyBoardController != null) {
-            keyBoardController.hide();
-        }
-
-        if(keyBoardLayoutController!=null){
-            keyBoardLayoutController.hide();
         }
 
         if (conn != null) {
@@ -2400,13 +2525,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void toggleKeyboard() {
-        if (isOnExternalDisplay()) {
-            ExternalDisplayControlActivity.toggleKeyboard();
-        } else {
-            LimeLog.info("Toggling keyboard overlay");
-            InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            inputManager.toggleSoftInput(0, 0);
-        }
+        LimeLog.info("Toggling the system keyboard");
+        toggleSoftKeyboard(SoftKeyboardController.Mode.TEXT);
     }
 
     private byte getLiTouchTypeFromEvent(MotionEvent event) {
@@ -3237,7 +3357,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                             toggleKeyboard();
                             return true;
                         } else if (currentEventTime - fourFingerDownTime < FOUR_FINGER_TAP_THRESHOLD) {
-                            toggleFullKeyboard();
+                            showSoftKeyboard(SoftKeyboardController.Mode.NUMBER);
                             return true;
                         } else if (currentEventTime - fiveFingerDownTime < FIVE_FINGER_TAP_THRESHOLD) {
                             if(prefConfig.enableBackMenu) {
@@ -3311,7 +3431,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     fiveFingerDownTime = 0;
                     break;
                 } else if (pointerCount == 4 && fourFingerDownTime > 0 && currentEventTime - fourFingerDownTime < FOUR_FINGER_TAP_THRESHOLD) {
-                    toggleFullKeyboard();
+                    showSoftKeyboard(SoftKeyboardController.Mode.NUMBER);
                     fourFingerDownTime = 0;
                     break;
                 } else if (pointerCount == 3 && threeFingerDownTime > 0 && currentEventTime - threeFingerDownTime < THREE_FINGER_TAP_THRESHOLD) {
@@ -3776,6 +3896,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     @Override
+    public void setTextFieldFocus(byte fieldKind, byte flags, int inputScope) {
+        // Delivered on moonlight-common-c's async callback thread, not the UI thread.
+        // inputScope is reserved and always 0 for now.
+        runOnUiThread(() -> applyHostTextFieldFocus(fieldKind, flags));
+    }
+
+    @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         if (!surfaceCreated) {
             throw new IllegalStateException("Surface changed before creation!");
@@ -4019,12 +4146,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      *
      * Behavior:
      * - If the app is in secondary display mode:
-     *   - Applies the user's saved mouse mode if it's one of the supported modes:
-     *     "Trackpad Natural", "Trackpad Gaming", or "Disabled".
-     *   - Otherwise, defaults to applying the "Trackpad Natural" mode.
+     *   - Applies the user's saved mouse mode if it's one of the trackpad modes:
+     *     "Trackpad Natural" or "Trackpad Gaming".
+     *   - Otherwise, defaults to applying the "Trackpad Natural" mode. In particular
+     *     "Disabled" is not honoured there: the secondary display is supposed to be a
+     *     trackpad, and a disabled touch mouse would leave it a dead surface.
      *
      * - If the app is not in secondary display mode:
-     *   - Applies the user's saved mouse mode as is.
+     *   - Applies the user's saved mouse mode as is, "Disabled" included.
      *
      * This ensures the correct input mode is applied depending on the environment,
      * improving compatibility with desktop-like multi-display modes.
@@ -4049,7 +4178,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         String natural = getString(R.string.mouse_mode_track_pad_natural);
         String gaming = getString(R.string.mouse_mode_track_pad_gaming);
-        String disabled = getString(R.string.mouse_mode_disabled);
 
         int naturalIndex = 2; //fallback natural mode for secondary screen
         for (int i = 0; i < mouseModes.length; i++) {
@@ -4060,10 +4188,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
         // We only want to temporary override the mouse mode to work with external, but not store it
         if (isOnExternalDisplay()) {
+            // The second screen is a trackpad first and foremost, so "Disabled" is not
+            // an option there: it would leave the surface dead.
             if (savedMouseModeString != null &&
                     (savedMouseModeString.equals(natural) ||
-                            savedMouseModeString.equals(gaming) ||
-                            savedMouseModeString.equals(disabled))) {
+                            savedMouseModeString.equals(gaming))) {
                 applyMouseMode(savedMouseModeIndex);
             } else {
                 applyMouseMode(naturalIndex);
@@ -4077,9 +4206,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * Displays a dialog allowing the user to select a mouse input mode.
      *
      * Behavior:
-     * - On regular displays, all available mouse modes are shown.
-     * - On secondary displays (e.g. Samsung DeX), only a limited set of modes are allowed:
-     *   "Trackpad Natural", "Trackpad Gaming", and "Disabled".
+     * - On regular displays, all available mouse modes are shown, "Disabled" included.
+     * - On secondary displays (e.g. Samsung DeX), only the trackpad modes are offered:
+     *   "Trackpad Natural" and "Trackpad Gaming". "Disabled" is deliberately withheld
+     *   because it would leave the secondary display a dead surface rather than the
+     *   trackpad it is meant to be.
      * - An additional option to toggle the local mouse cursor is always included.
      *
      * When the user selects a mode:
@@ -4093,8 +4224,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         Set<String> allowedLabels = new HashSet<>(Arrays.asList(
                 getString(R.string.mouse_mode_track_pad_natural),
-                getString(R.string.mouse_mode_track_pad_gaming),
-                getString(R.string.mouse_mode_disabled)
+                getString(R.string.mouse_mode_track_pad_gaming)
         ));
 
         List<MouseModeOption> options = new ArrayList<>();
@@ -4288,7 +4418,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleCommitText(CharSequence text) {
-        if (!prefConfig.enableCommitText || conn == null) {
+        // A keyboard we raised ourselves must work even though commitText is off by default
+        if (!(prefConfig.enableCommitText || isSoftKeyboardShown()) || conn == null) {
             return false;
         }
         enqueueCommitText(text.toString());
@@ -4297,7 +4428,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleDeleteSurroundingText(int beforeLength, int afterLength) {
-        if (!prefConfig.enableCommitText || conn == null) {
+        if (!(prefConfig.enableCommitText || isSoftKeyboardShown()) || conn == null) {
             return false;
         }
         // Send backspace events for deleted preceding characters

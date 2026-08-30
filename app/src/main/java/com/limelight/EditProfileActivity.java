@@ -281,14 +281,6 @@ public class EditProfileActivity extends AppCompatActivity {
             if (_pref != null) {
                 _pref.setVisible(false);
             }
-            _pref = findPreference("import_keyboard_file");
-            if (_pref != null) {
-                _pref.setVisible(false);
-            }
-            _pref = findPreference("export_keyboard_file");
-            if (_pref != null) {
-                _pref.setVisible(false);
-            }
             _pref = findPreference("import_special_button_file");
             if (_pref != null) {
                 _pref.setVisible(false);

@@ -45,24 +45,20 @@ import android.widget.Toast;
 
 import com.google.gson.Gson;
 import com.limelight.DebugInfoActivity;
-import com.limelight.BuildConfig;
 import com.limelight.GameMenu;
 import com.limelight.LimeLog;
 import com.limelight.PcView;
 import com.limelight.R;
-import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardControllerConfigurationLoader;
 import com.limelight.binding.video.MediaCodecHelper;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.FileUriUtils;
 import com.limelight.utils.PerformanceDataTracker;
 import com.limelight.utils.UiHelper;
-import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.Map;
 
 public class StreamSettings extends AppCompatActivity {
@@ -345,10 +341,6 @@ public class StreamSettings extends AppCompatActivity {
                 if (category != null) {
                     screen.removePreference(category);
                 }
-                category = findPreference("category_special_key_layout");
-                if (category != null) {
-                    screen.removePreference(category);
-                }
             }
 
             // Hide remote desktop mouse mode on pre-Oreo (which doesn't have pointer capture)
@@ -411,9 +403,6 @@ public class StreamSettings extends AppCompatActivity {
                 PreferenceCategory category = findPreference("category_onscreen_controls");
                 if (category != null) {
                     category.removePreference(findPreference("checkbox_vibrate_osc"));
-                }
-                category = findPreference("category_special_key_layout");
-                if (category != null) {
                     category.removePreference(findPreference("checkbox_vibrate_keyboard"));
                 }
                 category = findPreference("category_gamepad_settings");
@@ -740,20 +729,6 @@ public class StreamSettings extends AppCompatActivity {
             });
 
             Preference _pref;
-            _pref = findPreference("import_keyboard_file");
-            if (_pref != null) {
-                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-                    @Override
-                    public boolean onPreferenceClick(Preference preference) {
-                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                        intent.addCategory(Intent.CATEGORY_OPENABLE);
-                        intent.setType("application/json");
-                        startActivityForResult(intent, READ_REQUEST_CODE);
-                        return false;
-                    }
-                });
-            }
-
             _pref = findPreference("import_special_button_file");
             if (_pref != null) {
                 _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
@@ -814,33 +789,6 @@ public class StreamSettings extends AppCompatActivity {
                         } catch (android.content.ActivityNotFoundException ex) {
                             Toast.makeText(context, noEmailClientsMsg, Toast.LENGTH_SHORT).show();
                         }
-                        return false;
-                    }
-                });
-            }
-
-            _pref = findPreference("export_keyboard_file");
-            if (_pref != null) {
-                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-                    @Override
-                    public boolean onPreferenceClick(Preference preference) {
-                        File file = new File(requireActivity().getExternalCacheDir(),"export_settings");
-                        if(!file.exists()){
-                            file.mkdir();
-                        }
-                        File file1= getJsonContent(requireActivity(),file);
-                        if(file1==null){
-                            Toast.makeText(requireActivity(),getString(R.string.pref_error_occurred),Toast.LENGTH_SHORT).show();
-                            return false;
-                        }
-                        Uri uri;
-                        Intent intent = new Intent(Intent.ACTION_SEND);
-                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        String authority= BuildConfig.APPLICATION_ID+".fileprovider";
-                        uri = FileProvider.getUriForFile(requireActivity(),authority,file1);
-                        intent.putExtra(Intent.EXTRA_STREAM, uri);
-                        intent.setType("application/json");
-                        startActivity(Intent.createChooser(intent,getString(R.string.pref_save_keyboard_profile)));
                         return false;
                     }
                 });
@@ -992,39 +940,11 @@ public class StreamSettings extends AppCompatActivity {
             }, 500);
         }
 
-        int READ_REQUEST_CODE = 1001;
         int READ_REQUEST_SPECIAL_CODE = 1002;
 
         @Override
         public void onActivityResult(int requestCode, int resultCode, Intent data) {
             super.onActivityResult(requestCode, resultCode, data);
-            if (requestCode == READ_REQUEST_CODE && resultCode == Activity.RESULT_OK && data.getData() != null) {
-                try {
-                    Uri uri = data.getData();
-                    String json = FileUriUtils.openUriForRead(getActivity(), uri);
-                    if (TextUtils.isEmpty(json)) {
-                        Toast.makeText(getActivity(), getString(R.string.pref_empty_file), Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    String name = getPrefs().getString(KeyBoardControllerConfigurationLoader.OSC_PREFERENCE, KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
-                    SharedPreferences.Editor prefEditor = requireActivity().getSharedPreferences(name, Activity.MODE_PRIVATE).edit();
-                    JSONObject object = new JSONObject(json);
-                    Iterator it = object.keys();
-                    prefEditor.clear();
-                    while (it.hasNext()) {
-                        String key = (String) it.next();// 获得key
-                        String value = object.getString(key);// 获得value
-                        prefEditor.putString(key, value);
-                    }
-                    prefEditor.apply();
-                    Toast.makeText(getActivity(), getString(R.string.pref_import_success), Toast.LENGTH_SHORT).show();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Toast.makeText(getActivity(), getString(R.string.pref_error_occurred) + e.getMessage(), Toast.LENGTH_SHORT).show();
-                }
-                return;
-            }
-
             if (requestCode == READ_REQUEST_SPECIAL_CODE && resultCode == Activity.RESULT_OK && data.getData() != null) {
                 try {
                     Uri uri = data.getData();
@@ -1050,23 +970,7 @@ public class StreamSettings extends AppCompatActivity {
                 DialogFragment dialogFragment = ConfirmDeleteOscPreference.DialogFragmentCompat.newInstance(preference.getKey());
                 dialogFragment.setTargetFragment(this, 0);
                 dialogFragment.show(getFragmentManager(), null);
-            } else if (preference instanceof ConfirmDeleteKeyboardPreference) {
-                DialogFragment dialogFragment = ConfirmDeleteKeyboardPreference.DialogFragmentCompat.newInstance(preference.getKey());
-                dialogFragment.setTargetFragment(this, 0);
-                dialogFragment.show(getFragmentManager(), null);
             } else super.onDisplayPreferenceDialog(preference);
-        }
-
-        private File getJsonContent(Context context,File file){
-            String name = getPrefs().getString(KeyBoardControllerConfigurationLoader.OSC_PREFERENCE, KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
-            SharedPreferences pref = context.getSharedPreferences(name, Activity.MODE_PRIVATE);
-            Map<String,?> map = pref.getAll();
-            File file1= new File(file,name+".json");
-            String jsonStr=new Gson().toJson(map);
-            if(!FileUriUtils.writerFileString(file1,jsonStr)){
-                return null;
-            }
-            return file1;
         }
 
         //获取所有设置项配置文件

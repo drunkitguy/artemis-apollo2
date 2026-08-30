@@ -16,8 +16,6 @@
     <string name="summary_fullexdisplay_mode">允许全沉浸式副屏模式，自动匹配刷新率和分辨率。此模式下手动设置无效。</string>
 
     <!-- On-screen Keyboard Autofit -->
-    <string name="title_onscreen_keyboard_autofit">虚拟全键盘禁用自适应</string>
-    <string name="summary_onscreen_keyboard_autofit">不自动调整键盘大小和位置，允许自定义大小</string>
 
     <!-- External Display Info -->
     <string name="external_display_info">外接显示器已连接：%1$dx%2$d，%3$.1fHz</string>
@@ -34,9 +32,6 @@
     <string name="help_loading_title"> 查看帮助 </string>
     <string name="help_loading_msg"> 正在加载帮助页面…… </string>
     <!-- Alignments -->
-    <string name="align_left">左对齐</string>
-    <string name="align_center">居中</string>
-    <string name="align_right">右对齐</string>
     <!-- PC view menu entries -->
     <string name="pcview_menu_app_list"> 浏览游戏列表 </string>
     <string name="pcview_menu_pair_pc"> 普通配对 </string>
@@ -360,9 +355,7 @@
     <string name="game_menu_enable_zoom_mode">启用平移/缩放</string>
     <string name="game_menu_disable_zoom_mode">禁用平移/缩放</string>
     <string name="game_menu_rotate_screen">旋转屏幕</string>
-    <string name="game_menu_toggle_keyboard_model">(显示/隐藏)特殊按键</string>
     <string name="game_menu_toggle_virtual_model">(显示/隐藏)虚拟手柄</string>
-    <string name="game_menu_toggle_virtual_keyboard_model">(显示/隐藏)虚拟全键盘</string>
     <string name="game_menu_switch_touch_sensitivity_model">触控灵敏度切换</string>
     <string name="game_menu_toggle_mouse_off">禁用手柄鼠标模拟</string>
     <string name="game_menu_disconnect">断开连接</string>
@@ -391,10 +384,6 @@
     <string name="summary_seekbar_vibrate_fallback_strength">增强或减弱设备的震动强度</string>
     <string name="analogscroll_none">默认 (两个摇杆都控制鼠标)</string>
     <string name="perf_overlay_lite_decoder">解码器： %1$s</string>
-    <string name="title_import_keyboard_layout">导入键盘布局</string>
-    <string name="title_export_keyboard_layout">导出键盘布局</string>
-    <string name="summary_import_keyboard_layout">导入键盘布局配置。会覆盖当前配置。</string>
-    <string name="summary_export_keyboard_layout">导出当前设置的键盘布局</string>
     <string name="title_manual_enter_bitrate">自定义码率</string>
     <string name="summary_manual_enter_bitrate">手动输入码率，可以超过滑动条选项的上限。</string>
     <string name="dialog_manual_enter_bitrate">以 Mbps 输入码率。以0.5为限四舍五入。</string>
@@ -430,13 +419,6 @@
     <string name="summary_auto_orientation">串流画面将以启动时的设备旋转方向呈现。</string>
     <string name="title_joyconfix">兼容Switch JoyCon手柄</string>
     <string name="summary_joyconfix">如果你的JoyCon无法使用或识别按键有问题，可以尝试开启此功能。适配Android 10及以上</string>
-    <string name="title_keyboard_opacity">虚拟全键盘透明度</string>
-    <string name="title_onscreen_keyboard_height">虚拟全键盘高度</string>
-    <string name="title_onscreen_keyboard_width">虚拟全键盘宽度</string>
-    <string name="title_onscreen_keyboard_align_mode">虚拟全键盘对齐方式</string>
-    <string name="summary_onscreen_keyboard_height">调整虚拟全键盘的高度</string>
-    <string name="summary_onscreen_keyboard_width">调整虚拟全键盘的宽度</string>
-    <string name="summary_onscreen_keyboard_align_mode">虚拟全键盘如何与视口对齐</string>
     <string name="title_free_analog_stick">自由摇杆</string>
     <string name="summary_free_analog_stick">虚拟手柄 左右摇杆中心点位置不固定，可自由调整在一定区域内移动。</string>
     <string name="summary_free_analog_stick_opacity">默认只有摇杆移动的时候，有背景显示，如何不喜欢可调节透明度效果。</string>
@@ -472,16 +454,9 @@
     <string name="summary_software_update">ClassicOldSong 黑月光修改版 - 访问 GitHub Release 以获取更新</string>
     <string name="title_follow_update">订阅更新</string>
     <string name="summary_follow_update">使用 Obtainium 订阅 Artemis 的更新</string>
-    <string name="title_special_key_layout">特殊按键布局</string>
-    <string name="title_show_virtual_key">屏幕显示虚拟按键</string>
-    <string name="summary_show_virtual_key">在触摸屏上显示一层虚拟特殊按键。\n按键透明度与上方选项中虚拟手柄共用。</string>
-    <string name="title_default_layout_scheme">默认布局方案</string>
-    <string name="summary_default_layout_scheme">每套布局方案初始默认一样（根据keyboards.json文件生成），可自行进行删减调整</string>
     <string name="summary_vibrate_keyboard">点按屏幕按键时，会触发手机马达震动，此选项也可用于虚拟手柄按钮。</string>
     <string name="title_square_buttons">普通按钮为方形按钮</string>
     <string name="summary_square_buttons">虚拟按钮形状为方形按钮，默认为圆形。</string>
-    <string name="title_reset_keyboard_layout">重置屏幕虚拟按键布局</string>
-    <string name="summary_reset_keyboard_layout">初始化特殊按键布局（重置默认选择的那套布局方案）</string>
     <string name="title_trackpad_sensitivity_x">触摸板 X 轴灵敏度</string>
     <string name="summary_trackpad_sensitivity_x">触摸板 X 轴灵敏度，负值则反向移动</string>
     <string name="title_trackpad_sensitivity_y">触摸板 Y 轴灵敏度</string>
@@ -526,22 +501,14 @@
     <string name="summary_checkbox_ultra_low_latency">仅对高通8Gen2/8(s)Gen3/8Elite有效。</string>
     <string name="title_checkbox_use_virtual_display">使用虚拟显示器</string>
     <string name="summary_checkbox_use_virtual_display">默认使用虚拟显示器。\n虚拟显示器可以自动匹配设备端的分辨率与刷新率设置，提供无缝的串流体验。\n需要使用 Apollo 作为服务端串流软件。</string>
-    <string name="title_checkbox_enable_sticky_modifier_key_virtual_keyboard">粘滞修饰键</string>
-    <string name="summary_checkbox_enable_sticky_modifier_key_virtual_keyboard">在虚拟全键盘以及自定义键盘上使用粘滞修饰键。</string>
     <string name="title_checkbox_resume_without_confirm">快速恢复</string>
     <string name="summary_checkbox_resume_without_confirm">在点击恢复按钮时不弹出菜单，直接恢复串流。</string>
-    <string name="virtual_keyboard_hide">隐藏\n键盘</string>
     <string name="mouse_mode_multi_touch">多点触控</string>
     <string name="mouse_mode_absolute_touch">单点触控</string>
     <string name="mouse_mode_track_pad_natural">触摸板(自然/双击拖拽)</string>
     <string name="mouse_mode_track_pad_gaming">触摸板(游戏/长按拖拽)</string>
     <string name="mouse_mode_disabled">禁用触摸</string>
     <string name="mouse_mode_absolute_touch_swapped">单点触控(左右键互换)</string>
-    <string name="keyboard_layout_set_1">预设 1</string>
-    <string name="keyboard_layout_set_2">预设 2</string>
-    <string name="keyboard_layout_set_3">预设 3</string>
-    <string name="keyboard_layout_set_4">预设 4</string>
-    <string name="keyboard_layout_set_5">预设 5</string>
     <string name="toggle_local_mouse_cursor">切换本地光标(需外接物理鼠标)</string>
     <string name="debug_info_android_version">安卓版本：</string>
     <string name="debug_info_api_version">api版本：</string>
@@ -578,7 +545,6 @@
     <string name="pref_empty_file">文件为空！</string>
     <string name="pref_import_success">导入成功！</string>
     <string name="pref_error_occurred">出错啦~</string>
-    <string name="pref_save_keyboard_profile">保存屏幕键盘配置</string>
     <string name="game_menu_advanced">高级菜单</string>
     <string name="game_dialog_title_quit_confirm">确定要退出吗？</string>
     <string name="game_dialog_message_quit_confirm">请确保当前没有未保存的进度。终止会话会导致当前运行的程序被强行停止。</string>
@@ -622,17 +588,6 @@
     <string name="email_prefix_message">"\n        请按原样将此邮件发送至 artemistics.logs@gmail.com 以帮助社区。\n\n        您分享的性能数据将会帮助改进和扩充以下地址的统计数据：\n\n        https://tinyurl.com/artemis-performance\n\n\n    "</string>
 
     <!-- Keyboard -->
-    <string name="keyboard_clear_all">清除全部</string>
-    <string name="keyboard_add_keys">添加按键</string>
-    <string name="keyboard_select_keys">选择要添加的按键</string>
-    <string name="keyboard_clear_all_confirm_title">清除全部按键</string>
-    <string name="keyboard_clear_all_confirm_message">确定要移除全部按键吗？</string>
-    <string name="keyboard_add">添加</string>
-    <string name="keyboard_configure_movable">设置按钮已可移动</string>
-    <string name="keyboard_keys_added">%d 个按键已成功添加</string>
-    <string name="keyboard_duplicates_skipped">%d 个重复按键已跳过</string>
-    <string name="keyboard_load_error">加载键盘配置错误：%s</string>
-    <string name="keyboard_key_custom">%s （自定义）</string>
 
     <!-- ShortcutHelper Toast Messages -->
     <string name="export_launcher_computer_details_incomplete">无法导出：电脑详情不完整。</string>

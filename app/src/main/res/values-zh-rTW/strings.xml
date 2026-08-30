@@ -17,9 +17,6 @@
 	<string name="help_loading_msg">正在載入說明頁面…</string>
 
 	<!-- Alignments -->
-	<string name="align_left">靠左對齊</string>
-	<string name="align_center">置中對齊</string>
-	<string name="align_right">靠右對齊</string>
 
 	<!-- PC view menu entries -->
 	<string name="pcview_menu_header_online">線上</string>
@@ -375,9 +372,7 @@
 	<string name="game_menu_enable_zoom_mode">啟用平移/縮放</string>
 	<string name="game_menu_disable_zoom_mode">停用平移/縮放</string>
 	<string name="game_menu_rotate_screen">旋轉螢幕</string>
-	<string name="game_menu_toggle_keyboard_model">切換特殊按鍵</string>
 	<string name="game_menu_toggle_virtual_model">切換虛擬手把</string>
-	<string name="game_menu_toggle_virtual_keyboard_model">切換螢幕完整鍵盤</string>
 	<string name="game_menu_switch_touch_sensitivity_model">切換觸控靈敏度</string>
 
 
@@ -423,10 +418,6 @@
 	<string name="perf_overlay_ai_delegate">代理：</string>
 	<string name="perf_overlay_lite_decoder">解碼器：%1$s</string>
 
-	<string name="title_import_keyboard_layout">匯入鍵盤佈局</string>
-	<string name="title_export_keyboard_layout">匯出鍵盤佈局</string>
-	<string name="summary_import_keyboard_layout">這將覆寫目前的佈局。</string>
-	<string name="summary_export_keyboard_layout">匯出目前的鍵盤佈局</string>
 
 	<string name="title_manual_enter_bitrate">自訂位元率</string>
 	<string name="summary_manual_enter_bitrate">手動輸入位元率。\n可超過拉桿的最大範圍。</string>
@@ -496,32 +487,16 @@
 	<string name="title_follow_update">追蹤更新</string>
 	<string name="summary_follow_update">使用 Obtainium 追蹤 Artemis 更新</string>
 
-	<string name="title_special_key_layout">特殊按鍵佈局</string>
-	<string name="title_show_virtual_key">在螢幕上顯示虛擬按鍵</string>
-	<string name="summary_show_virtual_key">在觸控螢幕上顯示一層虛擬特殊按鍵。\n其透明度與上方虛擬手把共享。</string>
 
-	<string name="title_default_layout_scheme">預設佈局設定檔</string>
-	<string name="summary_default_layout_scheme">每個佈局設定檔初始皆相同（依 keyboards.json 產生），可自行刪除與調整</string>
 
 	<string name="summary_vibrate_keyboard">點擊螢幕按鍵時觸發手機震動馬達。本選項也可套用於虛擬手把按鍵。</string>
 	<string name="title_square_buttons">一般按鍵為方形</string>
 	<string name="summary_square_buttons">虛擬按鍵形狀為方形，預設為圓形。</string>
 
-	<string name="title_reset_keyboard_layout">重設虛擬鍵盤佈局</string>
-	<string name="summary_reset_keyboard_layout">初始化特殊按鍵佈局（重設預設選取的佈局方案）</string>
 
 	<string name="title_joyconfix">相容 Switch JoyCon</string>
 	<string name="summary_joyconfix">若您的 JoyCon 無法使用或按鍵辨識有問題，可嘗試啟用此功能。適配 Android 10 以上。</string>
 
-	<string name="title_keyboard_opacity">虛擬全鍵盤不透明度</string>
-	<string name="title_onscreen_keyboard_autofit">虛擬全鍵盤停用自動適配</string>
-	<string name="title_onscreen_keyboard_height">虛擬全鍵盤高度</string>
-	<string name="title_onscreen_keyboard_width">虛擬全鍵盤寬度</string>
-	<string name="title_onscreen_keyboard_align_mode">虛擬全鍵盤對齊模式</string>
-	<string name="summary_onscreen_keyboard_height">調整虛擬全鍵盤高度</string>
-	<string name="summary_onscreen_keyboard_autofit">不自動調整鍵盤大小與位置，允許自訂大小</string>
-	<string name="summary_onscreen_keyboard_width">調整虛擬全鍵盤寬度</string>
-	<string name="summary_onscreen_keyboard_align_mode">虛擬全鍵盤相對檢視區的對齊方式</string>
 
 	<string name="title_free_analog_stick">自由類比搖桿</string>
 	<string name="summary_free_analog_stick">虛擬手把的左右搖桿中心點不固定，可在一定範圍內自由移動。</string>
@@ -616,10 +591,7 @@
 	<string name="title_checkbox_resume_without_confirm">快速繼續</string>
 	<string name="summary_checkbox_resume_without_confirm">按下繼續按鈕時不顯示選單，直接繼續應用程式。</string>
 
-	<string name="title_checkbox_enable_sticky_modifier_key_virtual_keyboard">黏滯式組合鍵</string>
-	<string name="summary_checkbox_enable_sticky_modifier_key_virtual_keyboard">在虛擬全鍵盤與自訂螢幕鍵盤上啟用黏滯式組合鍵。</string>
 
-	<string name="virtual_keyboard_hide">隱藏\nKBD</string>
 
 	<string name="mouse_mode_multi_touch">多點觸控</string>
 	<string name="render_mode_2d">預設 2D</string>
@@ -631,11 +603,6 @@
 	<string name="mouse_mode_disabled">停用</string>
 	<string name="mouse_mode_absolute_touch_swapped">單點觸控（左右鍵對調）</string>
 
-	<string name="keyboard_layout_set_1">設定檔 1</string>
-	<string name="keyboard_layout_set_2">設定檔 2</string>
-	<string name="keyboard_layout_set_3">設定檔 3</string>
-	<string name="keyboard_layout_set_4">設定檔 4</string>
-	<string name="keyboard_layout_set_5">設定檔 5</string>
 
 	<string name="toggle_local_mouse_cursor">切換本機滑鼠游標（需實體滑鼠）</string>
 
@@ -675,7 +642,6 @@
 	<string name="pref_empty_file">空白檔案！</string>
 	<string name="pref_import_success">匯入成功！</string>
 	<string name="pref_error_occurred">發生錯誤： </string>
-	<string name="pref_save_keyboard_profile">儲存 OSK 設定檔</string>
 
 	<string name="game_menu_advanced">進階選單</string>
 	<string name="game_dialog_title_quit_confirm">確定要離開？</string>
@@ -720,17 +686,6 @@
 	<string name="searchpreference_no_results">沒有結果</string>
 
 	<!-- Keyboard -->
-	<string name="keyboard_clear_all">全部清除</string>
-	<string name="keyboard_add_keys">新增按鍵</string>
-	<string name="keyboard_select_keys">選擇要新增的按鍵</string>
-	<string name="keyboard_clear_all_confirm_title">清除所有按鍵</string>
-	<string name="keyboard_clear_all_confirm_message">確定要隱藏所有螢幕控制嗎？之後可在配置模式中再行新增。</string>
-	<string name="keyboard_keys_added">成功新增 %d 個按鍵</string>
-	<string name="keyboard_duplicates_skipped">已略過 %d 個重複項目</string>
-	<string name="keyboard_configure_movable">您現在可以移動設定按鈕。</string>
-	<string name="keyboard_load_error">載入鍵盤設定時發生錯誤：%s</string>
-	<string name="keyboard_add">新增</string>
-	<string name="keyboard_key_custom">%s（自訂）</string>
 
 	<!-- Compliance -->
 	<string name="category_basic_settings" />
