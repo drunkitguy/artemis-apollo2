@@ -1,0 +1,55 @@
+name: Build APK
+
+# Publishes installable APKs. Run manually from the Actions tab, or push a
+# v* tag to attach the APKs to a GitHub release.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the source and its submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install the pinned NDK
+        run: sdkmanager --install "ndk;27.0.12077973"
+
+      - name: Build the debug APKs
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleNonRoot_gameDebug --no-daemon --stacktrace
+
+      - name: Upload the APKs as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artemis-nonRoot-debug-apks
+          path: app/build/outputs/apk/nonRoot_game/debug/*.apk
+          if-no-files-found: error
+
+      - name: Attach the APKs to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/nonRoot_game/debug/*.apk
+          generate_release_notes: true
