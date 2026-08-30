@@ -6,6 +6,9 @@ import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 /**
  * Drives the Android system IME (the built-in full on-screen keyboard) on behalf of a
  * streaming surface. Nothing is drawn here: we only ask the platform for a text or a
@@ -106,11 +109,28 @@ public class SoftKeyboardController {
     }
 
     public void toggle(Mode mode) {
-        if (shown) {
+        if (isImeVisible()) {
             hide();
         } else {
             show(mode);
         }
+    }
+
+    /**
+     * The IME can go away without telling us, and only the secondary display has an insets
+     * listener to notice. Reading the root insets on demand keeps the toggle in phase with
+     * what is actually on screen everywhere else, without installing a second listener on
+     * the streaming surface.
+     */
+    private boolean isImeVisible() {
+        View view = target.asView();
+        if (view != null) {
+            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(view);
+            if (insets != null) {
+                onImeVisibilityChanged(insets.isVisible(WindowInsetsCompat.Type.ime()));
+            }
+        }
+        return shown;
     }
 
     /**
