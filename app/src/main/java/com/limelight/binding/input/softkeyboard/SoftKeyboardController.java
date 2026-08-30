@@ -162,14 +162,15 @@ public class SoftKeyboardController {
      */
     private SoftKeyboardLayouts.Page hostPage;
     /**
-     * True once the host has reported an actual field, not merely spoken to us.
+     * True once the host has reported a field this panel would open a keyboard
+     * for, which is a narrower thing than the host having spoken to us.
      *
-     * A host sends a baseline "no field" report as soon as the control stream
-     * is up, so this deliberately does NOT flip on that. Taking the ABC/123
-     * buttons off the panel is only safe once the host has demonstrated it can
-     * raise a keyboard; a host whose focus watcher registers but never fires
-     * would otherwise leave a touch-only panel with no route to the keyboard
-     * at all.
+     * Neither the baseline "no field" report that arrives as soon as the
+     * control stream is up, nor a read-only field, flips this. Both prove the
+     * host is talking; neither proves it will ever raise a keyboard. Since
+     * this is what takes the ABC/123 buttons off the panel, and on a second
+     * screen that is not a touchscreen those buttons are the only on-panel
+     * route to the keyboard, it has to wait for the thing it is replacing.
      */
     private boolean hostVerdictSeen;
     /**
@@ -594,12 +595,14 @@ public class SoftKeyboardController {
         SoftKeyboardLayouts.Page want = HostFieldFocus.pageFor(kindValue, flagValue);
         boolean wantMask = HostFieldFocus.masksEcho(kindValue, flagValue);
 
-        if (kindValue != HostFieldFocus.KIND_NONE) {
-            // A baseline "no field" packet is not a verdict about a field. The
-            // host sends one to every peer the moment the control stream is up,
-            // and a watcher that registers but never fires would send nothing
-            // else ever again. Waiting for a real field is what makes it
-            // impossible to ship a panel with no way to reach the keyboard.
+        if (want != null) {
+            // Deliberately keyed on the page, not on the kind. Taking the only
+            // on-panel route to the keyboard away should require proof of the
+            // thing being replaced, not proof of the machinery behind it: a
+            // baseline "no field" report arrives the moment the control stream
+            // is up, and a read-only field proves the host classifies without
+            // proving it will ever raise anything. Either would hide the
+            // buttons on a host that never opens a keyboard at all.
             hostVerdictSeen = true;
         }
 
@@ -697,8 +700,14 @@ public class SoftKeyboardController {
         if (!hostPacketSeen) {
             return "nothing, this host does not report which field has focus";
         }
+        // Not "no field reported": a read-only field is a field, it is simply
+        // not one anything gets opened for. What the reader needs to know is
+        // that nothing has yet earned a keyboard, which is also why the
+        // ABC/123 buttons are still there.
         return HostFieldFocus.describe(hostKind, hostFlags)
-                + (hostVerdictSeen ? "" : " (no field reported yet this session)");
+                + (hostVerdictSeen
+                        ? ""
+                        : " (nothing yet that opens a keyboard, so the ABC/123 buttons stay)");
     }
 
     private SoftKeyboardView buildView() {
