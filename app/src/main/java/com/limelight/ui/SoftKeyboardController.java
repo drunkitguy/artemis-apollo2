@@ -136,12 +136,31 @@ public class SoftKeyboardController {
         clearImeTarget();
     }
 
+    /**
+     * The manual keyboard action, and - since the on-screen ABC/123 chip was removed - the
+     * user's only way to recover from a host verdict that asked for the wrong layout.
+     *
+     * So it is not a plain show/hide. When a keyboard is already up in a DIFFERENT layout,
+     * this switches to the requested one in place (show() calls restartInput(), which makes
+     * the IME re-read the input type without a hide/show cycle) instead of dismissing it.
+     * Recovering from a wrongly-numeric field is then one gesture, not two: the numeric
+     * layouts Android draws have no letters key at all, so "hide, then raise again" leaves
+     * the user staring at a keyboard-less screen in between and costs them a second action
+     * to get anywhere.
+     *
+     * It stays a toggle for the case that matters: asking for the layout that is already up
+     * hides it.
+     */
     public void toggle(Mode mode) {
-        if (isImeUp()) {
-            hide();
-        } else {
+        if (!isImeUp()) {
             show(mode);
+            return;
         }
+        if (lastMode != mode) {
+            show(mode);
+            return;
+        }
+        hide();
     }
 
     /**
