@@ -168,6 +168,11 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     }
 
     @Override
+    public int getImeInputType() {
+        return requestedImeInputType;
+    }
+
+    @Override
     public View asView() {
         return this;
     }

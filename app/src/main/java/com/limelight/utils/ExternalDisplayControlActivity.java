@@ -437,12 +437,17 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         topRightButtons.addView(createImageButton(R.drawable.ic_close_external, v -> finish()));
         rootLayout.addView(topRightButtons);
 
-        // Bottom-left button: system keyboard toggle
-        LinearLayout bottomLeftButton = createButtonContainer(Gravity.BOTTOM | Gravity.START);
-        bottomLeftButton.setFocusable(false);
-        bottomLeftButton.addView(createImageButton(R.drawable.ic_android_keyboard,
-                v -> _toggleSoftKeyboard(softKeyboardController.getLastMode())));
-        rootLayout.addView(bottomLeftButton);
+        // Bottom-left button: system keyboard toggle. The second screen is meant to be a
+        // bare trackpad, so this only exists as the escape hatch for users who turned the
+        // tap-to-type picker off. The value is read once here, so flipping the preference
+        // mid-stream needs a restart of this Activity to take effect.
+        if (!prefConfig.tapToType) {
+            LinearLayout bottomLeftButton = createButtonContainer(Gravity.BOTTOM | Gravity.START);
+            bottomLeftButton.setFocusable(false);
+            bottomLeftButton.addView(createImageButton(R.drawable.ic_android_keyboard,
+                    v -> _toggleLastSoftKeyboard()));
+            rootLayout.addView(bottomLeftButton);
+        }
 
         // The ABC / 123 picker. It stays hidden until a trackpad left click offers it.
         keyboardPrompt = new SoftKeyboardPrompt(this, this::_showSoftKeyboard);
@@ -471,6 +476,14 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
             keyboardPrompt.hide();
         }
         softKeyboardController.toggle(mode);
+    }
+
+    /** Toggles whichever layout was last used, so the button does not force a choice. */
+    private void _toggleLastSoftKeyboard() {
+        if (softKeyboardController == null) {
+            return;
+        }
+        _toggleSoftKeyboard(softKeyboardController.getLastMode());
     }
 
     /**

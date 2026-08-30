@@ -93,6 +93,12 @@ public class SoftKeyboardPrompt extends LinearLayout {
         setVisibility(GONE);
     }
 
+    @Override
+    protected void onDetachedFromWindow() {
+        handler.removeCallbacks(autoHideRunnable);
+        super.onDetachedFromWindow();
+    }
+
     private int dpToPx(int dp) {
         return (int) (dp * getResources().getDisplayMetrics().density);
     }

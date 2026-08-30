@@ -8,11 +8,6 @@ import com.limelight.nvstream.NvConnection;
 import com.limelight.nvstream.input.MouseButtonPacket;
 
 public class TrackpadContext implements TouchContext {
-    /** Notified when a tap on the trackpad has produced a left click. */
-    public interface ClickListener {
-        void onTrackpadLeftClick();
-    }
-
     private double pendingDeltaX = 0;
     private double pendingDeltaY = 0;
     private int lastTouchX = 0;
@@ -287,7 +282,7 @@ public class TrackpadContext implements TouchContext {
             isClickPending = true;
 
             if (buttonIndex == MouseButtonPacket.BUTTON_LEFT && clickListener != null) {
-                clickListener.onTrackpadLeftClick();
+                clickListener.onTouchLeftClick();
             }
 
             handler.removeCallbacksAndMessages(null);

@@ -674,6 +674,7 @@
             seekbar:step="1" />
         <CheckBoxPreference
             android:defaultValue="false"
+            android:dependency="checkbox_show_onscreen_controls"
             android:key="checkbox_enable_keyboard_square"
             android:summary="@string/summary_square_buttons"
             android:title="@string/title_square_buttons"
@@ -681,6 +682,7 @@
 
         <CheckBoxPreference
             android:defaultValue="false"
+            android:dependency="checkbox_show_onscreen_controls"
             android:key="checkbox_vibrate_keyboard"
             android:summary="@string/summary_vibrate_keyboard"
             android:title="@string/title_vibrate_keyboard"

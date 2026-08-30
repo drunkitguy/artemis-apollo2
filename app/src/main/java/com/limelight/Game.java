@@ -107,6 +107,8 @@ import android.widget.ImageButton;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.preference.PreferenceManager;
 
 import android.os.Looper;
@@ -461,6 +463,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         // Raises the system IME over the stream surface when we're not on the second screen
         softKeyboardController = new SoftKeyboardController(this, streamContainer);
+
+        // The IME can be dismissed without going through us (back press, the IME's own
+        // hide key). Without this the stream surface would keep advertising itself as a
+        // text editor for the rest of the session, and handleCommitText would keep
+        // accepting text even though the user left checkbox_enable_commit_text off.
+        // On the secondary display the IME belongs to ExternalDisplayControlActivity's
+        // window, which runs its own listener, so this one would only ever see the game
+        // window's (absent) keyboard.
+        if (!onExternelDisplay && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (v, insets) -> {
+                softKeyboardController.onImeVisibilityChanged(insets.isVisible(WindowInsetsCompat.Type.ime()));
+                return ViewCompat.onApplyWindowInsets(v, insets);
+            });
+        }
 
         rootView = streamContainer.getParent();
 
@@ -1122,11 +1138,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     /**
-     * A left click on the second screen trackpad is the only hint we get that the user may
-     * have put the host caret into a text field, so that is where the keyboard prompt is
-     * offered. See SoftKeyboardPrompt for why the field type cannot be detected.
+     * A left click on the second screen touch surface is the only hint we get that the
+     * user may have put the host caret into a text field, so that is where the keyboard
+     * prompt is offered. Both relative modes (Trackpad natural and Trackpad gaming) feed
+     * this. See SoftKeyboardPrompt for why the field type cannot be detected.
      */
-    private void onTrackpadLeftClick() {
+    private void onTouchLeftClick() {
         if (isOnExternalDisplay() && prefConfig.tapToType) {
             ExternalDisplayControlActivity.showKeyboardPrompt();
         }
@@ -3984,12 +4001,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      *
      * Behavior:
      * - If the app is in secondary display mode:
-     *   - Applies the user's saved mouse mode if it's one of the supported modes:
-     *     "Trackpad Natural", "Trackpad Gaming", or "Disabled".
-     *   - Otherwise, defaults to applying the "Trackpad Natural" mode.
+     *   - Applies the user's saved mouse mode if it's one of the trackpad modes:
+     *     "Trackpad Natural" or "Trackpad Gaming".
+     *   - Otherwise, defaults to applying the "Trackpad Natural" mode. In particular
+     *     "Disabled" is not honoured there: the secondary display is supposed to be a
+     *     trackpad, and a disabled touch mouse would leave it a dead surface.
      *
      * - If the app is not in secondary display mode:
-     *   - Applies the user's saved mouse mode as is.
+     *   - Applies the user's saved mouse mode as is, "Disabled" included.
      *
      * This ensures the correct input mode is applied depending on the environment,
      * improving compatibility with desktop-like multi-display modes.
@@ -4042,9 +4061,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * Displays a dialog allowing the user to select a mouse input mode.
      *
      * Behavior:
-     * - On regular displays, all available mouse modes are shown.
-     * - On secondary displays (e.g. Samsung DeX), only a limited set of modes are allowed:
-     *   "Trackpad Natural", "Trackpad Gaming", and "Disabled".
+     * - On regular displays, all available mouse modes are shown, "Disabled" included.
+     * - On secondary displays (e.g. Samsung DeX), only the trackpad modes are offered:
+     *   "Trackpad Natural" and "Trackpad Gaming". "Disabled" is deliberately withheld
+     *   because it would leave the secondary display a dead surface rather than the
+     *   trackpad it is meant to be.
      * - An additional option to toggle the local mouse cursor is always included.
      *
      * When the user selects a mode:
@@ -4145,10 +4166,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             } else if (!prefConfig.touchscreenTrackpad) {
                 touchContextMap[i] = new AbsoluteTouchContext(conn, i, streamContainer, mode == 5);
             } else if (mode == 3) {
-                touchContextMap[i] = new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamContainer, prefConfig);
+                RelativeTouchContext relativeTouchContext = new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamContainer, prefConfig);
+                relativeTouchContext.setClickListener(this::onTouchLeftClick);
+                touchContextMap[i] = relativeTouchContext;
             } else {
                 TrackpadContext trackpadContext = new TrackpadContext(conn, i);
-                trackpadContext.setClickListener(this::onTrackpadLeftClick);
+                trackpadContext.setClickListener(this::onTouchLeftClick);
                 touchContextMap[i] = trackpadContext;
             }
         }
