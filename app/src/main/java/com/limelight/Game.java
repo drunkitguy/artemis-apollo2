@@ -174,6 +174,23 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     private SoftKeyboardController softKeyboardController;
 
+    // Host text field focus (Apollo control packet 0x3003), all touched on the UI thread only.
+    //
+    // hostTextFieldSignalSeen flips on the FIRST packet of the session. The host sends a
+    // baseline packet as soon as the control stream is up, so against a host that speaks the
+    // extension this is true within one control-loop tick; against any other host it stays
+    // false forever and the manual ABC/123 prompt behaves exactly as before.
+    private boolean hostTextFieldSignalSeen = false;
+    // True only while the keyboard currently up was raised BY THE HOST SIGNAL. This is the
+    // crux of the whole feature: an unfocus event may only take down a keyboard the host
+    // itself raised, never one the user raised by hand. Set in exactly one place
+    // (applyHostTextFieldFocus) and cleared in three: the manual show/toggle entry points,
+    // the IME being dismissed, and a new connection.
+    private boolean autoRaisedKeyboard = false;
+    // -1 means "no packet seen yet", so the first packet always takes the full path.
+    private byte lastHostFieldKind = -1;
+    private byte lastHostFieldFlags = 0;
+
     private PreferenceConfiguration prefConfig;
     private SharedPreferences tombstonePrefs;
 
@@ -473,7 +490,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // window's (absent) keyboard.
         if (!onExternelDisplay && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (v, insets) -> {
-                softKeyboardController.onImeVisibilityChanged(insets.isVisible(WindowInsetsCompat.Type.ime()));
+                boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+                softKeyboardController.onImeVisibilityChanged(imeVisible);
+                if (!imeVisible) {
+                    onSoftKeyboardDismissed();
+                }
                 return ViewCompat.onApplyWindowInsets(v, insets);
             });
         }
@@ -879,6 +900,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 LimeLog.info("Surface is available, starting connection...");
                 attemptedConnection = true;
 
+                // A reconnect must not inherit the previous session's host focus state: a new
+                // host may not speak the extension at all. Reset before conn.start() so no
+                // callback can land in between.
+                resetHostTextFieldState();
+
                 // Der Decoder erhält die jeweils aktive Oberfläche vom Container
                 decoderRenderer.setRenderTarget(streamContainer.getSurface());
 
@@ -1106,8 +1132,21 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     /**
      * Raises the system IME with the requested layout, replacing it if it is already up.
+     *
+     * This is the MANUAL entry point: the game menu, the three- and four-finger gestures and
+     * the ABC/123 prompt all come through here, so raising the keyboard by hand always clears
+     * autoRaisedKeyboard and the host can no longer take it away.
      */
     public void showSoftKeyboard(SoftKeyboardController.Mode mode) {
+        autoRaisedKeyboard = false;
+        showSoftKeyboardInternal(mode);
+    }
+
+    /**
+     * Raises the system IME without touching autoRaisedKeyboard. Only the host focus signal
+     * uses this; everything a user does goes through showSoftKeyboard().
+     */
+    private void showSoftKeyboardInternal(SoftKeyboardController.Mode mode) {
         if (isOnExternalDisplay()) {
             ExternalDisplayControlActivity.showSoftKeyboard(mode);
             return;
@@ -1118,15 +1157,106 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     /**
+     * Dismisses the system IME on whichever screen is showing it.
+     */
+    private void hideSoftKeyboardInternal() {
+        if (isOnExternalDisplay()) {
+            ExternalDisplayControlActivity.hideSoftKeyboard();
+            return;
+        }
+        if (softKeyboardController != null) {
+            softKeyboardController.hide();
+        }
+    }
+
+    /**
      * Raises the system IME with the requested layout, or dismisses it if it is already up.
+     * Manual entry point; see showSoftKeyboard().
      */
     public void toggleSoftKeyboard(SoftKeyboardController.Mode mode) {
+        autoRaisedKeyboard = false;
         if (isOnExternalDisplay()) {
             ExternalDisplayControlActivity.toggleSoftKeyboard(mode);
             return;
         }
         if (softKeyboardController != null) {
             softKeyboardController.toggle(mode);
+        }
+    }
+
+    /**
+     * Called whenever the IME goes away, from either screen's insets listener and from the
+     * secondary display's back press. Once the keyboard is down there is nothing for a host
+     * unfocus event to take away.
+     */
+    public void onSoftKeyboardDismissed() {
+        autoRaisedKeyboard = false;
+    }
+
+    /**
+     * Called by the secondary display's own manual keyboard affordances (the escape-hatch
+     * keyboard button and the ABC/123 picker), which raise the IME without going through
+     * showSoftKeyboard(). A keyboard the user asked for by hand is never taken away by a
+     * host unfocus event.
+     */
+    public void onManualSoftKeyboardUse() {
+        autoRaisedKeyboard = false;
+    }
+
+    private void resetHostTextFieldState() {
+        hostTextFieldSignalSeen = false;
+        autoRaisedKeyboard = false;
+        lastHostFieldKind = -1;
+        lastHostFieldFlags = 0;
+    }
+
+    /**
+     * Applies a host text field focus report. UI thread only.
+     */
+    private void applyHostTextFieldFocus(byte fieldKind, byte flags) {
+        if (!prefConfig.autoSoftKeyboard) {
+            // Preference off: ignore the host entirely and leave the manual prompt alone.
+            return;
+        }
+
+        hostTextFieldSignalSeen = true;
+
+        if (fieldKind == lastHostFieldKind && flags == lastHostFieldFlags) {
+            // Idempotence guard. Together with the host-side coalescing this is what keeps a
+            // focus storm from turning into a strobing keyboard: restartInput() is expensive
+            // and visible, so a repeat of the state we are already in must do nothing.
+            return;
+        }
+        lastHostFieldKind = fieldKind;
+        lastHostFieldFlags = flags;
+
+        // A read-only field takes no input, so treat it as "no field" for the purpose of
+        // raising the keyboard. The classification still reached us for future use.
+        int effectiveKind = (flags & MoonBridge.TEXT_FIELD_FLAG_READ_ONLY) != 0
+                ? MoonBridge.TEXT_FIELD_NONE
+                : fieldKind;
+
+        switch (effectiveKind) {
+            case MoonBridge.TEXT_FIELD_TEXT:
+                showSoftKeyboardInternal(SoftKeyboardController.Mode.TEXT);
+                autoRaisedKeyboard = true;
+                break;
+            case MoonBridge.TEXT_FIELD_NUMERIC:
+                showSoftKeyboardInternal(SoftKeyboardController.Mode.NUMBER);
+                autoRaisedKeyboard = true;
+                break;
+            case MoonBridge.TEXT_FIELD_PASSWORD:
+                showSoftKeyboardInternal(SoftKeyboardController.Mode.PASSWORD);
+                autoRaisedKeyboard = true;
+                break;
+            case MoonBridge.TEXT_FIELD_NONE:
+            default:
+                // Only ever take down a keyboard the host itself raised.
+                if (autoRaisedKeyboard) {
+                    hideSoftKeyboardInternal();
+                    autoRaisedKeyboard = false;
+                }
+                break;
         }
     }
 
@@ -1144,6 +1274,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * this. See SoftKeyboardPrompt for why the field type cannot be detected.
      */
     private void onTouchLeftClick() {
+        if (hostTextFieldSignalSeen && prefConfig.autoSoftKeyboard) {
+            // The host tells us when a text field is focused, so guessing from a left click
+            // would only ever fight it. The game menu entries and the multi-finger gestures
+            // stay available as unconditional manual overrides.
+            return;
+        }
         if (isOnExternalDisplay() && prefConfig.tapToType) {
             ExternalDisplayControlActivity.showKeyboardPrompt();
         }
@@ -3755,6 +3891,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
         controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);
+    }
+
+    @Override
+    public void setTextFieldFocus(byte fieldKind, byte flags, int inputScope) {
+        // Delivered on moonlight-common-c's async callback thread, not the UI thread.
+        // inputScope is reserved and always 0 for now.
+        runOnUiThread(() -> applyHostTextFieldFocus(fieldKind, flags));
     }
 
     @Override

@@ -714,6 +714,13 @@
 
         <CheckBoxPreference
             android:defaultValue="true"
+            android:key="checkbox_auto_soft_keyboard"
+            android:summary="@string/summary_auto_soft_keyboard"
+            android:title="@string/title_auto_soft_keyboard"
+            app:iconSpaceReserved="false" />
+
+        <CheckBoxPreference
+            android:defaultValue="true"
             android:key="checkbox_tap_to_type"
             android:summary="@string/summary_tap_to_type"
             android:title="@string/title_tap_to_type"

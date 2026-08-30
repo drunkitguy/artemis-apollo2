@@ -27,7 +27,8 @@ public class SoftKeyboardController {
 
     public enum Mode {
         TEXT,
-        NUMBER
+        NUMBER,
+        PASSWORD
     }
 
     /**
@@ -61,6 +62,17 @@ public class SoftKeyboardController {
     public static int typeFor(Mode mode) {
         if (mode == Mode.NUMBER) {
             return InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED | InputType.TYPE_NUMBER_FLAG_DECIMAL;
+        }
+        if (mode == Mode.PASSWORD) {
+            // A password field on the host still needs a normal alphabetic layout: hiding the
+            // keyboard entirely would mean the user physically cannot log in. What matters is
+            // that the IME does not learn the text, hence VISIBLE_PASSWORD (which suppresses
+            // predictive text and clipboard learning) together with NO_SUGGESTIONS. The
+            // characters are echoed locally only; nothing typed is ever read back from the
+            // host, and the host itself masks the field.
+            return InputType.TYPE_CLASS_TEXT
+                    | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
         }
         return InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
     }

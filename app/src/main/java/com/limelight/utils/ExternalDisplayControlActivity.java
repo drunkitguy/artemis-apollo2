@@ -103,6 +103,12 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
         }
     }
 
+    public static void hideSoftKeyboard() {
+        if (instance != null) {
+            instance._hideSoftKeyboard();
+        }
+    }
+
     public static boolean isSoftKeyboardShown() {
         return instance != null && instance.softKeyboardController != null
                 && instance.softKeyboardController.isShown();
@@ -186,6 +192,11 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
                 if (softKeyboardController != null) {
                     // The IME may have been dismissed without us asking; go back to trackpad
                     softKeyboardController.onImeVisibilityChanged(imeVisible);
+                }
+                if (!imeVisible && Game.instance != null) {
+                    // Once the keyboard is down there is nothing for a host unfocus event to
+                    // take away, so Game must stop treating it as host-raised.
+                    Game.instance.onSoftKeyboardDismissed();
                 }
                 return androidx.core.view.ViewCompat.onApplyWindowInsets(v, insets);
             });
@@ -300,6 +311,10 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
     public void onBackPressed() {
         if (softKeyboardController != null && softKeyboardController.isShown()) {
             softKeyboardController.hide();
+            // Covers devices below API 30, where there is no insets listener to notice.
+            if (Game.instance != null) {
+                Game.instance.onSoftKeyboardDismissed();
+            }
         } else if (gameMenu != null && !gameMenu.isMenuOpen() && Game.instance != null)
             Game.instance.onBackPressed();
         else {
@@ -445,12 +460,18 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
             LinearLayout bottomLeftButton = createButtonContainer(Gravity.BOTTOM | Gravity.START);
             bottomLeftButton.setFocusable(false);
             bottomLeftButton.addView(createImageButton(R.drawable.ic_android_keyboard,
-                    v -> _toggleLastSoftKeyboard()));
+                    v -> {
+                        notifyManualKeyboardUse();
+                        _toggleLastSoftKeyboard();
+                    }));
             rootLayout.addView(bottomLeftButton);
         }
 
         // The ABC / 123 picker. It stays hidden until a trackpad left click offers it.
-        keyboardPrompt = new SoftKeyboardPrompt(this, this::_showSoftKeyboard);
+        keyboardPrompt = new SoftKeyboardPrompt(this, mode -> {
+            notifyManualKeyboardUse();
+            _showSoftKeyboard(mode);
+        });
         rootLayout.addView(keyboardPrompt);
     }
 
@@ -466,6 +487,26 @@ public class ExternalDisplayControlActivity extends AppCompatActivity implements
             keyboardPrompt.hide();
         }
         softKeyboardController.show(mode);
+    }
+
+    /**
+     * These two affordances live on this Activity and raise the IME without going through
+     * Game's public manual API, so they have to clear the host-raised flag themselves.
+     */
+    private void notifyManualKeyboardUse() {
+        if (Game.instance != null) {
+            Game.instance.onManualSoftKeyboardUse();
+        }
+    }
+
+    private void _hideSoftKeyboard() {
+        if (softKeyboardController == null) {
+            return;
+        }
+        if (keyboardPrompt != null) {
+            keyboardPrompt.hide();
+        }
+        softKeyboardController.hide();
     }
 
     private void _toggleSoftKeyboard(SoftKeyboardController.Mode mode) {
