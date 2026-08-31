@@ -373,13 +373,15 @@ public class SoftKeyboardController {
 
 
     private SoftKeyboardLauncherView newLauncher() {
-        // Once the PC is telling us which field has focus, picking a keyboard
-        // by hand is work the user should not have to do, so the two buttons
-        // come off the panel and the trackpad gets the space. Against a host
-        // that says nothing they stay exactly where they were.
+        // Picking a keyboard by hand is work the PC should be doing, so while
+        // this is switched on the two buttons stay off the panel and the
+        // trackpad gets the space - whether or not the host has said anything
+        // yet. Turning the setting off puts them back. The game menu and the
+        // stick chord open a keyboard either way, so the panel is never a dead
+        // end even against a host that reports nothing.
         SoftKeyboardLauncherView launcher = new SoftKeyboardLauncherView(
                 context, preferredPage(), padShortcutEnabled(), trackpadSensitivity(),
-                autoLayoutFromHost && hostVerdictSeen);
+                autoLayoutFromHost);
         launcher.setOnPickListener(new SoftKeyboardLauncherView.OnPickListener() {
             @Override
             public void onPick(SoftKeyboardLayouts.Page page) {
@@ -701,13 +703,13 @@ public class SoftKeyboardController {
             return "nothing, this host does not report which field has focus";
         }
         // Not "no field reported": a read-only field is a field, it is simply
-        // not one anything gets opened for. What the reader needs to know is
-        // that nothing has yet earned a keyboard, which is also why the
-        // ABC/123 buttons are still there.
+        // not one anything gets opened for. Saying so distinguishes a host whose
+        // watcher is running but has never fired from one that is working and
+        // simply has nothing focused right now.
         return HostFieldFocus.describe(hostKind, hostFlags)
                 + (hostVerdictSeen
                         ? ""
-                        : " (nothing yet that opens a keyboard, so the ABC/123 buttons stay)");
+                        : " (nothing yet that opens a keyboard)");
     }
 
     private SoftKeyboardView buildView() {
