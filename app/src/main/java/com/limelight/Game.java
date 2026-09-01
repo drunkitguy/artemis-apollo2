@@ -1253,6 +1253,23 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
 
+    /**
+     * The machine this session is streaming from, exactly as the launch intent
+     * gave it.
+     *
+     * Used to reject focus reports from anywhere else: the token guarding them
+     * is short and only decides which keyboard is drawn, so the address is the
+     * real filter, and it is also where the "I am streaming, please report"
+     * hello has to go.
+     *
+     * Deliberately the unresolved string. Turning a name into an address is a
+     * network operation and this is called from the UI thread; the listener
+     * resolves it once on its own thread instead.
+     */
+    public String getStreamHostAddress() {
+        return host;
+    }
+
     /** Negotiated stream width, or 0 before one exists. */
     public int getStreamWidth() {
         return prefConfig != null ? prefConfig.width : 0;

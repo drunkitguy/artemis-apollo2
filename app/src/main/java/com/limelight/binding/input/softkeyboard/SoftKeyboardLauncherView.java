@@ -39,6 +39,7 @@ public class SoftKeyboardLauncherView extends LinearLayout {
     private final SoftKeyboardLayouts.Page lastUsed;
     private final com.limelight.binding.input.trackpad.SoftTrackpadView trackpad;
     private final com.limelight.metrics.StreamMetricsBanner banner;
+    private final TextView reporterStatus;
 
     /**
      * @param lastUsed        the keyboard that gets the filled button, i.e. the
@@ -67,6 +68,21 @@ public class SoftKeyboardLauncherView extends LinearLayout {
         LayoutParams padParams = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
         addView(trackpad, padParams);
 
+        // Hidden unless the PC-side reporter has something to say. When the
+        // automatic switching does not work, this is the difference between a
+        // report of "it didn't work" and one that names the cause. Added on
+        // both paths on purpose: the case where the buttons are gone is
+        // exactly the case where the reporter going quiet is worth knowing
+        // about, because then there is nothing on the panel picking a
+        // keyboard at all.
+        reporterStatus = new TextView(context);
+        reporterStatus.setGravity(Gravity.CENTER);
+        reporterStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        reporterStatus.setTextColor(ContextCompat.getColor(context, R.color.vl_label));
+        reporterStatus.setPadding(dp(8f), 0, dp(8f), dp(6f));
+        reporterStatus.setVisibility(GONE);
+        addView(reporterStatus, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
         if (hostPicksLayout) {
             // The PC has already said which keyboard the focused field wants,
             // so asking again would be asking the user to answer a question
@@ -91,6 +107,16 @@ public class SoftKeyboardLauncherView extends LinearLayout {
                         SoftKeyboardLayouts.Page.PIN),
                 buttonParams(true));
 
+    }
+
+    /** Pass null to hide the line entirely. */
+    public void setReporterStatus(String text) {
+        if (text == null) {
+            reporterStatus.setVisibility(GONE);
+            return;
+        }
+        reporterStatus.setText(text);
+        reporterStatus.setVisibility(VISIBLE);
     }
 
     public com.limelight.binding.input.trackpad.SoftTrackpadView getTrackpad() {

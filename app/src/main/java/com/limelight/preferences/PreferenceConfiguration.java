@@ -55,6 +55,8 @@ public class PreferenceConfiguration {
     private static final String SOFT_KEYBOARD_PAD_SHORTCUT_PREF_STRING = "checkbox_soft_keyboard_pad_shortcut";
     private static final String SOFT_KEYBOARD_HOST_LAYOUT_PREF_STRING = "checkbox_soft_keyboard_host_layout";
     private static final String PIN_THREADS_FAST_CORES_PREF_STRING = "checkbox_pin_threads_fast_cores";
+    private static final String FOCUS_HINTS_PREF_STRING = "checkbox_focus_hints";
+    private static final String FOCUS_HINTS_DISABLED_ONCE_PREF_STRING = "focus_hints_disabled_once";
     private static final String ENABLE_ULTRA_LOW_LATENCY_PREF_STRING = "checkbox_ultra_low_latency";
     private static final String ENFORCE_DISPLAY_MODE_PREF_STRING = "checkbox_enforce_display_mode";
     private static final String USE_VIRTUAL_DISPLAY_PREF_STRING = "checkbox_use_virtual_display";
@@ -171,6 +173,11 @@ public class PreferenceConfiguration {
     // Off by default: pinning trades power and heat for scheduling certainty,
     // and which way that lands depends on the device and the session length.
     private static final boolean DEFAULT_PIN_THREADS_FAST_CORES = false;
+    // Off by default, and staying that way. This is the only part of the fork
+    // with a component running on the PC, it binds a UDP port on the handheld,
+    // and the last build that turned it on by itself is the one whose streams
+    // stopped working. Nothing about it starts until the user asks for it.
+    private static final boolean DEFAULT_FOCUS_HINTS = false;
     private static final boolean DEFAULT_HOST_AUDIO = false;
     private static final int DEFAULT_DEADZONE = 5;
     private static final int DEFAULT_OPACITY = 90;
@@ -263,6 +270,7 @@ public class PreferenceConfiguration {
     public boolean softKeyboardPadShortcut;
     public boolean softKeyboardHostLayout;
     public boolean pinThreadsToFastCores;
+    public boolean focusHintsEnabled;
     public FormatOption videoFormat;
     public int framePacingWarpFactor = 0;
     public int deadzonePercentage;
@@ -1022,6 +1030,17 @@ private static int getFramePacingValue(Context context) {
         config.softKeyboardPadShortcut = prefs.getBoolean(SOFT_KEYBOARD_PAD_SHORTCUT_PREF_STRING, DEFAULT_SOFT_KEYBOARD_PAD_SHORTCUT);
         config.softKeyboardHostLayout = prefs.getBoolean(SOFT_KEYBOARD_HOST_LAYOUT_PREF_STRING, DEFAULT_SOFT_KEYBOARD_HOST_LAYOUT);
         config.pinThreadsToFastCores = prefs.getBoolean(PIN_THREADS_FAST_CORES_PREF_STRING, DEFAULT_PIN_THREADS_FAST_CORES);
+        // An install from build 80 or 81 has "true" already written, from the
+        // fortnight this was on by default, so a changed default alone would
+        // not turn it off. Forced once, and only once, so the toggle still
+        // belongs to the user afterwards.
+        if (!prefs.getBoolean(FOCUS_HINTS_DISABLED_ONCE_PREF_STRING, false)) {
+            prefs.edit()
+                    .putBoolean(FOCUS_HINTS_PREF_STRING, false)
+                    .putBoolean(FOCUS_HINTS_DISABLED_ONCE_PREF_STRING, true)
+                    .apply();
+        }
+        config.focusHintsEnabled = prefs.getBoolean(FOCUS_HINTS_PREF_STRING, DEFAULT_FOCUS_HINTS);
         config.enforceDisplayMode = prefs.getBoolean(ENFORCE_DISPLAY_MODE_PREF_STRING, DEFAULT_ENFORCE_DISPLAY_MODE);
         config.useVirtualDisplay = prefs.getBoolean(USE_VIRTUAL_DISPLAY_PREF_STRING, DEFAULT_USE_VIRTUAL_DISPLAY);
         config.enableUltraLowLatency = prefs.getBoolean(ENABLE_ULTRA_LOW_LATENCY_PREF_STRING, DEFAULT_ENABLE_ULTRA_LOW_LATENCY);
