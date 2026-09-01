@@ -31,10 +31,14 @@ public final class SoftKeyboardDiagnostics {
      * @param hostVerdict     the PC's last word on the focused field, so that
      *                        "it opened the wrong keyboard" can be answered
      *                        without a log capture
+     * @param reporterStatus  the off-stream listener's own line, or null when
+     *                        it is switched off. The verdict says what the PC
+     *                        decided; this says whether anything it decided is
+     *                        arriving here at all, which is a different failure
      */
     public static String report(Context context, int streamDisplayId,
                                 boolean preferSecond, String lastOutcome,
-                                String hostVerdict) {
+                                String hostVerdict, String reporterStatus) {
         StringBuilder out = new StringBuilder();
 
         DisplayManager manager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
@@ -91,6 +95,10 @@ public final class SoftKeyboardDiagnostics {
         out.append("PC reports: ")
                 .append(hostVerdict == null ? "nothing" : hostVerdict)
                 .append('\n');
+
+        if (reporterStatus != null) {
+            out.append(reporterStatus).append('\n');
+        }
 
         out.append('\n');
         out.append("Native resolution would use: ");

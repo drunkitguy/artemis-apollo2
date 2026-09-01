@@ -102,10 +102,26 @@ public class SoftKeyboardController {
     /** Local mirror of what has been typed, purely so the user can see it. */
     private final StringBuilder echo = new StringBuilder();
 
+    /**
+     * The out-of-stream route for the same reports {@link #applyHostFieldFocus}
+     * takes from the control stream.
+     *
+     * Only ever a second way in. A host that has been rebuilt to send 0x3003
+     * needs none of this, and if both are running the reports say the same
+     * thing and the idempotence in applyHostFieldFocus makes the duplicate
+     * free. It exists because the alternative for someone with a stock
+     * Sunshine, Apollo or Vibepollo install is replacing their host, which is
+     * not a reasonable price for a keyboard layout.
+     */
+    private com.limelight.focus.FocusHintListener focusListener;
+    private final com.limelight.focus.FocusHintPolicy focusPolicy =
+            new com.limelight.focus.FocusHintPolicy();
+
     /** Live readout for the second screen, ticked only while the panel rests. */
     private final com.limelight.metrics.StreamMetricsWindow metrics =
             new com.limelight.metrics.StreamMetricsWindow();
     private com.limelight.metrics.StreamMetricsBanner banner;
+    private SoftKeyboardLauncherView restingPanel;
     private static final long METRICS_INTERVAL_MS = 1000;
     private final Runnable tickMetrics = new Runnable() {
         @Override
@@ -351,11 +367,19 @@ public class SoftKeyboardController {
     private void stopMetrics() {
         idleHandler.removeCallbacks(tickMetrics);
         banner = null;
+        restingPanel = null;
     }
 
     private void updateMetrics() {
         if (banner == null) {
             return;
+        }
+
+        if (restingPanel != null) {
+            // Only worth showing while the reporter is meant to be running;
+            // otherwise the line is noise on an otherwise black panel.
+            restingPanel.setReporterStatus(
+                    focusListener != null ? focusListener.describeStatus() : null);
         }
 
         com.limelight.binding.video.StreamCounters counters = game.getStreamCounters();
@@ -390,6 +414,7 @@ public class SoftKeyboardController {
         });
 
         startMetrics(launcher.getBanner());
+        restingPanel = launcher;
 
         launcher.getTrackpad().setListener(
                 new com.limelight.binding.input.trackpad.SoftTrackpadView.Listener() {
@@ -672,6 +697,7 @@ public class SoftKeyboardController {
      * buttons are on the panel.
      */
     public void resetHostFieldState() {
+        focusPolicy.reset();
         hostPage = null;
         hostVerdictSeen = false;
         hostPacketSeen = false;
@@ -680,6 +706,85 @@ public class SoftKeyboardController {
         maskEcho = false;
         hostKind = HostFieldFocus.KIND_NONE;
         hostFlags = 0;
+    }
+
+    // ------------------------------- the same reports, arriving off the stream
+
+    /**
+     * Starts listening for a reporter running on the PC.
+     *
+     * Wherever the panel starts, on both the automatic and the manual path,
+     * because the panel being up is the whole reason to be listening. Costs a
+     * bound UDP port and a thread parked on a one second timeout, and only
+     * when the user has asked for it: this is off by default and stays off
+     * until they say otherwise.
+     */
+    private void startFocusHints() {
+        stopFocusHints();
+
+        PreferenceConfiguration prefs = PreferenceConfiguration.readPreferences(context);
+        if (!prefs.focusHintsEnabled || !prefs.softKeyboardHostLayout) {
+            return;
+        }
+
+        String token = com.limelight.focus.FocusHintTokens.get(context);
+        if (token == null || token.isEmpty()) {
+            return;
+        }
+
+        focusPolicy.reset();
+
+        focusListener = new com.limelight.focus.FocusHintListener(
+                com.limelight.focus.FocusHintListener.DEFAULT_PORT,
+                com.limelight.focus.FocusHintListener.DEFAULT_HOST_PORT,
+                token, game.getStreamHostAddress(),
+                new com.limelight.focus.FocusHintListener.Callback() {
+            @Override
+            public void onFocusHint(final com.limelight.focus.FocusHint.Report report) {
+                idleHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        deliverFocusHint(focusPolicy.onHint(
+                                report, android.os.SystemClock.uptimeMillis()));
+                    }
+                });
+            }
+
+            @Override
+            public void onQuietTick() {
+                idleHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        deliverFocusHint(focusPolicy.onTick(
+                                android.os.SystemClock.uptimeMillis()));
+                    }
+                });
+            }
+        });
+        focusListener.start();
+    }
+
+    private void stopFocusHints() {
+        if (focusListener != null) {
+            focusListener.stop();
+            focusListener = null;
+        }
+    }
+
+    /**
+     * Runs on the main thread: the policy has already decided this report is
+     * worth acting on, and from here it is indistinguishable from one that
+     * arrived on the control stream.
+     *
+     * That is the point. There is one place that decides what a numeric field
+     * does to the panel, and it is {@link #applyHostFieldFocus}. This route
+     * only exists because not every host can be rebuilt to send the packet.
+     */
+    private void deliverFocusHint(com.limelight.focus.FocusHint.Report report) {
+        if (report == null || !shown) {
+            return;
+        }
+        applyHostFieldFocus((byte) report.hostKind(), (byte) report.flags);
     }
 
     /**
@@ -710,6 +815,18 @@ public class SoftKeyboardController {
                 + (hostVerdictSeen
                         ? ""
                         : " (nothing yet that opens a keyboard)");
+    }
+
+    /**
+     * The off-stream listener's own line, or null when it is not running.
+     *
+     * Worth a separate line from {@link #hostVerdict()} because they fail
+     * differently: the verdict says what the PC decided, this says whether
+     * anything the PC decided is reaching this device at all.
+     */
+    private String focusListenerStatus() {
+        com.limelight.focus.FocusHintListener listener = focusListener;
+        return listener == null ? null : listener.describeStatus();
     }
 
     private SoftKeyboardView buildView() {
@@ -770,6 +887,7 @@ public class SoftKeyboardController {
             watchDisplays();
             lastOutcome = "resting on screen " + target.getDisplayId();
             LimeLog.info("Soft keyboard " + lastOutcome);
+            startFocusHints();
         } catch (RuntimeException e) {
             presentation = null;
             presentationDisplayId = KeyboardDisplayChooser.NO_DISPLAY;
@@ -802,6 +920,7 @@ public class SoftKeyboardController {
         attach(view, page);
         watchDisplays();
         shown = true;
+        startFocusHints();
         capturing = false;
         setCapturing(true);
         heldDirection = null;
@@ -810,6 +929,7 @@ public class SoftKeyboardController {
     }
 
     public void hide() {
+        stopFocusHints();
         stopMetrics();
         idleHandler.removeCallbacks(releaseOnIdle);
         capturing = false;
@@ -875,7 +995,7 @@ public class SoftKeyboardController {
         refreshCachedPreferences();
         return SoftKeyboardDiagnostics.report(
                 context, game.getStreamDisplayId(), prefersSecondScreen(), lastOutcome,
-                hostVerdict());
+                hostVerdict(), focusListenerStatus());
     }
 
     private void detach() {
